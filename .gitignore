@@ -148,3 +148,9 @@ dist
 
 # End of https://www.toptal.com/developers/gitignore/api/node,direnv
 .devenv.flake.nix
+# Node.js
+node_modules/
+
+# Stream Deck files
+*.sdPlugin/bin
+*.sdPlugin/logs
