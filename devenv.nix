@@ -8,7 +8,21 @@
   packages = [ pkgs.git ];
 
   # https://devenv.sh/languages/
-  # languages.rust.enable = true;
+  languages.javascript = {
+    enable = true;
+    package = pkgs.nodejs_24;
+    corepack.enable = true;
+    npm = {
+      enable = true;
+      install.enable = true;
+    };
+    lsp = {
+      enable = true;
+      package = pkgs.nodePackages.typescript-language-server;
+    };
+  };
+
+  languages.typescript.enable = true;
 
   # https://devenv.sh/processes/
   # processes.dev.exec = "${lib.getExe pkgs.watchexec} -n -- ls -la";
@@ -25,6 +39,7 @@
   enterShell = ''
     hello         # Run scripts directly
     git --version # Use packages
+    echo "Node.js $(node --version) development environment loaded."
   '';
 
   # https://devenv.sh/tasks/
