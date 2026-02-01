@@ -3,9 +3,11 @@
     "build": "rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.pioneer-onkyo-remote\"",
     "test": "node --test tests/**/*.test.ts",
-    "test:unit": "node --test tests/dnssd-parser.test.ts",
-    "test:integration": "node --test tests/dnssd-integration.test.ts",
-    "discover-airplay": "tsx scripts/discover-airplay.ts"
+    "test:unit": "node --test tests/**/*.test.ts",
+    "test:eiscp": "node --test tests/eiscp-*.test.ts",
+    "test:eiscp:integration": "node --test tests/eiscp-integration.test.ts",
+    "discover-airplay": "tsx scripts/discover-airplay.ts",
+    "eiscp": "tsx scripts/eiscp-cli.ts"
   },
   "type": "module",
   "devDependencies": {
