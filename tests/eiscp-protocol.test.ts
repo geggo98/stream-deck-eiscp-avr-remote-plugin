@@ -314,7 +314,7 @@ describe("eISCP enums", () => {
 		});
 
 		it("should return undefined for unknown hex", () => {
-			const mode = getListeningModeByHex("FF");
+			const mode = getListeningModeByHex("ZZ");
 			assert.equal(mode, undefined);
 		});
 

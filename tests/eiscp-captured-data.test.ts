@@ -35,6 +35,7 @@ const RAW_DATA = readFileSync(RAW_DUMP_PATH);
 // Test server state
 let testServer: ReturnType<typeof createServer>;
 let testPort: number;
+let testSockets: Set<ReturnType<typeof testServer>> = new Set();
 
 describe("eISCP captured data tests", () => {
 	let client: EiscpClient;
@@ -42,6 +43,14 @@ describe("eISCP captured data tests", () => {
 	before(async () => {
 		// Start test server on a random port
 		testServer = createServer((socket) => {
+			// Track socket for cleanup
+			testSockets.add(socket as never);
+
+			// Remove from tracking when closed
+			socket.on("close", () => {
+				testSockets.delete(socket as never);
+			});
+
 			// Wait a bit for the client to be ready before sending data
 			setTimeout(() => {
 				socket.write(RAW_DATA);
@@ -66,9 +75,20 @@ describe("eISCP captured data tests", () => {
 	after(async () => {
 		if (client) {
 			client.disconnect();
+			client = undefined;
 		}
+
+		// Close all tracked sockets
+		for (const socket of testSockets) {
+			socket.destroy();
+		}
+		testSockets.clear();
+
 		if (testServer) {
-			await new Promise<void>((resolve) => testServer.close(() => resolve()));
+			await new Promise<void>((resolve) => {
+				testServer.close(() => resolve());
+			});
+			testServer = undefined;
 		}
 	});
 
@@ -196,6 +216,9 @@ describe("eISCP captured data tests", () => {
 			console.log(`  Client received ${packetCount} raw packets`);
 
 			assert.ok(packetCount > 0, "Should receive at least one packet");
+
+			// Disconnect the client after the test
+			client.disconnect();
 		});
 
 		it("should handle FLD (display) messages correctly", () => {

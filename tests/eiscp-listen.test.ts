@@ -22,7 +22,7 @@ import {
 	type DisplayFieldMessage,
 	type NetworkServiceMessage,
 	type UnknownMessage,
-} from "../src/adapter/eiscp/index.js";
+} from "../src/adapter/eiscp/index.ts";
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -35,6 +35,7 @@ const RAW_DATA = readFileSync(RAW_DUMP_PATH);
 // Test server state
 let testServer: ReturnType<typeof createServer>;
 let testPort: number;
+let testSockets: Set<ReturnType<typeof testServer>> = new Set();
 
 describe("eISCP listen mode tests", () => {
 	let client: ReturnType<typeof createClient>;
@@ -43,6 +44,14 @@ describe("eISCP listen mode tests", () => {
 	before(async () => {
 		// Start test server on a random port
 		testServer = createServer((socket) => {
+			// Track socket for cleanup
+			testSockets.add(socket as never);
+
+			// Remove from tracking when closed
+			socket.on("close", () => {
+				testSockets.delete(socket as never);
+			});
+
 			// Wait a bit for the client to be ready before sending data
 			setTimeout(() => {
 				socket.write(RAW_DATA);
@@ -67,9 +76,20 @@ describe("eISCP listen mode tests", () => {
 	after(async () => {
 		if (client) {
 			client.disconnect();
+			client = undefined;
 		}
+
+		// Close all tracked sockets
+		for (const socket of testSockets) {
+			socket.destroy();
+		}
+		testSockets.clear();
+
 		if (testServer) {
-			await new Promise<void>((resolve) => testServer.close(() => resolve()));
+			await new Promise<void>((resolve) => {
+				testServer.close(() => resolve());
+			});
+			testServer = undefined;
 		}
 	});
 
@@ -98,6 +118,9 @@ describe("eISCP listen mode tests", () => {
 
 			// Should have received at least 100 messages
 			assert.ok(receivedMessages.length >= 100, `Expected at least 100 messages, got ${receivedMessages.length}`);
+
+			// Disconnect the client after the test
+			client.disconnect();
 		});
 
 		it("should decode power messages correctly", () => {

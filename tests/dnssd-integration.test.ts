@@ -59,7 +59,7 @@ describe("dns-sd integration tests", () => {
 		describe("discoverAirplayDevices", () => {
 			it("should discover AirPlay devices on the network", async () => {
 				const result = await discoverAirplayDevices({
-					timeout: 5000,
+					timeout: 1000,
 					includeIntermediate: true,
 				});
 
@@ -80,7 +80,7 @@ describe("dns-sd integration tests", () => {
 
 			it("should include intermediate results when requested", async () => {
 				const result = await discoverAirplayDevices({
-					timeout: 5000,
+					timeout: 1000,
 					includeIntermediate: true,
 				});
 
@@ -93,7 +93,7 @@ describe("dns-sd integration tests", () => {
 		describe("discoverAirplayDevicesWithErrorReporting", () => {
 			it("should report errors for non-existent devices", async () => {
 				const result = await discoverAirplayDevicesWithErrorReporting({
-					timeout: 5000,
+					timeout: 1000,
 					includeIntermediate: true,
 					instanceNames: ["NonExistentDevice12345"],
 					continueOnError: true,
@@ -106,7 +106,7 @@ describe("dns-sd integration tests", () => {
 
 			it("should return devices even with some errors", async () => {
 				const result = await discoverAirplayDevicesWithErrorReporting({
-					timeout: 5000,
+					timeout: 1000,
 					instanceNames: ["NonExistentDevice12345", "AnotherFakeDevice"],
 					continueOnError: true,
 				});
@@ -120,7 +120,7 @@ describe("dns-sd integration tests", () => {
 			it("should throw error for non-existent device", async () => {
 				await assert.rejects(
 					async () => {
-						await getDevice("NonExistentDevice12345", { timeout: 3000 });
+						await getDevice("NonExistentDevice12345", { timeout: 1000 });
 					},
 					(err) => {
 						assert.ok(
@@ -135,7 +135,7 @@ describe("dns-sd integration tests", () => {
 		describe("lookupDevice and getHostAddresses", () => {
 			it("should fail gracefully for non-existent device", async () => {
 				const lookupResult = await lookupDevice("NonExistentDevice12345", {
-					timeout: 3000,
+					timeout: 1000,
 				});
 
 				// lookup command times out or returns empty for non-existent device
@@ -148,7 +148,7 @@ describe("dns-sd integration tests", () => {
 
 			it("should get addresses fail for non-existent hostname", async () => {
 				const result = await getHostAddresses("nonexistent-host.local.", {
-					timeout: 3000,
+					timeout: 1000,
 				});
 
 				// Command should complete (possibly with error or timeout)
@@ -159,11 +159,11 @@ describe("dns-sd integration tests", () => {
 		describe("timeout handling", () => {
 			it("should respect timeout setting", async () => {
 				const start = Date.now();
-				await browseAirplayDevices({ timeout: 2000 });
+				await browseAirplayDevices({ timeout: 1000 });
 				const elapsed = Date.now() - start;
 
-				// Should take approximately 2 seconds (+- some margin for process overhead)
-				assert.ok(elapsed >= 1800 && elapsed < 4000);
+				// Should take approximately 1 second (+- some margin for process overhead)
+				assert.ok(elapsed >= 800 && elapsed < 2500);
 			});
 		});
 	}
