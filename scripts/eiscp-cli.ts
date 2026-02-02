@@ -17,6 +17,7 @@
  *   input <name>       Set input source
  *   mode <name>        Set listening mode
  *   dump               Dump all raw packets (for test fixtures)
+ *   listen             Listen and decode all packets from receiver
  *   query-all          Query and display all state
  *   list-inputs        List available input sources
  *   list-modes         List available listening modes
@@ -28,7 +29,7 @@
  *   --raw              Show raw packet data
  */
 
-import { createClient } from "../src/adapter/eiscp/index.js";
+import { createClient, type DecodedMessage } from "../src/adapter/eiscp/index.js";
 import { InputSource, ListeningMode } from "../src/adapter/eiscp/enums.js";
 
 // Default configuration
@@ -91,6 +92,79 @@ function error(message: string): never {
 	process.exit(1);
 }
 
+/**
+ * Format a decoded message for display
+ */
+function formatMessage(msg: DecodedMessage, raw: boolean, json: boolean): string {
+	if (json) {
+		return JSON.stringify(msg, null, 2);
+	}
+
+	const timestamp = new Date().toISOString();
+	let output = `[${timestamp}] ${msg.command}`;
+
+	switch (msg.type) {
+		case "power":
+			output += ` | Power: ${msg.on ? "ON" : "OFF"}`;
+			break;
+		case "volume":
+			output += ` | Volume: ${msg.level}${msg.percent !== undefined ? ` (${msg.percent.toFixed(1)}%)` : ""}`;
+			break;
+		case "mute":
+			output += ` | Mute: ${msg.muted ? "ON" : "OFF"}`;
+			break;
+		case "input":
+			if (msg.input) {
+				output += ` | Input: ${msg.input.name} (0x${msg.input.hex}, ${msg.input.decimal})`;
+			} else {
+				output += ` | Input: Unknown (0x${msg.parameter})`;
+			}
+			break;
+		case "listeningMode":
+			if (msg.mode) {
+				output += ` | Mode: ${msg.mode.name} (0x${msg.mode.hex}, ${msg.mode.decimal})`;
+			} else {
+				output += ` | Mode: Unknown (0x${msg.parameter})`;
+			}
+			break;
+		case "audioEq":
+			output += ` | Audio EQ: 0x${msg.parameter}`;
+			break;
+		case "displayField":
+			if (msg.text) {
+				output += ` | Display: "${msg.text}"`;
+			} else {
+				output += ` | Display: <hex decode failed>`;
+			}
+			if (raw) {
+				output += ` | Raw param: 0x${msg.parameter}`;
+			}
+			break;
+		case "networkService":
+			if (msg.service) {
+				output += ` | Net Service: ${msg.service.name} (key: ${msg.service.key})`;
+			} else {
+				output += ` | Net Service: ${msg.subCommand}${msg.parameter.slice(1)}`;
+			}
+			break;
+		case "networkTrack":
+			output += ` | Net Track: 0x${msg.parameter}`;
+			break;
+		case "unknown":
+			output += ` | Unknown: ${msg.raw}`;
+			if (raw) {
+				output += ` | Command: ${msg.command} | Param: 0x${msg.parameter}`;
+			}
+			break;
+	}
+
+	if (raw && msg.type !== "displayField" && msg.type !== "unknown") {
+		output += ` | Raw: ${msg.raw}`;
+	}
+
+	return output;
+}
+
 // Display help
 function showHelp(): void {
 	console.log(`
@@ -108,6 +182,7 @@ Commands:
   input <name>           Set input source
   mode <name>            Set listening mode
   dump                   Dump all raw packets (for test fixtures)
+  listen                 Listen and decode all packets from receiver
   query-all              Query and display all state
   list-inputs            List available input sources
   list-modes             List available listening modes
@@ -126,6 +201,7 @@ Examples:
   tsx scripts/eiscp-cli.ts input BLURAY_DVD
   tsx scripts/eiscp-cli.ts --host 192.168.1.100 state
   tsx scripts/eiscp-cli.ts dump
+  tsx scripts/eiscp-cli.ts listen
 `);
 }
 
@@ -162,6 +238,35 @@ async function main(): Promise<void> {
 					console.log(`  Data size: ${packet.dataSize}`);
 					console.log(`  Version: ${packet.version.toString("hex")}`);
 				}
+			}
+		});
+
+		client.on("error", (err) => {
+			console.error(`[ERROR] ${err.message}`);
+		});
+
+		await client.connect();
+
+		// Keep running until interrupted
+		process.on("SIGINT", () => {
+			log("\nDisconnecting...");
+			client.disconnect();
+			process.exit(0);
+		});
+
+		return;
+	}
+
+	// Listen mode - decode and display all packets
+	if (options.command === "listen") {
+		log(`Connecting to ${options.host}:${options.port}...`);
+		log("Listening for decoded packets. Press Ctrl+C to stop.");
+
+		client.on("message", (msg) => {
+			if (options.json) {
+				console.log(formatMessage(msg, false, true));
+			} else {
+				console.log(formatMessage(msg, options.raw, false));
 			}
 		});
 

@@ -21,6 +21,7 @@ import {
 	parseQueryResponse,
 	type EiscpPacket,
 	type EncodedPacket,
+	type IscpMessage,
 } from "./protocol.ts";
 import {
 	IscpCommand,
@@ -28,10 +29,12 @@ import {
 	MuteState,
 	InputSource,
 	ListeningMode,
+	NetworkService,
 	getInputByHex,
 	getInputByDecimal,
 	getListeningModeByHex,
 	getListeningModeByDecimal,
+	getNetworkServiceByKey,
 	type InputSourceKey,
 	type ListeningModeKey,
 } from "./enums.ts";
@@ -61,6 +64,151 @@ export interface VolumeConfig {
 }
 
 /**
+ * Decoded message event types
+ *
+ * These represent the different types of decoded ISCP messages that can be received.
+ * Each type has specific properties based on the command.
+ */
+
+/**
+ * Power state message
+ */
+export interface PowerMessage {
+	type: "power";
+	command: "PWR";
+	parameter: string;
+	on: boolean;
+	raw: string;
+}
+
+/**
+ * Volume message
+ */
+export interface VolumeMessage {
+	type: "volume";
+	command: "MVL";
+	parameter: string;
+	level: number; // Raw volume level (0-max)
+	percent?: number; // Percentage (if max is known)
+	raw: string;
+}
+
+/**
+ * Mute state message
+ */
+export interface MuteMessage {
+	type: "mute";
+	command: "AMT";
+	parameter: string;
+	muted: boolean;
+	raw: string;
+}
+
+/**
+ * Input source message
+ */
+export interface InputMessage {
+	type: "input";
+	command: "SLI";
+	parameter: string;
+	input?: {
+		name: string;
+		hex: string;
+		decimal: number;
+	};
+	raw: string;
+}
+
+/**
+ * Listening mode message
+ */
+export interface ListeningModeMessage {
+	type: "listeningMode";
+	command: "LMD";
+	parameter: string;
+	mode?: {
+		name: string;
+		hex: string;
+		decimal: number;
+	};
+	raw: string;
+}
+
+/**
+ * Audio EQ message
+ */
+export interface AudioEqMessage {
+	type: "audioEq";
+	command: "AEQ";
+	parameter: string;
+	raw: string;
+}
+
+/**
+ * Display field message (FLD)
+ * Contains hex-encoded ASCII text for the receiver's display
+ */
+export interface DisplayFieldMessage {
+	type: "displayField";
+	command: "FLD";
+	parameter: string;
+	text?: string; // Decoded ASCII text
+	raw: string;
+}
+
+/**
+ * Network list service message (NLS)
+ * Contains information about network music services
+ */
+export interface NetworkServiceMessage {
+	type: "networkService";
+	command: "NLS";
+	parameter: string;
+	subCommand: "C" | "U"; // C=Category, U=Service
+	service?: {
+		name: string;
+		key: string;
+	};
+	raw: string;
+}
+
+/**
+ * Network list track message (NLT)
+ */
+export interface NetworkTrackMessage {
+	type: "networkTrack";
+	command: "NLT";
+	parameter: string;
+	raw: string;
+}
+
+/**
+ * Unknown/unsupported message type
+ */
+export interface UnknownMessage {
+	type: "unknown";
+	command: string;
+	parameter: string;
+	raw: string;
+	rawMessage: IscpMessage;
+}
+
+/**
+ * Union type for all decoded messages
+ */
+export type DecodedMessage =
+	| PowerMessage
+	| VolumeMessage
+	| MuteMessage
+	| InputMessage
+	| ListeningModeMessage
+	| AudioEqMessage
+	| DisplayFieldMessage
+	| NetworkServiceMessage
+	| NetworkTrackMessage
+	| UnknownMessage;
+
+/**
  * Client events
  */
 export interface EiscpClientEvents {
@@ -69,6 +217,7 @@ export interface EiscpClientEvents {
 	stateChanged: (state: Partial<ReceiverState>) => void;
 	error: (error: Error) => void;
 	rawPacket: (direction: "sent" | "received", packet: EncodedPacket | EiscpPacket) => void;
+	message: (message: DecodedMessage) => void;
 }
 
 /**
@@ -260,6 +409,12 @@ export class EiscpClient extends EventEmitter {
 	 * Handle ISCP message and update state
 	 */
 	private handleIscpMessage(message: ReturnType<typeof parseIscpMessage>): void {
+		// Decode and emit message event for all messages
+		const decoded = this.decodeMessage(message);
+		if (decoded) {
+			this.emit("message", decoded);
+		}
+
 		const changes: Partial<ReceiverState> = {};
 
 		// Check if this is a response to a pending query (do this first for all messages)
@@ -311,6 +466,153 @@ export class EiscpClient extends EventEmitter {
 		// Update state and emit change event
 		Object.assign(this.state, changes);
 		this.emit("stateChanged", changes);
+	}
+
+	/**
+	 * Decode an ISCP message into a typed DecodedMessage
+	 */
+	private decodeMessage(message: ReturnType<typeof parseIscpMessage>): DecodedMessage | null {
+		const raw = message.raw; // Full ISCP message string
+
+		switch (message.command) {
+			case IscpCommand.POWER: {
+				return {
+					type: "power",
+					command: "PWR",
+					parameter: message.parameter,
+					on: message.parameter === PowerState.ON,
+					raw,
+				};
+			}
+
+			case IscpCommand.VOLUME: {
+				const level = parseInt(message.parameter, 16);
+				return {
+					type: "volume",
+					command: "MVL",
+					parameter: message.parameter,
+					level,
+					percent: (level / this.volumeConfig.max) * 100,
+					raw,
+				};
+			}
+
+			case IscpCommand.MUTE: {
+				return {
+					type: "mute",
+					command: "AMT",
+					parameter: message.parameter,
+					muted: message.parameter === MuteState.ON,
+					raw,
+				};
+			}
+
+			case IscpCommand.INPUT: {
+				const input = getInputByHex(message.parameter);
+				return {
+					type: "input",
+					command: "SLI",
+					parameter: message.parameter,
+					input: input
+						? {
+								name: input.name,
+								hex: input.hex,
+								decimal: input.decimal,
+							}
+						: undefined,
+					raw,
+				};
+			}
+
+			case IscpCommand.LISTENING_MODE: {
+				const mode = getListeningModeByHex(message.parameter);
+				return {
+					type: "listeningMode",
+					command: "LMD",
+					parameter: message.parameter,
+					mode: mode
+						? {
+								name: mode.name,
+								hex: mode.hex,
+								decimal: mode.decimal,
+							}
+						: undefined,
+					raw,
+				};
+			}
+
+			case "AEQ": {
+				return {
+					type: "audioEq",
+					command: "AEQ",
+					parameter: message.parameter,
+					raw,
+				};
+			}
+
+			case "FLD": {
+				// Decode hex-encoded ASCII text
+				let text: string | undefined;
+				try {
+					text = Buffer.from(message.parameter, "hex")
+						.toString("ascii")
+						.trim();
+				} catch {
+					// Keep as undefined if hex decoding fails
+				}
+				return {
+					type: "displayField",
+					command: "FLD",
+					parameter: message.parameter,
+					text,
+					raw,
+				};
+			}
+
+			case "NLS": {
+				// Parse NLS parameter: e.g., "C0P" or "U0-TuneIn"
+				const subCommand = message.parameter.charAt(0) as "C" | "U";
+				let service: { name: string; key: string } | undefined;
+
+				if (subCommand === "U" && message.parameter.includes("-")) {
+					const match = message.parameter.match(/U(\d+)-(.+)/);
+					if (match) {
+						service = {
+							key: match[1],
+							name: match[2],
+						};
+					}
+				}
+
+				return {
+					type: "networkService",
+					command: "NLS",
+					parameter: message.parameter,
+					subCommand,
+					service,
+					raw,
+				};
+			}
+
+			case "NLT": {
+				return {
+					type: "networkTrack",
+					command: "NLT",
+					parameter: message.parameter,
+					raw,
+				};
+			}
+
+			default: {
+				return {
+					type: "unknown",
+					command: message.command,
+					parameter: message.parameter,
+					raw,
+					rawMessage: message,
+				};
+			}
+		}
 	}
 
 	/**
