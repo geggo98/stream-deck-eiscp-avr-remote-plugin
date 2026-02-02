@@ -6,13 +6,17 @@
  *
  * @example
  * ```ts
- * import { discoverAirplayDevices } from './adapter/dnssd';
+ * import { discoverAirplayDevices, discoverAirplayDevicesStreaming } from './adapter/dnssd';
  *
+ * // Non-streaming (wait for timeout)
  * const result = await discoverAirplayDevices({ timeout: 5000 });
  * console.log(`Found ${result.devices.length} devices`);
- * for (const device of result.devices) {
- *   console.log(`- ${device.instanceName} at ${device.ipv4Addresses[0]}`);
- * }
+ *
+ * // Streaming (results as they arrive)
+ * await discoverAirplayDevicesStreaming({
+ *   timeout: 5000,
+ *   onDevice: (device) => console.log(`Found: ${device.instanceName}`),
+ * });
  * ```
  */
 
@@ -44,10 +48,14 @@ export {
 export {
 	discoverAirplayDevices,
 	discoverAirplayDevicesWithErrorReporting,
+	discoverAirplayDevicesStreaming,
 	getDevice,
 	type DiscoveryError,
 	type DiscoveryIntermediateResults,
 	type DiscoveryOptions,
 	type DiscoveryResult,
 	type DiscoveryResultWithErrors,
+	type StreamCallback,
+	type StreamDiscoveryEvent,
+	type StreamingDiscoveryOptions,
 } from "./controller.ts";

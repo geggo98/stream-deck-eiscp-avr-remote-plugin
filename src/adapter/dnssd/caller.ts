@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from "node:child_process";
 import { platform } from "node:os";
+import { EventEmitter } from "node:events";
 
 /**
  * Platform check - dns-sd is only available on macOS
@@ -32,6 +33,16 @@ export interface DnsSdOptions {
 	 * Additional arguments to pass to dns-sd
 	 */
 	readonly extraArgs?: readonly string[];
+	/**
+	 * Callback invoked when new stdout data arrives
+	 * @param data - The raw stdout data received so far
+	 */
+	readonly onData?: (data: string) => void;
+	/**
+	 * Callback invoked when a complete line is received
+	 * @param line - The complete line (without newline)
+	 */
+	readonly onLine?: (line: string) => void;
 }
 
 /**
@@ -57,7 +68,7 @@ export async function browseAirplayDevices(
 		args.push(...options.extraArgs);
 	}
 
-	return executeDnsSd(args, options.timeout);
+	return executeDnsSd(args, options);
 }
 
 /**
@@ -82,7 +93,7 @@ export async function lookupDevice(
 		args.push(...options.extraArgs);
 	}
 
-	return executeDnsSd(args, options.timeout);
+	return executeDnsSd(args, options);
 }
 
 /**
@@ -107,23 +118,26 @@ export async function getHostAddresses(
 		args.push(...options.extraArgs);
 	}
 
-	return executeDnsSd(args, options.timeout);
+	return executeDnsSd(args, options);
 }
 
 /**
  * Executes a dns-sd command with timeout
  *
  * @param args - Command arguments
- * @param timeout - Timeout in milliseconds (default 5000)
+ * @param options - Execution options including timeout and callbacks
  * @returns Promise resolving to the command result
  */
 async function executeDnsSd(
 	args: string[],
-	timeout = 5000,
+	options: DnsSdOptions = {},
 ): Promise<DnsSdResult> {
+	const { timeout = 5000, onData, onLine } = options;
+
 	return new Promise((resolve) => {
 		const stdoutChunks: Buffer[] = [];
 		const stderrChunks: Buffer[] = [];
+		let currentLine = "";
 
 		let child: ChildProcess;
 		let timedOut = false;
@@ -142,9 +156,32 @@ async function executeDnsSd(
 			env: { ...process.env, LC_ALL: "C" }, // Ensure consistent output format
 		});
 
-		// Collect stdout
+		// Process stdout line by line as it arrives
 		child.stdout?.on("data", (chunk: Buffer) => {
 			stdoutChunks.push(chunk);
+
+			// Convert chunk to string and process
+			const text = chunk.toString("utf-8");
+			currentLine += text;
+
+			// Process complete lines
+			const lines = currentLine.split("\n");
+			// Keep the last (potentially incomplete) line in the buffer
+			currentLine = lines.pop() ?? "";
+
+			// Call onData with accumulated output so far
+			if (onData) {
+				onData(Buffer.concat(stdoutChunks).toString("utf-8"));
+			}
+
+			// Call onLine for each complete line
+			if (onLine) {
+				for (const line of lines) {
+					if (line.length > 0) {
+						onLine(line);
+					}
+				}
+			}
 		});
 
 		// Collect stderr
@@ -156,6 +193,11 @@ async function executeDnsSd(
 		child.on("close", (exitCode, signal) => {
 			if (timeoutHandle !== undefined) {
 				clearTimeout(timeoutHandle);
+			}
+
+			// Process any remaining data in the line buffer
+			if (currentLine.length > 0 && onLine) {
+				onLine(currentLine);
 			}
 
 			resolve({

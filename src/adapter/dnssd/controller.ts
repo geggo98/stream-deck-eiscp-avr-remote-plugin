@@ -1,4 +1,4 @@
-import type { AddressResult, AirPlayDevice, LookupResult } from "./parser.ts";
+import type { AddressResult, AirPlayDevice, BrowseResult, LookupResult } from "./parser.ts";
 import {
   browseAirplayDevices,
   getHostAddresses,
@@ -14,6 +14,7 @@ import {
   parseLookupOutput,
   type ParseError,
 } from "./parser.ts";
+import { EventEmitter } from "node:events";
 
 /**
  * Raw intermediate results from the discovery process
@@ -354,3 +355,201 @@ export type {
   ParseError,
   TxtRecord,
 } from "./parser";
+
+/**
+ * Event emitted during streaming discovery
+ */
+export type StreamDiscoveryEvent =
+	| { type: "browse"; result: BrowseResult }
+	| { type: "device"; device: AirPlayDevice }
+	| { type: "error"; error: DiscoveryError }
+	| { type: "complete"; devices: readonly AirPlayDevice[]; errors: readonly DiscoveryError[] };
+
+/**
+ * Callback for streaming discovery events
+ */
+export type StreamCallback = (event: StreamDiscoveryEvent) => void;
+
+/**
+ * Extended options for streaming discovery
+ */
+export interface StreamingDiscoveryOptions extends DiscoveryOptions {
+	/**
+	 * Callback invoked when discovery events occur
+	 */
+	readonly onEvent?: StreamCallback;
+	/**
+	 * Callback invoked when a device is discovered
+	 */
+	readonly onDevice?: (device: AirPlayDevice) => void;
+	/**
+	 * Callback invoked when a browse result arrives
+	 */
+	readonly onBrowseResult?: (result: BrowseResult) => void;
+	/**
+	 * Callback invoked when an error occurs
+	 */
+	readonly onError?: (error: DiscoveryError) => void;
+}
+
+/**
+ * Discovers AirPlay devices with streaming results
+ *
+ * This function yields results as they arrive, rather than waiting for the full timeout.
+ * Devices are emitted as soon as they are discovered and resolved.
+ *
+ * @param options - Discovery options with streaming callbacks
+ * @returns Promise resolving to final discovery result
+ */
+export async function discoverAirplayDevicesStreaming(
+	options: StreamingDiscoveryOptions = {},
+): Promise<DiscoveryResultWithErrors> {
+	const {
+		timeout = 5000,
+		continueOnError = true,
+		instanceNames = [],
+		onEvent,
+		onDevice,
+		onBrowseResult,
+		onError,
+	} = options;
+
+	if (!isDnsSdAvailable()) {
+		throw new Error("dns-sd is only available on macOS");
+	}
+
+	const dnsOptions: DnsSdOptions = { timeout };
+	const errors: DiscoveryError[] = [];
+	const devices: AirPlayDevice[] = [];
+	const seenInstances = new Set<string>();
+	const lookups = new Map<string, { raw: string; parsed: LookupResult }>();
+	const addresses = new Map<string, { raw: string; parsed: readonly AddressResult[] }>();
+	const lookupPromises: Promise<void>[] = [];
+
+	/**
+	 * Lookup and resolve a single device, emitting results as they arrive
+	 */
+	async function lookupAndResolveDevice(instanceName: string): Promise<void> {
+		try {
+			const lookupResult = await lookupDevice(instanceName, dnsOptions);
+			const parsed = parseLookupOutput(lookupResult.stdout);
+			lookups.set(instanceName, { raw: lookupResult.stdout, parsed });
+
+			// Get addresses
+			const addrResult = await getHostAddresses(parsed.hostname, dnsOptions);
+			const addrParsed = parseGetAddrOutput(addrResult.stdout);
+			addresses.set(instanceName, { raw: addrResult.stdout, parsed: addrParsed });
+
+			// Combine into device
+			const device = combineDeviceInfo(parsed, addrParsed);
+			devices.push(device);
+
+			if (onDevice) {
+				onDevice(device);
+			}
+			if (onEvent) {
+				onEvent({ type: "device", device });
+			}
+		} catch (e) {
+			const error: DiscoveryError = {
+				instanceName,
+				stage: "lookup",
+				error: e instanceof Error ? e.message : String(e),
+			};
+			errors.push(error);
+
+			if (onError) {
+				onError(error);
+			}
+			if (onEvent) {
+				onEvent({ type: "error", error });
+			}
+
+			if (!continueOnError) {
+				throw e;
+			}
+		}
+	}
+
+	// Collect browse output
+	let browseOutput = "";
+	let browseOutputParsed: BrowseResult[] = [];
+
+	// Step 1: Browse for devices with streaming
+	const browseResult = await browseAirplayDevices({
+		...dnsOptions,
+		onLine: (line: string) => {
+			// Try to parse each line as it arrives
+			try {
+				const parsed = parseBrowseOutput(browseOutput + line + "\n");
+				const newResults = parsed.slice(browseOutputParsed.length);
+
+				for (const result of newResults) {
+					if (result.action === "add" && !seenInstances.has(result.instanceName)) {
+						seenInstances.add(result.instanceName);
+						if (onBrowseResult) {
+							onBrowseResult(result);
+						}
+						if (onEvent) {
+							onEvent({ type: "browse", result });
+						}
+
+						// Start lookup immediately for this device and track the promise
+						lookupPromises.push(lookupAndResolveDevice(result.instanceName));
+					}
+				}
+
+				browseOutputParsed = parsed;
+			} catch {
+				// Line may be incomplete, ignore parse errors
+			}
+			browseOutput += line + "\n";
+		},
+	});
+
+	// Final browse output
+	browseOutput = browseResult.stdout;
+	browseOutputParsed = parseBrowseOutput(browseOutput);
+
+	// Determine which instances to discover
+	let targetInstanceNames: string[];
+	if (instanceNames.length > 0) {
+		targetInstanceNames = [...instanceNames];
+	} else {
+		targetInstanceNames = [];
+		for (const result of browseOutputParsed) {
+			if (result.action === "add" && !seenInstances.has(result.instanceName)) {
+				seenInstances.add(result.instanceName);
+				targetInstanceNames.push(result.instanceName);
+			}
+		}
+	}
+
+	// Start lookups for any remaining instances
+	for (const name of targetInstanceNames) {
+		lookupPromises.push(lookupAndResolveDevice(name));
+	}
+
+	// Wait for all lookups to complete
+	await Promise.all(lookupPromises);
+
+	// Emit complete event
+	if (onEvent) {
+		onEvent({
+			type: "complete",
+			devices,
+			errors,
+		});
+	}
+
+	return {
+		devices,
+		intermediate: {
+			browseRaw: browseOutput,
+			browseParsed: browseOutputParsed,
+			lookups,
+			addresses,
+		},
+		errors,
+	};
+}

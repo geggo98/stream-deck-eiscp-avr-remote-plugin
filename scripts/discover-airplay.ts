@@ -18,7 +18,7 @@
  *   --help               Show this help message
  */
 
-import { discoverAirplayDevices, discoverAirplayDevicesWithErrorReporting } from '../src/adapter/dnssd/controller.js';
+import { discoverAirplayDevices, discoverAirplayDevicesWithErrorReporting, discoverAirplayDevicesStreaming } from '../src/adapter/dnssd/controller.js';
 import { browseAirplayDevices, lookupDevice, getHostAddresses, isDnsSdAvailable } from '../src/adapter/dnssd/caller.js';
 import { parseBrowseOutput, parseLookupOutput, parseGetAddrOutput } from '../src/adapter/dnssd/parser.js';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -261,41 +261,72 @@ async function main(): Promise<void> {
 			}
 
 			case 'full': {
-				const result = await discoverAirplayDevicesWithErrorReporting({
+				let deviceCount = 0;
+				let errorCount = 0;
+
+				console.log('\n🔍 Discovering AirPlay devices (streaming results)...\n');
+
+				const result = await discoverAirplayDevicesStreaming({
 					timeout: options.timeout,
-					includeIntermediate: true,
 					continueOnError: true,
+					onBrowseResult: (browseResult) => {
+						console.log(`  → Found: ${browseResult.instanceName} (interface: ${browseResult.interface})`);
+					},
+					onDevice: (device) => {
+						deviceCount++;
+						console.log(`\n✅ Resolved device ${deviceCount}: ${device.instanceName}`);
+						console.log(`   Hostname: ${device.hostname}`);
+						console.log(`   Port: ${device.port}`);
+						if (device.ipv4Addresses.length > 0) {
+							console.log(`   IPv4: ${device.ipv4Addresses.join(', ')}`);
+						}
+						if (device.ipv6Addresses.length > 0) {
+							console.log(`   IPv6: ${device.ipv6Addresses.join(', ')}`);
+						}
+						if (device.txtRecords.size > 0) {
+							// Show a few key metadata items
+							const model = device.txtRecords.get('model');
+							const manufacturer = device.txtRecords.get('manufacturer');
+							if (model || manufacturer) {
+								console.log(`   Info: ${manufacturer ?? ''} ${model ?? ''}`.trim());
+							}
+						}
+					},
+					onError: (error) => {
+						errorCount++;
+						console.log(`\n⚠️  Error: ${error.instanceName} (${error.stage}): ${error.error}`);
+					},
 				});
 
-				console.log(`\nFound ${result.devices.length} AirPlay devices:\n`);
-
-				for (const device of result.devices) {
-					console.log(`📺 ${device.instanceName}`);
-					console.log(`   Hostname: ${device.hostname}`);
-					console.log(`   Port: ${device.port}`);
-					if (device.ipv4Addresses.length > 0) {
-						console.log(`   IPv4: ${device.ipv4Addresses.join(', ')}`);
-					}
-					if (device.ipv6Addresses.length > 0) {
-						console.log(`   IPv6: ${device.ipv6Addresses.join(', ')}`);
-					}
-					if (device.txtRecords.size > 0) {
-						console.log(`   Metadata:`);
-						for (const [key, value] of device.txtRecords) {
-							console.log(`     ${key} = ${value}`);
-						}
-					}
-					console.log('');
-				}
-
+				console.log(`\n\n📊 Summary:`);
+				console.log(`   Total devices found: ${result.devices.length}`);
 				if (result.errors.length > 0) {
-					console.log('\n⚠️ Errors encountered:\n');
-					for (const error of result.errors) {
-						console.log(`  ${error.instanceName} (${error.stage}): ${error.error}`);
-					}
+					console.log(`   Total errors: ${result.errors.length}`);
 				}
 
-				if (options.raw) {
+				// Show detailed device info if --raw is specified
+				if (options.raw && result.devices.length > 0) {
+					console.log('\n=== DETAILED DEVICE INFO ===\n');
+					for (const device of result.devices) {
+						console.log(`📺 ${device.instanceName}`);
+						console.log(`   Hostname: ${device.hostname}`);
+						console.log(`   Port: ${device.port}`);
+						if (device.ipv4Addresses.length > 0) {
+							console.log(`   IPv4: ${device.ipv4Addresses.join(', ')}`);
+						}
+						if (device.ipv6Addresses.length > 0) {
+							console.log(`   IPv6: ${device.ipv6Addresses.join(', ')}`);
+						}
+						if (device.txtRecords.size > 0) {
+							console.log(`   Metadata:`);
+							for (const [key, value] of device.txtRecords) {
+								console.log(`     ${key} = ${value}`);
+							}
+						}
+						console.log('');
+					}
+
+					// Show raw intermediate results
 					console.log('\n=== RAW INTERMEDIATE RESULTS ===\n');
 					console.log('--- Browse Raw ---');
 					console.log(result.intermediate.browseRaw);
