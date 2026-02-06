@@ -155,3 +155,4 @@ node_modules/
 *.sdPlugin/bin
 *.sdPlugin/logs
 .claude/settings.local.json
+docs/ISCP_AVR_134.xlsx
