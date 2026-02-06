@@ -229,7 +229,7 @@ export function isQuery(message: string): boolean {
  * @returns Message without terminators
  */
 export function stripTerminators(message: string): string {
-	return message.replace(/[\x0D\x0A\x1A]+$/g, "");
+	return message.replace(/[\x0D\x0A\x1A\x19]+$/g, "");
 }
 
 /**

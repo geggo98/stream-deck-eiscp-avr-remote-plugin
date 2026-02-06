@@ -99,3 +99,25 @@ export {
 	type NetworkTrackMessage,
 	type UnknownMessage,
 } from "./client.ts";
+
+// Discovery (broadcast device discovery)
+export {
+	EISCP_PORT,
+	DEFAULT_DISCOVERY_TIMEOUT,
+	DiscoveryUnitType,
+	discoverEiscpDevices,
+	discoverEiscpDevicesStreaming,
+	createEcnQueryPacket,
+	parseEcnResponse,
+	parseDiscoveryResponse,
+	createReceiverInfo,
+	getBroadcastInterfaces,
+	dumpDiscoveryPackets,
+	formatReceiverInfo,
+	receiverToJson,
+	type DiscoveredReceiver,
+	type DiscoveryCapture,
+	type DiscoveryOptions,
+	type StreamingDiscoveryOptions,
+	type DiscoveryResult,
+} from "./discover.ts";
