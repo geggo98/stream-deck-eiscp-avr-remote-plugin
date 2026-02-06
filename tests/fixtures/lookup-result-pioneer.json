@@ -1,0 +1,29 @@
+{
+  "description": "Raw output from dns-sd -L for Schreibtisch (Pioneer VSX-S520D AV Receiver)",
+  "instanceName": "Schreibtisch",
+  "raw": "Lookup Schreibtisch._airplay._tcp.local.\nDATE: ---Sun 01 Feb 2026---\n14:14:57.839  ...STARTING...\n14:14:57.839  Schreibtisch._airplay._tcp.local. can be reached at Pioneer-VSX-S520D-F0EE61.local.:7000 (interface 14)\n acl=0 deviceid=00:09:B0:73:5E:D9 features=0x445F8A00,0x1C340 rsf=0x0 fv=p20.3.09/24314AFP flags=0x4 model=Pioneer\\ VSX-S520D\\ AV\\ Receiver manufacturer=Onkyo\\ \\&\\ Pioneer serialNumber=0009B0F0EE61 protovers=1.1 srcvers=366.0 pi=c5cef7ef-aa16-4859-94e1-9e97d0d1bc91 gid=c5cef7ef-aa16-4859-94e1-9e97d0d1bc91 gcgl=0 pk=4e33dd0dcdccd0392640e4a809ace9eec28d2bc5c70bb2402133945d18a719ce",
+  "parsed": {
+    "instanceName": "Schreibtisch",
+    "serviceType": "_airplay._tcp",
+    "domain": "local.",
+    "hostname": "Pioneer-VSX-S520D-F0EE61.local.",
+    "port": 7000,
+    "txtRecords": [
+      { "key": "acl", "value": "0" },
+      { "key": "deviceid", "value": "00:09:B0:73:5E:D9" },
+      { "key": "features", "value": "0x445F8A00,0x1C340" },
+      { "key": "rsf", "value": "0x0" },
+      { "key": "fv", "value": "p20.3.09/24314AFP" },
+      { "key": "flags", "value": "0x4" },
+      { "key": "model", "value": "Pioneer VSX-S520D AV Receiver" },
+      { "key": "manufacturer", "value": "Onkyo & Pioneer" },
+      { "key": "serialNumber", "value": "0009B0F0EE61" },
+      { "key": "protovers", "value": "1.1" },
+      { "key": "srcvers", "value": "366.0" },
+      { "key": "pi", "value": "c5cef7ef-aa16-4859-94e1-9e97d0d1bc91" },
+      { "key": "gid", "value": "c5cef7ef-aa16-4859-94e1-9e97d0d1bc91" },
+      { "key": "gcgl", "value": "0" },
+      { "key": "pk", "value": "4e33dd0dcdccd0392640e4a809ace9eec28d2bc5c70bb2402133945d18a719ce" }
+    ]
+  }
+}

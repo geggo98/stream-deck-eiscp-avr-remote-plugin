@@ -1,0 +1,270 @@
+{
+  "description": "Test fixtures for eISCP protocol encoding and decoding",
+  "packets": {
+    "power_on": {
+      "description": "Power on command",
+      "iscp_message": "!1PWR01\r",
+      "hex": "4953435000000000000000010000000012100000000131P57523010D",
+      "command": "PWR",
+      "parameter": "01",
+      "decoded": {
+        "unit": "1",
+        "command": "PWR",
+        "parameter": "01"
+      }
+    },
+    "power_off": {
+      "description": "Power off command",
+      "iscp_message": "!1PWR00\r",
+      "hex": "4953435000000000000000010000000012100000000131P57523000D",
+      "command": "PWR",
+      "parameter": "00",
+      "decoded": {
+        "unit": "1",
+        "command": "PWR",
+        "parameter": "00"
+      }
+    },
+    "power_query": {
+      "description": "Power query command",
+      "iscp_message": "!1PWRQSTN\r",
+      "hex": "4953435000000000000000010000000014100000000131P57515253541010D",
+      "command": "PWR",
+      "parameter": "QSTN",
+      "decoded": {
+        "unit": "1",
+        "command": "PWR",
+        "parameter": "QSTN"
+      }
+    },
+    "volume_set": {
+      "description": "Set volume to 40 (0x28)",
+      "iscp_message": "!1MVL28\r",
+      "hex": "4953435000000000000000010000000010C000000001314D564C32100D",
+      "command": "MVL",
+      "parameter": "28",
+      "decoded": {
+        "unit": "1",
+        "command": "MVL",
+        "parameter": "28",
+        "decimal_volume": 40
+      }
+    },
+    "volume_query": {
+      "description": "Volume query command",
+      "iscp_message": "!1MVLQSTN\r",
+      "hex": "49534350000000000000000100000000141000000001314D564C5153544E10D",
+      "command": "MVL",
+      "parameter": "QSTN",
+      "decoded": {
+        "unit": "1",
+        "command": "MVL",
+        "parameter": "QSTN"
+      }
+    },
+    "mute_on": {
+      "description": "Mute on command",
+      "iscp_message": "!1AMT01\r",
+      "hex": "49534350000000000000000100000000109000000000131414D5430110D",
+      "command": "AMT",
+      "parameter": "01",
+      "decoded": {
+        "unit": "1",
+        "command": "AMT",
+        "parameter": "01"
+      }
+    },
+    "mute_off": {
+      "description": "Mute off command",
+      "iscp_message": "!1AMT00\r",
+      "hex": "49534350000000000000000100000000109000000000131414D5430010D",
+      "command": "AMT",
+      "parameter": "00",
+      "decoded": {
+        "unit": "1",
+        "command": "AMT",
+        "parameter": "00"
+      }
+    },
+    "mute_toggle": {
+      "description": "Mute toggle command",
+      "iscp_message": "!1AMTTG\r",
+      "hex": "4953435000000000000000010000000010800000000131414D54544710D",
+      "command": "AMT",
+      "parameter": "TG",
+      "decoded": {
+        "unit": "1",
+        "command": "AMT",
+        "parameter": "TG"
+      }
+    },
+    "input_bluray": {
+      "description": "Select BLURAY/DVD input (0x10 = 16)",
+      "iscp_message": "!1SLI10\r",
+      "hex": "4953435000000000000000010000000010800000000131534C49311010D",
+      "command": "SLI",
+      "parameter": "10",
+      "decoded": {
+        "unit": "1",
+        "command": "SLI",
+        "parameter": "10",
+        "decimal_input": 16,
+        "input_name": "BLURAY/DVD"
+      }
+    },
+    "input_network": {
+      "description": "Select NETWORK input (0x2B = 43)",
+      "iscp_message": "!1SLI2B\r",
+      "hex": "4953435000000000000000010000000010800000000131534C49324210D",
+      "command": "SLI",
+      "parameter": "2B",
+      "decoded": {
+        "unit": "1",
+        "command": "SLI",
+        "parameter": "2B",
+        "decimal_input": 43,
+        "input_name": "NETWORK"
+      }
+    },
+    "input_airplay": {
+      "description": "Select AIRPLAY input (0x2D = 45)",
+      "iscp_message": "!1SLI2D\r",
+      "hex": "4953435000000000000000010000000010800000000131534C49324410D",
+      "command": "SLI",
+      "parameter": "2D",
+      "decoded": {
+        "unit": "1",
+        "command": "SLI",
+        "parameter": "2D",
+        "decimal_input": 45,
+        "input_name": "AIRPLAY"
+      }
+    },
+    "listening_mode_stereo": {
+      "description": "Set listening mode to Stereo",
+      "iscp_message": "!1LMD00\r",
+      "hex": "495343500000000000000001000000001080000000001314C4D44301010D",
+      "command": "LMD",
+      "parameter": "00",
+      "decoded": {
+        "unit": "1",
+        "command": "LMD",
+        "parameter": "00",
+        "decimal_mode": 0,
+        "mode_name": "Stereo"
+      }
+    },
+    "listening_mode_direct": {
+      "description": "Set listening mode to Direct",
+      "iscp_message": "!1LMD01\r",
+      "hex": "495343500000000000000001000000001080000000001314C4D44303110D",
+      "command": "LMD",
+      "parameter": "01",
+      "decoded": {
+        "unit": "1",
+        "command": "LMD",
+        "parameter": "01",
+        "decimal_mode": 1,
+        "mode_name": "Direct"
+      }
+    },
+    "listening_mode_thx": {
+      "description": "Set listening mode to THX Cinema (0x42 = 66)",
+      "iscp_message": "!1LMD42\r",
+      "hex": "495343500000000000000001000000001080000000001314C4D44343210D",
+      "command": "LMD",
+      "parameter": "42",
+      "decoded": {
+        "unit": "1",
+        "command": "LMD",
+        "parameter": "42",
+        "decimal_mode": 66,
+        "mode_name": "THX Cinema"
+      }
+    }
+  },
+  "responses": {
+    "power_on_response": {
+      "description": "Power on response from receiver",
+      "iscp_message": "!1PWR01\r",
+      "command": "PWR",
+      "parameter": "01",
+      "state": {
+        "power": true
+      }
+    },
+    "power_off_response": {
+      "description": "Power off response from receiver",
+      "iscp_message": "!1PWR00\r",
+      "command": "PWR",
+      "parameter": "00",
+      "state": {
+        "power": false
+      }
+    },
+    "volume_40_response": {
+      "description": "Volume at 40 (0x28) response",
+      "iscp_message": "!1MVL28\r",
+      "command": "MVL",
+      "parameter": "28",
+      "state": {
+        "volume": 40,
+        "volume_percent": 50
+      }
+    },
+    "muted_response": {
+      "description": "Mute on response",
+      "iscp_message": "!1AMT01\r",
+      "command": "AMT",
+      "parameter": "01",
+      "state": {
+        "muted": true
+      }
+    },
+    "unmuted_response": {
+      "description": "Mute off response",
+      "iscp_message": "!1AMT00\r",
+      "command": "AMT",
+      "parameter": "00",
+      "state": {
+        "muted": false
+      }
+    },
+    "input_bluray_response": {
+      "description": "Input set to BLURAY/DVD response",
+      "iscp_message": "!1SLI10\r",
+      "command": "SLI",
+      "parameter": "10",
+      "state": {
+        "input": "BLURAY/DVD"
+      }
+    },
+    "listening_mode_stereo_response": {
+      "description": "Listening mode set to Stereo response",
+      "iscp_message": "!1LMD00\r",
+      "command": "LMD",
+      "parameter": "00",
+      "state": {
+        "listening_mode": "Stereo"
+      }
+    }
+  },
+  "multiple_packets": {
+    "description": "Multiple packets in a single buffer",
+    "hex": "49534350000000000000000100000000109000000000131414D5430110D4953435000000000000000010000000010C000000001314D564C32100D",
+    "packets": [
+      {
+        "description": "First packet: Mute on",
+        "iscp_message": "!1AMT01\r",
+        "command": "AMT",
+        "parameter": "01"
+      },
+      {
+        "description": "Second packet: Volume 40",
+        "iscp_message": "!1MVL28\r",
+        "command": "MVL",
+        "parameter": "28"
+      }
+    ]
+  }
+}

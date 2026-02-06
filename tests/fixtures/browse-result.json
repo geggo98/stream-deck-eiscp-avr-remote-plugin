@@ -1,0 +1,70 @@
+{
+  "description": "Raw output from dns-sd -B _airplay._tcp showing discovered devices",
+  "raw": "Browsing for _airplay._tcp.local.\nDATE: ---Sun 01 Feb 2026---\n14:14:38.646  ...STARTING...\nTimestamp     A/R    Flags  if Domain               Service Type         Instance Name\n14:14:38.646  Add        3  14 local.               _airplay._tcp.       Katharinas MacBook Air (2)\n14:14:38.646  Add        3  25 local.               _airplay._tcp.       FCX19GT9XR\n14:14:38.646  Add        3  27 local.               _airplay._tcp.       FCX19GT9XR\n14:14:38.646  Add        3  29 local.               _airplay._tcp.       FCX19GT9XR\n14:14:38.646  Add        3   1 local.               _airplay._tcp.       FCX19GT9XR\n14:14:38.646  Add        3  14 local.               _airplay._tcp.       FCX19GT9XR\n14:14:38.646  Add        3  14 local.               _airplay._tcp.       Schreibtisch\n14:14:38.646  Add        2  14 local.               _airplay._tcp.       Schlafzimmer",
+  "parsed": [
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "14",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "Katharinas MacBook Air (2)"
+    },
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "25",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "FCX19GT9XR"
+    },
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "27",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "FCX19GT9XR"
+    },
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "29",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "FCX19GT9XR"
+    },
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "1",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "FCX19GT9XR"
+    },
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "14",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "FCX19GT9XR"
+    },
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "14",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "Schreibtisch"
+    },
+    {
+      "timestamp": 1738415678646,
+      "action": "add",
+      "interface": "14",
+      "domain": "local.",
+      "serviceType": "_airplay._tcp.",
+      "instanceName": "Schlafzimmer"
+    }
+  ]
+}

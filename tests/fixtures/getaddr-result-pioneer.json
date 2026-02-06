@@ -1,0 +1,22 @@
+{
+  "description": "Raw output from dns-sd -G v4v6 for Pioneer-VSX-S520D-F0EE61.local",
+  "hostname": "Pioneer-VSX-S520D-F0EE61.local.",
+  "raw": "DATE: ---Sun 01 Feb 2026---\n14:15:36.906  ...STARTING...\nTimestamp     A/R  Flags         IF  Hostname                               Address                                      TTL\n14:15:36.907  Add  40000003      14  Pioneer-VSX-S520D-F0EE61.local.        FE80:0000:0000:0000:0209:B0FF:FE73:5ED9%en0  120\n14:15:36.907  Add  40000003      14  Pioneer-VSX-S520D-F0EE61.local.        2003:00F2:C704:2000:0209:B0FF:FE73:5ED9%<0>  120\n14:15:36.907  Add  40000002      14  Pioneer-VSX-S520D-F0EE61.local.        10.2.0.32                                    120",
+  "parsed": [
+    {
+      "hostname": "Pioneer-VSX-S520D-F0EE61.local.",
+      "addressType": "ipv6",
+      "address": "FE80:0000:0000:0000:0209:B0FF:FE73:5ED9%en0"
+    },
+    {
+      "hostname": "Pioneer-VSX-S520D-F0EE61.local.",
+      "addressType": "ipv6",
+      "address": "2003:00F2:C704:2000:0209:B0FF:FE73:5ED9%<0>"
+    },
+    {
+      "hostname": "Pioneer-VSX-S520D-F0EE61.local.",
+      "addressType": "ipv4",
+      "address": "10.2.0.32"
+    }
+  ]
+}
