@@ -121,3 +121,22 @@ export {
 	type StreamingDiscoveryOptions,
 	type DiscoveryResult,
 } from "./discover.ts";
+
+// Network Scanner (TCP port scanning)
+export {
+	PrivateIpRange,
+	scanNetwork,
+	scanNetworkStreaming,
+	getLocalSubnets,
+	getSubnetsForRange,
+	generateIpsForSubnet,
+	checkPort,
+	formatScannedDevice,
+	scannedDeviceToJson,
+	type Subnet,
+	type ScannedDevice,
+	type ScanProgress,
+	type ScanOptions,
+	type StreamingScanOptions,
+	type ScanResult,
+} from "./network-scanner.ts";
