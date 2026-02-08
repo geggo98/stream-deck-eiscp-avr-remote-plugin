@@ -1,0 +1,3 @@
+# git-crypt encryption patterns
+*.enc.* filter=git-crypt diff=git-crypt
+*.sec.* filter=git-crypt diff=git-crypt
