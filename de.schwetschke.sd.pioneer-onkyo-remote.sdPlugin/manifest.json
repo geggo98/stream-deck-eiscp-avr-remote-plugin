@@ -1,47 +1,58 @@
 {
-	"Name": "Pioneer and Onkyo Receiver Network Remote",
-	"Version": "0.1.0.0",
-	"Author": "Stefan Schwetschke",
-	"Actions": [
-		{
-			"Name": "Counter",
-			"UUID": "de.schwetschke.sd.pioneer-onkyo-remote.increment",
-			"Icon": "imgs/actions/counter/icon",
-			"Tooltip": "Displays a count, which increments by one on press.",
-			"PropertyInspectorPath": "ui/increment-counter.html",
-			"Controllers": [
-				"Keypad"
-			],
-			"States": [
-				{
-					"Image": "imgs/actions/counter/key",
-					"TitleAlignment": "middle"
-				}
-			]
-		}
-	],
-	"Category": "Pioneer and Onkyo Receiver Network Remote",
-	"CategoryIcon": "imgs/plugin/category-icon",
-	"CodePath": "bin/plugin.js",
-	"Description": "Remote control for receivers which support ISCP (Integra Serial Control Protocol) over Ethernet (eISCP) protocol",
-	"Icon": "imgs/plugin/marketplace",
-	"SDKVersion": 3,
-	"Software": {
-		"MinimumVersion": "6.9"
-	},
-	"OS": [
-		{
-			"Platform": "mac",
-			"MinimumVersion": "12"
-		},
-		{
-			"Platform": "windows",
-			"MinimumVersion": "10"
-		}
-	],
-	"Nodejs": {
-		"Version": "20",
-		"Debug": "enabled"
-	},
-	"UUID": "de.schwetschke.sd.pioneer-onkyo-remote"
+  "Name": "Pioneer and Onkyo Receiver Network Remote",
+  "UUID": "de.schwetschke.sd.pioneer-onkyo-remote",
+  "Version": "0.1.0.0",
+  "Author": "Stefan Schwetschke",
+  "Description": "Remote control for receivers which support ISCP (Integra Serial Control Protocol) over Ethernet (eISCP) protocol",
+  "Icon": "imgs/plugin/marketplace",
+  "Category": "Pioneer and Onkyo Receiver Network Remote",
+  "CategoryIcon": "imgs/plugin/category-icon",
+  "CodePath": "bin/plugin.js",
+  "Nodejs": {
+    "Debug": "enabled",
+    "Version": "20"
+  },
+  "Software": {
+    "MinimumVersion": "6.9"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Actions": [
+    {
+      "Name": "Counter",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.increment",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Displays a count, which increments by one on press.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/increment-counter.html",
+      "States": [
+        {
+          "Image": "imgs/actions/counter/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Power Control",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.power-control",
+      "Icon": "assets/actions/power-control/icon",
+      "PropertyInspectorPath": "assets/actions/power-control/pi.html",
+      "States": [
+        {
+          "Image": "assets/actions/power-control/state0"
+        }
+      ]
+    }
+  ],
+  "SDKVersion": 3
 }
