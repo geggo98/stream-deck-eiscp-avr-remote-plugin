@@ -283,11 +283,13 @@ export function getBroadcastInterfaces(): Array<{
 	}> = [];
 
 	for (const [name, infos] of Object.entries(interfaces)) {
+		if (!infos) continue;
 		for (const info of infos) {
 			// Only IPv4 interfaces with broadcast capability
 			if (info.family === "IPv4" && !info.internal) {
 				// Use provided broadcast or calculate it from netmask
-				const broadcast = info.broadcast || calculateBroadcastAddress(info.address, info.netmask);
+				// Note: 'broadcast' exists at runtime but not in TypeScript types
+				const broadcast = (info as { broadcast?: string }).broadcast || calculateBroadcastAddress(info.address, info.netmask);
 
 				results.push({
 					address: info.address,
@@ -395,7 +397,7 @@ export async function discoverEiscpDevicesStreaming(
 
 			if (broadcastAddr) {
 				for (const { packet } of discoveryPackets) {
-					socket.send(packet.bytes, EISCP_PORT, broadcastAddr);
+					socket.send(packet.bytes as Uint8Array<ArrayBufferLike>, EISCP_PORT, broadcastAddr);
 				}
 			}
 		}

@@ -221,29 +221,6 @@ export interface EiscpClientEvents {
 }
 
 /**
- * Declares the EventEmitter signature for EiscpClient
- */
-declare interface EiscpClient {
-	on<K extends keyof EiscpClientEvents>(event: K, listener: EiscpClientEvents[K]): this;
-	once<K extends keyof EiscpClientEvents>(event: K, listener: EiscpClientEvents[K]): this;
-	off<K extends keyof EiscpClientEvents>(event: K, listener: EiscpClientEvents[K]): this;
-	emit<K extends keyof EiscpClientEvents>(
-		event: K,
-		...args: Parameters<EiscpClientEvents[K]>
-	): boolean;
-}
-
-/**
- * Mixin to add typed event methods to a class
- */
-type EventEmitterWithEvents<T> = EventEmitter & {
-	on<K extends keyof T>(event: K, listener: T[K]): this;
-	once<K extends keyof T>(event: K, listener: T[K]): this;
-	off<K extends keyof T>(event: K, listener: T[K]): this;
-	emit<K extends keyof T>(event: K, ...args: Parameters<T[K]>): boolean;
-};
-
-/**
  * eISCP Client options
  */
 export interface EiscpClientOptions extends EiscpTransportOptions {

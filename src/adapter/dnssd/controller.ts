@@ -111,7 +111,7 @@ export async function discoverAirplayDevices(
   // Filter instance names if specific ones were requested
   let targetInstanceNames: string[];
   if (instanceNames.length > 0) {
-    targetInstanceNames = instanceNames;
+    targetInstanceNames = [...instanceNames];
   } else {
     // Get unique instance names from browse results (only "add" actions)
     const seen = new Set<string>();

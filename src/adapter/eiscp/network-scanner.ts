@@ -185,6 +185,7 @@ export function getLocalSubnets(): Subnet[] {
 	const subnets = new Map<string, Subnet>();
 
 	for (const [, infos] of Object.entries(interfaces)) {
+		if (!infos) continue;
 		for (const info of infos) {
 			if (info.family === "IPv4" && !info.internal) {
 				const ip = info.address;
@@ -317,7 +318,7 @@ class ParallelLimiter {
 
 	async run<T>(fn: () => Promise<T>): Promise<T> {
 		while (this.running >= this.concurrency) {
-			await new Promise((resolve) => this.queue.push(resolve));
+			await new Promise<void>((resolve) => this.queue.push(resolve));
 		}
 
 		this.running++;

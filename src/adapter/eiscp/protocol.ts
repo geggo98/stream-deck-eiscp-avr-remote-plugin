@@ -94,10 +94,10 @@ export function encodePacket(
 
 	// Version: 0x01 followed by reserved bytes
 	const versionBuffer = Buffer.from(PacketHeader.VERSION, "latin1");
-	versionBuffer.copy(header, 12);
+	versionBuffer.copy(header as Uint8Array<ArrayBufferLike>, 12);
 
 	// Combine header and message
-	const packet = Buffer.concat([header, iscpMessageBuffer]);
+	const packet = Buffer.concat([header as Uint8Array<ArrayBufferLike>, iscpMessageBuffer as Uint8Array<ArrayBufferLike>]);
 
 	return {
 		bytes: packet,
