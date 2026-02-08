@@ -26,17 +26,17 @@
 import {
 	discoverAirplayDevicesStreaming,
 	type AirPlayDevice,
-} from "../dnssd/controller.js";
+} from "../dnssd/controller.ts";
 import {
 	discoverEiscpDevicesStreaming,
 	type DiscoveredReceiver,
 	DiscoveryUnitType,
-} from "../eiscp/discover.js";
+} from "../eiscp/discover.ts";
 import {
 	scanNetworkStreaming,
 	type ScannedDevice,
-} from "../eiscp/network-scanner.js";
-import { createClient, type ReceiverState } from "../eiscp/client.js";
+} from "../eiscp/network-scanner.ts";
+import { createClient, type ReceiverState } from "../eiscp/client.ts";
 
 /**
  * eISCP port number
@@ -60,6 +60,51 @@ export interface DiscoveredDevice {
 	source: DeviceSource;
 	/** Source-specific metadata */
 	metadata: DeviceMetadata;
+}
+
+/**
+ * Tracked device state - accumulates information from all discovery methods
+ */
+export interface TrackedDevice {
+	/** Numeric device ID (simple counter) */
+	deviceId: number;
+	/** All IP addresses associated with this device */
+	ips: string[];
+	/** Discovery sources that found this device */
+	sources: Set<DeviceSource>;
+	/** Combined metadata from all discovery methods */
+	metadata: DeviceMetadata;
+	/** Original device IDs that were merged into this device */
+	originalIds: Set<string>;
+}
+
+/**
+ * Device update event types
+ */
+export type DeviceUpdateType =
+	| "device-created" // New device discovered
+	| "ips-added" // Additional IPs discovered for existing device
+	| "metadata-airplay" // AirPlay metadata added/updated
+	| "metadata-eiscp-broadcast" // eISCP broadcast metadata added/updated
+	| "eiscp-connected"; // Successfully connected via eISCP
+
+/**
+ * Device update event
+ */
+export interface DeviceUpdate {
+	/** Numeric device ID */
+	deviceId: number;
+	/** Type of update */
+	type: DeviceUpdateType;
+	/** What changed (specific fields that were added/updated) */
+	changes: {
+		/** New IPs that were added (for ips-added) */
+		newIps?: string[];
+		/** Discovery source that triggered the update */
+		source?: DeviceSource;
+	};
+	/** Current complete device state */
+	currentState: TrackedDevice;
 }
 
 /**
@@ -133,6 +178,8 @@ export interface UnifiedDiscoveryOptions {
 	onError?: (error: EiscpConnectError) => void;
 	/** Progress callback for network scanning */
 	onScanProgress?: (progress: ScanProgress) => void;
+	/** Callback when device state is updated (new IPs, metadata, etc.) */
+	onUpdate?: (update: DeviceUpdate) => void;
 }
 
 /**
@@ -177,11 +224,25 @@ export async function discoverAllDevicesStreaming(
 	const timeout = options.timeout ?? 10000;
 	const includeNetworkScan = options.includeNetworkScan ?? false;
 
-	// Tracking maps
-	const ipToDevice = new Map<string, DiscoveredDevice>();
-	const deviceIdToIps = new Map<string, string[]>();
-	const pendingChecks = new Map<string, Promise<EiscpConnectResult | null>>();
+	// Device ID counter for numeric IDs
+	let nextDeviceId = 0;
+
+	// Tracking maps for device merging
+	// Maps: IP -> numeric device ID, identifier -> numeric device ID
+	const ipToNumericId = new Map<string, number>();
+	const identifierToNumericId = new Map<string, number>();
+
+	// Tracked devices by numeric ID
+	const trackedDevices = new Map<number, TrackedDevice>();
+
+	// Pending eISCP connection checks by numeric device ID
+	const pendingChecks = new Map<number, Promise<EiscpConnectResult | null>>();
+
+	// IPs that have been checked for eISCP connection
 	const checkedIps = new Set<string>();
+
+	// Track which numeric device ID each original ID maps to
+	const originalIdToNumericId = new Map<string, number>();
 
 	// Results
 	const connectedDevices: EiscpConnectResult[] = [];
@@ -190,6 +251,136 @@ export async function discoverAllDevicesStreaming(
 	// Semaphore for connection limiting
 	let activeConnections = 0;
 	const connectionQueue: Array<() => void> = [];
+
+	/**
+	 * Emit device update event
+	 */
+	function emitUpdate(update: DeviceUpdate): void {
+		options.onUpdate?.(update);
+	}
+
+	/**
+	 * Get or create a tracked device
+	 */
+	function getOrCreateTrackedDevice(
+		originalId: string,
+		source: DeviceSource,
+		ips: string[],
+		metadata: DeviceMetadata,
+	): { deviceId: number; isNew: boolean; tracked: TrackedDevice } {
+		// Check if this original ID already maps to a numeric ID
+		const existingNumericId = originalIdToNumericId.get(originalId);
+		if (existingNumericId !== undefined) {
+			const tracked = trackedDevices.get(existingNumericId)!;
+			return { deviceId: existingNumericId, isNew: false, tracked };
+		}
+
+		// Check if any IP already belongs to a tracked device
+		for (const ip of ips) {
+			const existingId = ipToNumericId.get(ip);
+			if (existingId !== undefined) {
+				const tracked = trackedDevices.get(existingId)!;
+				originalIdToNumericId.set(originalId, existingId);
+				return { deviceId: existingId, isNew: false, tracked };
+			}
+		}
+
+		// Check if eISCP identifier already exists
+		if (metadata.eiscpBroadcast?.identifier) {
+			const existingId = identifierToNumericId.get(
+				metadata.eiscpBroadcast.identifier,
+			);
+			if (existingId !== undefined) {
+				const tracked = trackedDevices.get(existingId)!;
+				originalIdToNumericId.set(originalId, existingId);
+				return { deviceId: existingId, isNew: false, tracked };
+			}
+		}
+
+		// Create new tracked device
+		const newDeviceId = nextDeviceId++;
+		const newDevice: TrackedDevice = {
+			deviceId: newDeviceId,
+			ips: [...ips],
+			sources: new Set([source]),
+			metadata: { ...metadata },
+			originalIds: new Set([originalId]),
+		};
+
+		trackedDevices.set(newDeviceId, newDevice);
+		originalIdToNumericId.set(originalId, newDeviceId);
+
+		// Map IPs to this device
+		for (const ip of ips) {
+			ipToNumericId.set(ip, newDeviceId);
+		}
+
+		// Map identifier if present
+		if (metadata.eiscpBroadcast?.identifier) {
+			identifierToNumericId.set(metadata.eiscpBroadcast.identifier, newDeviceId);
+		}
+
+		return { deviceId: newDeviceId, isNew: true, tracked: newDevice };
+	}
+
+	/**
+	 * Update a tracked device with new information
+	 */
+	function updateTrackedDevice(
+		numericDeviceId: number,
+		source: DeviceSource,
+		ips: string[],
+		metadata: DeviceMetadata,
+	): void {
+		const tracked = trackedDevices.get(numericDeviceId);
+		if (!tracked) return;
+
+		const updates: DeviceUpdateType[] = [];
+
+		// Check for new IPs
+		const existingIps = new Set(tracked.ips);
+		const newIps = ips.filter((ip) => !existingIps.has(ip));
+		if (newIps.length > 0) {
+			tracked.ips.push(...newIps);
+			for (const ip of newIps) {
+				ipToNumericId.set(ip, numericDeviceId);
+			}
+			updates.push("ips-added");
+		}
+
+		// Update sources
+		if (!tracked.sources.has(source)) {
+			tracked.sources.add(source);
+		}
+
+		// Update metadata
+		if (metadata.airplay && !tracked.metadata.airplay) {
+			tracked.metadata.airplay = metadata.airplay;
+			updates.push("metadata-airplay");
+		}
+		if (metadata.eiscpBroadcast && !tracked.metadata.eiscpBroadcast) {
+			tracked.metadata.eiscpBroadcast = metadata.eiscpBroadcast;
+			// Also update the identifier mapping
+			identifierToNumericId.set(metadata.eiscpBroadcast.identifier, numericDeviceId);
+			updates.push("metadata-eiscp-broadcast");
+		}
+		if (metadata.eiscpScan && !tracked.metadata.eiscpScan) {
+			tracked.metadata.eiscpScan = metadata.eiscpScan;
+		}
+
+		// Emit update events
+		for (const updateType of updates) {
+			emitUpdate({
+				deviceId: numericDeviceId,
+				type: updateType,
+				changes: {
+					newIps: updateType === "ips-added" ? newIps : undefined,
+					source,
+				},
+				currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
+			});
+		}
+	}
 
 	/**
 	 * Acquire a connection slot
@@ -217,46 +408,38 @@ export async function discoverAllDevicesStreaming(
 	}
 
 	/**
-	 * Generate a unique device ID
-	 */
-	function generateDeviceId(device: DiscoveredDevice): string {
-		// For eISCP broadcast, use the identifier
-		if (device.metadata.eiscpBroadcast?.identifier) {
-			return `eiscp-${device.metadata.eiscpBroadcast.identifier}`;
-		}
-		// For AirPlay, use hostname
-		if (device.metadata.airplay?.hostname) {
-			return `airplay-${device.metadata.airplay.hostname}`;
-		}
-		// For scan, use IP:port
-		return `${device.source}-${device.ips[0]}:${EISCP_PORT}`;
-	}
-
-	/**
 	 * Add a discovered device to tracking
 	 */
 	function addDiscoveredDevice(device: DiscoveredDevice): void {
-		const deviceId = generateDeviceId(device);
+		const { deviceId: numericDeviceId, isNew, tracked } = getOrCreateTrackedDevice(
+			device.id,
+			device.source,
+			device.ips,
+			device.metadata,
+		);
 
-		// Track IPs for this device
-		const existingIps = deviceIdToIps.get(deviceId) ?? [];
-		const newIps = [...new Set([...existingIps, ...device.ips])];
-		deviceIdToIps.set(deviceId, newIps);
-
-		// Update IP to device mapping
-		for (const ip of device.ips) {
-			if (!ipToDevice.has(ip)) {
-				ipToDevice.set(ip, { ...device, ips: newIps });
-			}
+		if (isNew) {
+			// Emit device-created update
+			emitUpdate({
+				deviceId: numericDeviceId,
+				type: "device-created",
+				changes: {
+					source: device.source,
+				},
+				currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
+			});
+		} else {
+			// Update existing device
+			updateTrackedDevice(numericDeviceId, device.source, device.ips, device.metadata);
 		}
 
-		// Notify callback
+		// Notify legacy callback
 		options.onDiscovery?.(device);
 
 		// Start eISCP connection check if not already pending
-		if (!pendingChecks.has(deviceId)) {
-			const checkPromise = checkDeviceViaEiscp(deviceId);
-			pendingChecks.set(deviceId, checkPromise);
+		if (!pendingChecks.has(numericDeviceId)) {
+			const checkPromise = checkDeviceViaEiscp(numericDeviceId);
+			pendingChecks.set(numericDeviceId, checkPromise);
 
 			checkPromise.then((result) => {
 				if (result) {
@@ -270,31 +453,28 @@ export async function discoverAllDevicesStreaming(
 	/**
 	 * Check a device by trying its IPs sequentially via eISCP
 	 */
-	async function checkDeviceViaEiscp(deviceId: string): Promise<EiscpConnectResult | null> {
-		const ips = deviceIdToIps.get(deviceId);
-		if (!ips || ips.length === 0) {
+	async function checkDeviceViaEiscp(numericDeviceId: number): Promise<EiscpConnectResult | null> {
+		const tracked = trackedDevices.get(numericDeviceId);
+		if (!tracked || tracked.ips.length === 0) {
 			// No IPs, report failure
-			const device = ipToDevice.get(Array.from(ipToDevice.keys())[0]!);
-			if (device) {
-				const errorObj = { message: "No IPs found for device" };
-				failedDevices.push({
-					deviceId,
-					ip: "unknown",
-					source: device.source,
-					error: errorObj,
-				});
-				options.onError?.({
-					deviceId,
-					ip: "unknown",
-					source: device.source,
-					error: errorObj,
-				});
-			}
+			const errorObj = { message: "No IPs found for device" };
+			failedDevices.push({
+				deviceId: numericDeviceId.toString(),
+				ip: "unknown",
+				source: Array.from(tracked?.sources ?? [])[0] ?? "eiscp-scan",
+				error: errorObj,
+			});
+			options.onError?.({
+				deviceId: numericDeviceId.toString(),
+				ip: "unknown",
+				source: Array.from(tracked?.sources ?? [])[0] ?? "eiscp-scan",
+				error: errorObj,
+			});
 			return null;
 		}
 
 		// Try each IP sequentially until one works
-		for (const ip of ips) {
+		for (const ip of tracked.ips) {
 			// Skip IPv6 addresses for eISCP (most receivers don't support it)
 			if (ip.includes(":")) {
 				continue;
@@ -307,7 +487,7 @@ export async function discoverAllDevicesStreaming(
 
 			await acquireConnection();
 			try {
-				const result = await checkEiscpAtIp(deviceId, ip);
+				const result = await checkEiscpAtIp(numericDeviceId, ip);
 				if (result) {
 					releaseConnection();
 					return result;
@@ -318,27 +498,24 @@ export async function discoverAllDevicesStreaming(
 		}
 
 		// All IPs failed
-		const device = ipToDevice.get(ips[0]!);
-		if (device) {
-			const errorObj = { message: `All ${ips.length} IPs failed eISCP connection` };
-			// Only report IPv4 addresses as failed (skip IPv6)
-			const ipv4Ips = ips.filter((ip) => !ip.includes(":"));
-			for (const ip of ipv4Ips) {
-				failedDevices.push({
-					deviceId,
-					ip,
-					source: device.source,
-					error: errorObj,
-				});
-			}
-			if (ipv4Ips.length > 0) {
-				options.onError?.({
-					deviceId,
-					ip: ipv4Ips[0]!,
-					source: device.source,
-					error: errorObj,
-				});
-			}
+		const errorObj = { message: `All ${tracked.ips.length} IPs failed eISCP connection` };
+		// Only report IPv4 addresses as failed (skip IPv6)
+		const ipv4Ips = tracked.ips.filter((ip) => !ip.includes(":"));
+		for (const ip of ipv4Ips) {
+			failedDevices.push({
+				deviceId: numericDeviceId.toString(),
+				ip,
+				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
+				error: errorObj,
+			});
+		}
+		if (ipv4Ips.length > 0) {
+			options.onError?.({
+				deviceId: numericDeviceId.toString(),
+				ip: ipv4Ips[0]!,
+				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
+				error: errorObj,
+			});
 		}
 		return null;
 	}
@@ -347,11 +524,11 @@ export async function discoverAllDevicesStreaming(
 	 * Check eISCP connection at a specific IP
 	 */
 	async function checkEiscpAtIp(
-		deviceId: string,
+		numericDeviceId: number,
 		ip: string,
 	): Promise<EiscpConnectResult | null> {
-		const device = ipToDevice.get(ip);
-		if (!device) {
+		const tracked = trackedDevices.get(numericDeviceId);
+		if (!tracked) {
 			return null;
 		}
 
@@ -398,12 +575,22 @@ export async function discoverAllDevicesStreaming(
 				await client.refreshState();
 				const state = client.getState();
 
+				// Emit eiscp-connected update
+				emitUpdate({
+					deviceId: numericDeviceId,
+					type: "eiscp-connected",
+					changes: {
+						source: Array.from(tracked.sources)[0],
+					},
+					currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
+				});
+
 				return {
-					deviceId,
-					source: device.source,
+					deviceId: numericDeviceId.toString(),
+					source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
 					connectedIp: ip,
 					deviceInfo: state,
-					metadata: device.metadata,
+					metadata: tracked.metadata,
 				};
 			} catch (error) {
 				// Connection failed, return null

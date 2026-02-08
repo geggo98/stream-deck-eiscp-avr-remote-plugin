@@ -14,12 +14,18 @@
 export {
 	discoverAllDevicesStreaming,
 	discoverAllDevices,
+	// Core types
 	type DeviceSource,
 	type DiscoveredDevice,
 	type DeviceMetadata,
+	// Result types
 	type EiscpConnectResult,
 	type EiscpConnectError,
 	type ScanProgress,
 	type UnifiedDiscoveryResult,
 	type UnifiedDiscoveryOptions,
+	// Incremental update types
+	type TrackedDevice,
+	type DeviceUpdate,
+	type DeviceUpdateType,
 } from "./unified-controller.js";

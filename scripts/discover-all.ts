@@ -27,6 +27,7 @@ import {
 	type UnifiedDiscoveryOptions,
 	type EiscpConnectResult,
 	type DiscoveredDevice,
+	type DeviceUpdate,
 } from "../src/adapter/discovery/index.js";
 
 /**
@@ -195,6 +196,73 @@ async function main(): Promise<void> {
 	let candidateCount = 0;
 	let connectedCount = 0;
 	let errorCount = 0;
+	let updateCount = 0;
+
+	/**
+	 * Format device update for display
+	 */
+	function formatDeviceUpdate(update: DeviceUpdate): string {
+		const { deviceId, type, changes, currentState } = update;
+		let output = `🔄 Device #${deviceId}:`;
+
+		switch (type) {
+			case "device-created":
+				output += ` NEW`;
+				if (changes.source) {
+					const sourceIcon =
+						changes.source === "airplay" ? "📱" :
+						changes.source === "eiscp-broadcast" ? "📺" :
+						"🔍";
+					output += ` ${sourceIcon}`;
+				}
+				output += ` ${currentState.ips.join(", ")}`;
+				if (currentState.metadata.eiscpBroadcast?.modelName) {
+					output += ` (${currentState.metadata.eiscpBroadcast.modelName})`;
+				}
+				if (currentState.metadata.airplay?.instanceName) {
+					output += ` (${currentState.metadata.airplay.instanceName})`;
+				}
+				break;
+
+			case "ips-added":
+				output += ` +IP ${changes.newIps?.join(", ") ?? ""}`;
+				break;
+
+			case "metadata-airplay":
+				output += ` +AirPlay "${currentState.metadata.airplay?.instanceName ?? ""}"`;
+				break;
+
+			case "metadata-eiscp-broadcast":
+				output += ` +eISCP "${currentState.metadata.eiscpBroadcast?.modelName ?? ""}"`;
+				if (currentState.metadata.eiscpBroadcast?.identifier) {
+					output += ` [${currentState.metadata.eiscpBroadcast.identifier}]`;
+				}
+				break;
+
+			case "eiscp-connected":
+				output += ` CONNECTED via eISCP`;
+				break;
+		}
+
+		// Show all sources if multiple
+		if (currentState.sources.size > 1) {
+			const sourceList = Array.from(currentState.sources)
+				.map((s) => {
+					switch (s) {
+						case "airplay":
+							return "📱";
+						case "eiscp-broadcast":
+							return "📺";
+						case "eiscp-scan":
+							return "🔍";
+					}
+				})
+				.join(" ");
+			output += ` [${sourceList}]`;
+		}
+
+		return output;
+	}
 
 	const result = await discoverAllDevicesStreaming({
 		...options,
@@ -205,6 +273,12 @@ async function main(): Promise<void> {
 				device.source === "eiscp-broadcast" ? "eISCP" :
 				"Scan";
 			process.stdout.write(`\r  → Found candidate: ${device.id} (${source}) [${device.ips.length} IP(s)]   \n`);
+		},
+		onUpdate: (update: DeviceUpdate) => {
+			updateCount++;
+			if (!options.json) {
+				process.stdout.write(`\n  ${formatDeviceUpdate(update)}\n`);
+			}
 		},
 		onConnect: (connectResult: EiscpConnectResult) => {
 			connectedCount++;
@@ -239,6 +313,7 @@ async function main(): Promise<void> {
 	console.log("\n\n📊 Summary:");
 	console.log(`   Discovery time: ${duration}ms`);
 	console.log(`   Candidates found: ${candidateCount}`);
+	console.log(`   Device updates: ${updateCount}`);
 	console.log(`   Connected via eISCP: ${connectedCount}`);
 	console.log(`   Failed eISCP connection: ${errorCount}`);
 	console.log(`   Check time: ${result.duration}ms`);
