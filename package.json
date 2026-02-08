@@ -8,8 +8,8 @@
     "test:eiscp:integration": "node --test tests/eiscp-integration.test.ts",
     "discover-airplay": "tsx scripts/discover-airplay.ts",
     "eiscp": "tsx scripts/eiscp-cli.ts",
-    "discover-eiscp": "tsx scripts/discover-eiscp.ts",
-    "discover-eiscp-network": "tsx scripts/discover-eiscp-network.ts",
+    "discover-eiscp-broadcast": "tsx scripts/discover-eiscp-broadcast.ts",
+    "discover-eiscp-ip-scan": "tsx scripts/discover-eiscp-ip-scan.ts",
     "discover-all": "tsx scripts/discover-all.ts"
   },
   "type": "module",
