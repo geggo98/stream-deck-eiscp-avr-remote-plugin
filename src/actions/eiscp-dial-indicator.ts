@@ -1,8 +1,9 @@
 /**
- * EiscpDialAction - Encoder/dial for text-based eISCP values
+ * EiscpDialIndicatorAction - Encoder/dial with progress bar for eISCP values
  *
- * Use for: input selector, listening mode, HDMI output, dimmer, etc.
- * Shows the current value as text on the dial display (no progress bar).
+ * Use for: master volume, center level, or any command with UP/DOWN.
+ * Stepper commands show a progress bar indicator + numeric value.
+ * Selector commands show the value name + progress bar disabled.
  * Subscribes to press command for status display (e.g. mute indicator).
  */
 
@@ -19,21 +20,25 @@ import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import { type EiscpActionSettings, resolveDeviceIp, formatCommandValue } from "./eiscp-base.ts";
 
-const logger = streamDeck.logger.createScope("EiscpDial");
+const logger = streamDeck.logger.createScope("EiscpDialIndicator");
 
-interface DialSettings extends EiscpActionSettings {
+interface DialIndicatorSettings extends EiscpActionSettings {
 	upParam?: string;
 	downParam?: string;
 	pressCommand?: string;
 	pressParam?: string;
 }
 
-@action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial" })
-export class EiscpDialAction extends SingletonAction<DialSettings> {
+@action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial-indicator" })
+export class EiscpDialIndicatorAction extends SingletonAction<DialIndicatorSettings> {
 	private unsubscribers: Map<string, (() => void)[]> = new Map();
 	private pressState: Map<string, string> = new Map();
 
-	private isPressOn(actionId: string, settings: DialSettings): boolean {
+	private getMaxValue(command: string): number {
+		return command === "MVL" ? 80 : 24;
+	}
+
+	private isPressOn(actionId: string, settings: DialIndicatorSettings): boolean {
 		const pressCmd = settings.pressCommand;
 		if (!pressCmd || pressCmd === settings.command) return false;
 		const raw = this.pressState.get(actionId);
@@ -43,28 +48,47 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 	}
 
 	private updateFeedback(
-		ev: WillAppearEvent<DialSettings>,
+		ev: WillAppearEvent<DialIndicatorSettings>,
 		command: string,
 		rawValue: string,
 	): void {
 		if (!ev.action.isDial()) return;
 
-		const label = formatCommandValue(command, rawValue);
+		const cmd = COMMAND_REGISTRY[command];
 		const pressOn = this.isPressOn(ev.action.id, ev.payload.settings);
 		const pressCmd = ev.payload.settings.pressCommand;
 		const pressDef = pressCmd ? COMMAND_REGISTRY[pressCmd] : undefined;
 
-		const title = pressOn && pressDef
-			? pressDef.name.toUpperCase()
-			: command;
+		// Title: show press command status when active, otherwise command name
+		let title: string;
+		if (pressOn && pressDef) {
+			title = pressDef.name.toUpperCase();
+		} else {
+			title = cmd?.description?.split(" ")[0] ?? command;
+		}
 
-		ev.action.setFeedback({
-			value: label,
-			title: title,
-		});
+		if (cmd?.actionType === "stepper") {
+			const num = parseInt(rawValue, 16);
+			const max = this.getMaxValue(command);
+			const percent = Math.round((num / max) * 100);
+			ev.action.setFeedback({
+				value: `${num}`,
+				title: title,
+				indicator: pressOn
+					? { value: Math.min(percent, 100), bar_fill_c: "#F44336" }
+					: { value: Math.min(percent, 100) },
+			});
+		} else {
+			const label = formatCommandValue(command, rawValue);
+			ev.action.setFeedback({
+				value: label,
+				title: title,
+				indicator: { value: 0, enabled: false },
+			});
+		}
 	}
 
-	override async onWillAppear(ev: WillAppearEvent<DialSettings>): Promise<void> {
+	override async onWillAppear(ev: WillAppearEvent<DialIndicatorSettings>): Promise<void> {
 		const { command, pressCommand } = ev.payload.settings;
 		logger.info(`onWillAppear: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
 		if (!command) {
@@ -89,10 +113,12 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 			unsubs.push(
 				mgr.onCommandUpdate(host, pressCommand, (rawValue) => {
 					this.pressState.set(actionId, rawValue);
+					// Re-render with current main command value
 					const mainValue = mgr.getCachedValue(host, command);
 					if (mainValue) this.updateFeedback(ev, command, mainValue);
 				}),
 			);
+			// Query press command state
 			mgr.queryCommand(host, pressCommand)
 				.then((val) => {
 					this.pressState.set(actionId, val);
@@ -112,7 +138,7 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 		}
 	}
 
-	override async onWillDisappear(ev: WillDisappearEvent<DialSettings>): Promise<void> {
+	override async onWillDisappear(ev: WillDisappearEvent<DialIndicatorSettings>): Promise<void> {
 		const unsubs = this.unsubscribers.get(ev.action.id);
 		if (unsubs) {
 			for (const unsub of unsubs) unsub();
@@ -121,7 +147,7 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 		this.pressState.delete(ev.action.id);
 	}
 
-	override async onDialRotate(ev: DialRotateEvent<DialSettings>): Promise<void> {
+	override async onDialRotate(ev: DialRotateEvent<DialIndicatorSettings>): Promise<void> {
 		const { command } = ev.payload.settings;
 		const upParam = ev.payload.settings.upParam ?? "UP";
 		const downParam = ev.payload.settings.downParam ?? "DOWN";
@@ -148,7 +174,7 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 		}
 	}
 
-	override async onDialDown(ev: DialDownEvent<DialSettings>): Promise<void> {
+	override async onDialDown(ev: DialDownEvent<DialIndicatorSettings>): Promise<void> {
 		const pressCommand = ev.payload.settings.pressCommand ?? ev.payload.settings.command;
 		const pressParam = ev.payload.settings.pressParam;
 

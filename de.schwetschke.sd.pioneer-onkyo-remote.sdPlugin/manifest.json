@@ -65,19 +65,41 @@
       ]
     },
     {
-      "Name": "eISCP Dial",
+      "Name": "eISCP Dial Value",
       "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial",
       "Icon": "imgs/actions/counter/icon",
-      "Tooltip": "Encoder control for eISCP commands. Use for volume, input cycling, etc.",
+      "Tooltip": "Encoder for text-based eISCP values. Use for input selector, listening mode, etc.",
       "Controllers": [
         "Encoder"
       ],
       "PropertyInspectorPath": "ui/eiscp-dial.html",
       "Encoder": {
+        "layout": "$A1",
+        "TriggerDescription": {
+          "Push": "Press action",
+          "Rotate": "Cycle values"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/actions/counter/icon"
+        }
+      ]
+    },
+    {
+      "Name": "eISCP Dial Indicator",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial-indicator",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Encoder with progress bar for numeric eISCP values. Use for volume, center level, etc.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/eiscp-dial-indicator.html",
+      "Encoder": {
         "layout": "$B1",
         "TriggerDescription": {
           "Push": "Press action",
-          "Rotate": "Adjust"
+          "Rotate": "Adjust level"
         }
       },
       "States": [

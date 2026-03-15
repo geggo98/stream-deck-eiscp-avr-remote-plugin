@@ -3,6 +3,7 @@
  *
  * Use for: power, mute, direct mode, cinema filter, etc.
  * Two visual states (off/on) with automatic state tracking.
+ * Shows current state as background color (green=on, red=muted, dark=off).
  */
 
 import {
@@ -15,7 +16,13 @@ import {
 } from "@elgato/streamdeck";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
-import { type EiscpActionSettings, resolveDeviceIp } from "./eiscp-base.ts";
+import {
+	type EiscpActionSettings,
+	resolveDeviceIp,
+	formatCommandValue,
+	generateColoredBg,
+	getToggleColor,
+} from "./eiscp-base.ts";
 
 const logger = streamDeck.logger.createScope("EiscpToggle");
 
@@ -44,6 +51,21 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 		return rawValue === this.getOnValue(settings);
 	}
 
+	private updateVisualState(
+		actionRef: WillAppearEvent<ToggleSettings>["action"],
+		command: string,
+		rawValue: string,
+		settings: ToggleSettings,
+	): void {
+		const isOn = this.isOnState(rawValue, settings);
+		logger.debug(`Visual update for ${command}: ${rawValue} -> isOn=${isOn}`);
+		if (actionRef.isKey()) {
+			actionRef.setState(isOn ? 1 : 0);
+			actionRef.setImage(generateColoredBg(getToggleColor(command, isOn)));
+			actionRef.setTitle(formatCommandValue(command, rawValue));
+		}
+	}
+
 	override async onWillAppear(ev: WillAppearEvent<ToggleSettings>): Promise<void> {
 		const { command } = ev.payload.settings;
 		logger.info(`onWillAppear: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
@@ -56,24 +78,17 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 		const mgr = ConnectionManager.getInstance();
 		const actionId = ev.action.id;
 
-		// Subscribe to command updates
+		// Subscribe to command updates (handles external changes on the receiver)
 		const unsub = mgr.onCommandUpdate(host, command, (rawValue) => {
-			const isOn = this.isOnState(rawValue, ev.payload.settings);
-			logger.debug(`State update for ${command}: ${rawValue} -> isOn=${isOn}`);
-			if (ev.action.isKey()) {
-				ev.action.setState(isOn ? 1 : 0);
-			}
+			this.updateVisualState(ev.action, command, rawValue, ev.payload.settings);
 		});
 		this.unsubscribers.set(actionId, unsub);
 
 		// Query current state
 		try {
 			const value = await mgr.queryCommand(host, command);
-			const isOn = this.isOnState(value, ev.payload.settings);
-			logger.info(`onWillAppear: Initial state for ${command}: ${value} -> isOn=${isOn}`);
-			if (ev.action.isKey()) {
-				await ev.action.setState(isOn ? 1 : 0);
-			}
+			logger.info(`onWillAppear: Initial state for ${command}: ${value}`);
+			this.updateVisualState(ev.action, command, value, ev.payload.settings);
 		} catch (err) {
 			logger.error(`onWillAppear: Query failed for ${command}: ${err}`);
 		}
