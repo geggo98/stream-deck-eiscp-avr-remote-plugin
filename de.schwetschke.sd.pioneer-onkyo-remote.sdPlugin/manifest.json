@@ -52,6 +52,61 @@
           "Image": "assets/actions/power-control/state0"
         }
       ]
+    },
+    {
+      "Name": "eISCP Button",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Send any eISCP command. Use for volume up/down, input selection, etc.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/eiscp-button.html",
+      "States": [
+        {
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "eISCP Toggle",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-toggle",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Toggle on/off eISCP commands. Use for power, mute, direct mode, etc.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/eiscp-toggle.html",
+      "States": [
+        {
+          "TitleAlignment": "middle",
+          "Name": "Off"
+        },
+        {
+          "TitleAlignment": "middle",
+          "Name": "On"
+        }
+      ]
+    },
+    {
+      "Name": "eISCP Dial",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Encoder control for eISCP commands. Use for volume, input cycling, etc.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/eiscp-dial.html",
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Rotate": "Adjust",
+          "Push": "Press action"
+        }
+      },
+      "States": [
+        {}
+      ]
     }
   ],
   "SDKVersion": 3

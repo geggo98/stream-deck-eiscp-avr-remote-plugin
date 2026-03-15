@@ -672,6 +672,22 @@ export class EiscpClient extends EventEmitter {
 		return hex;
 	}
 
+	// ===== Generic Command Interface =====
+
+	/**
+	 * Send a generic command with parameter
+	 */
+	async send(command: string, parameter: string): Promise<void> {
+		await this.sendCommand(command, parameter, { expectResponse: false });
+	}
+
+	/**
+	 * Query a generic command and return the raw parameter value
+	 */
+	async query(command: string): Promise<string> {
+		return this.sendCommand(command, "QSTN", { sendRaw: true });
+	}
+
 	// ===== Power Control =====
 
 	/**

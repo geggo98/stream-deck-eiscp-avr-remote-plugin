@@ -10,7 +10,9 @@
     "eiscp": "tsx scripts/eiscp-cli.ts",
     "discover-eiscp-broadcast": "tsx scripts/discover-eiscp-broadcast.ts",
     "discover-eiscp-ip-scan": "tsx scripts/discover-eiscp-ip-scan.ts",
-    "discover-all": "tsx scripts/discover-all.ts"
+    "discover-all": "tsx scripts/discover-all.ts",
+    "generate:commands": "tsx scripts/generate-command-registry.ts",
+    "capture:responses": "tsx scripts/capture-command-responses.ts"
   },
   "type": "module",
   "devDependencies": {
@@ -23,7 +25,8 @@
     "@types/node": "~20.15.0",
     "rollup": "^4.0.2",
     "tslib": "^2.6.2",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "yaml": "^2.8.2"
   },
   "dependencies": {
     "@elgato/streamdeck": "^2.0.0"
