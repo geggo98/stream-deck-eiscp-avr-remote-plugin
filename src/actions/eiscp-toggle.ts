@@ -17,6 +17,8 @@ import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import { type EiscpActionSettings, resolveDeviceIp } from "./eiscp-base.ts";
 
+const logger = streamDeck.logger.createScope("EiscpToggle");
+
 interface ToggleSettings extends EiscpActionSettings {
 	onValue?: string;
 	offValue?: string;
@@ -44,7 +46,11 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 
 	override async onWillAppear(ev: WillAppearEvent<ToggleSettings>): Promise<void> {
 		const { command } = ev.payload.settings;
-		if (!command) return;
+		logger.info(`onWillAppear: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
+		if (!command) {
+			logger.warn("onWillAppear: No command configured, skipping");
+			return;
+		}
 
 		const host = resolveDeviceIp(ev.payload.settings);
 		const mgr = ConnectionManager.getInstance();
@@ -53,6 +59,7 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 		// Subscribe to command updates
 		const unsub = mgr.onCommandUpdate(host, command, (rawValue) => {
 			const isOn = this.isOnState(rawValue, ev.payload.settings);
+			logger.debug(`State update for ${command}: ${rawValue} -> isOn=${isOn}`);
 			if (ev.action.isKey()) {
 				ev.action.setState(isOn ? 1 : 0);
 			}
@@ -63,11 +70,12 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 		try {
 			const value = await mgr.queryCommand(host, command);
 			const isOn = this.isOnState(value, ev.payload.settings);
+			logger.info(`onWillAppear: Initial state for ${command}: ${value} -> isOn=${isOn}`);
 			if (ev.action.isKey()) {
 				await ev.action.setState(isOn ? 1 : 0);
 			}
-		} catch {
-			// Leave in default state
+		} catch (err) {
+			logger.error(`onWillAppear: Query failed for ${command}: ${err}`);
 		}
 	}
 
@@ -81,7 +89,9 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 
 	override async onKeyDown(ev: KeyDownEvent<ToggleSettings>): Promise<void> {
 		const { command } = ev.payload.settings;
+		logger.info(`onKeyDown: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
 		if (!command) {
+			logger.warn("onKeyDown: No command configured, showing alert");
 			ev.action.showAlert();
 			return;
 		}
@@ -93,6 +103,7 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 		try {
 			// Prefer TG (toggle) command if available
 			if (cmd?.toggleValue) {
+				logger.info(`onKeyDown: Using toggle value ${cmd.toggleValue} for ${command}`);
 				await mgr.sendCommand(host, command, cmd.toggleValue);
 			} else {
 				// Flip based on cached state
@@ -101,11 +112,12 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 				const newValue = isOn
 					? this.getOffValue(ev.payload.settings)
 					: this.getOnValue(ev.payload.settings);
+				logger.info(`onKeyDown: Flipping ${command}: cached=${cached}, isOn=${isOn}, sending=${newValue}`);
 				await mgr.sendCommand(host, command, newValue);
 			}
 			if (ev.action.isKey()) ev.action.showOk();
 		} catch (err) {
-			streamDeck.logger.error(`Toggle action error: ${err}`);
+			logger.error(`onKeyDown: Toggle ${command} failed: ${err}`);
 			ev.action.showAlert();
 		}
 	}

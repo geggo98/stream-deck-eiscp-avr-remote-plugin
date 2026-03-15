@@ -18,6 +18,8 @@ import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import { type EiscpActionSettings, resolveDeviceIp, formatCommandValue } from "./eiscp-base.ts";
 
+const logger = streamDeck.logger.createScope("EiscpDial");
+
 interface DialSettings extends EiscpActionSettings {
 	upParam?: string;
 	downParam?: string;
@@ -58,7 +60,11 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 
 	override async onWillAppear(ev: WillAppearEvent<DialSettings>): Promise<void> {
 		const { command } = ev.payload.settings;
-		if (!command) return;
+		logger.info(`onWillAppear: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
+		if (!command) {
+			logger.warn("onWillAppear: No command configured, skipping");
+			return;
+		}
 
 		const host = resolveDeviceIp(ev.payload.settings);
 		const mgr = ConnectionManager.getInstance();
@@ -77,9 +83,10 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 		// Query current state
 		try {
 			const value = await mgr.queryCommand(host, command);
+			logger.info(`onWillAppear: Initial state for ${command}: ${value}`);
 			this.updateFeedback(ev, command, value);
-		} catch {
-			// Leave as default
+		} catch (err) {
+			logger.error(`onWillAppear: Query failed for ${command}: ${err}`);
 		}
 	}
 
@@ -96,7 +103,9 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 		const upParam = ev.payload.settings.upParam ?? "UP";
 		const downParam = ev.payload.settings.downParam ?? "DOWN";
 
+		logger.info(`onDialRotate: command=${command}, ticks=${ev.payload.ticks}`);
 		if (!command) {
+			logger.warn("onDialRotate: No command configured, ignoring rotation");
 			return;
 		}
 
@@ -107,11 +116,12 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 		const count = Math.abs(ticks);
 
 		try {
+			logger.debug(`onDialRotate: Sending ${command} ${param} x${count}`);
 			for (let i = 0; i < count; i++) {
 				await mgr.sendCommand(host, command, param);
 			}
 		} catch (err) {
-			streamDeck.logger.error(`Dial rotate error: ${err}`);
+			logger.error(`onDialRotate: ${command} ${param} failed: ${err}`);
 		}
 	}
 
@@ -119,7 +129,9 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 		const pressCommand = ev.payload.settings.pressCommand ?? ev.payload.settings.command;
 		const pressParam = ev.payload.settings.pressParam;
 
+		logger.info(`onDialDown: pressCommand=${pressCommand}, pressParam=${pressParam}`);
 		if (!pressCommand || !pressParam) {
+			logger.warn(`onDialDown: Missing pressCommand=${pressCommand} or pressParam=${pressParam}, ignoring`);
 			return;
 		}
 
@@ -128,8 +140,9 @@ export class EiscpDialAction extends SingletonAction<DialSettings> {
 
 		try {
 			await mgr.sendCommand(host, pressCommand, pressParam);
+			logger.info(`onDialDown: ${pressCommand} ${pressParam} sent successfully`);
 		} catch (err) {
-			streamDeck.logger.error(`Dial press error: ${err}`);
+			logger.error(`onDialDown: ${pressCommand} ${pressParam} failed: ${err}`);
 		}
 	}
 }

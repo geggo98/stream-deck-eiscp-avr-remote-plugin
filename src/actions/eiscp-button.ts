@@ -16,6 +16,8 @@ import {
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { type EiscpActionSettings, resolveDeviceIp, formatCommandValue } from "./eiscp-base.ts";
 
+const logger = streamDeck.logger.createScope("EiscpButton");
+
 interface ButtonSettings extends EiscpActionSettings {
 	parameter?: string;
 }
@@ -26,7 +28,9 @@ export class EiscpButtonAction extends SingletonAction<ButtonSettings> {
 
 	override async onWillAppear(ev: WillAppearEvent<ButtonSettings>): Promise<void> {
 		const { command } = ev.payload.settings;
+		logger.info(`onWillAppear: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
 		if (!command) {
+			logger.warn("onWillAppear: No command configured, showing '?'");
 			await ev.action.setTitle("?");
 			return;
 		}
@@ -37,6 +41,7 @@ export class EiscpButtonAction extends SingletonAction<ButtonSettings> {
 
 		// Subscribe to command updates
 		const unsub = mgr.onCommandUpdate(host, command, (rawValue) => {
+			logger.debug(`State update for ${command}: ${rawValue}`);
 			ev.action.setTitle(formatCommandValue(command, rawValue));
 		});
 		this.unsubscribers.set(actionId, unsub);
@@ -45,7 +50,8 @@ export class EiscpButtonAction extends SingletonAction<ButtonSettings> {
 		try {
 			const value = await mgr.queryCommand(host, command);
 			await ev.action.setTitle(formatCommandValue(command, value));
-		} catch {
+		} catch (err) {
+			logger.error(`onWillAppear: Query failed for ${command}: ${err}`);
 			await ev.action.setTitle(command);
 		}
 	}
@@ -60,7 +66,9 @@ export class EiscpButtonAction extends SingletonAction<ButtonSettings> {
 
 	override async onKeyDown(ev: KeyDownEvent<ButtonSettings>): Promise<void> {
 		const { command, parameter } = ev.payload.settings;
+		logger.info(`onKeyDown: command=${command}, parameter=${parameter}, host=${resolveDeviceIp(ev.payload.settings)}`);
 		if (!command || !parameter) {
+			logger.warn(`onKeyDown: Missing command=${command} or parameter=${parameter}, showing alert`);
 			ev.action.showAlert();
 			return;
 		}
@@ -70,9 +78,10 @@ export class EiscpButtonAction extends SingletonAction<ButtonSettings> {
 
 		try {
 			await mgr.sendCommand(host, command, parameter);
+			logger.info(`onKeyDown: Command ${command} ${parameter} sent successfully`);
 			ev.action.showOk();
 		} catch (err) {
-			streamDeck.logger.error(`Button action error: ${err}`);
+			logger.error(`onKeyDown: Command ${command} ${parameter} failed: ${err}`);
 			ev.action.showAlert();
 		}
 	}
