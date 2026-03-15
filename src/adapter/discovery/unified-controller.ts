@@ -562,7 +562,7 @@ export async function discoverAllDevicesStreaming(
 						client.off("error", onError);
 						resolve();
 					})
-					.catch((err) => {
+					.catch((err: unknown) => {
 						clearTimeout(timeout);
 						client.off("error", onError);
 						client.disconnect();
@@ -605,7 +605,7 @@ export async function discoverAllDevicesStreaming(
 	}
 
 	// Run all discovery methods in parallel
-	const discoveryPromises: Promise<void>[] = [];
+	const discoveryPromises: Promise<unknown>[] = [];
 
 	// 1. AirPlay discovery (macOS only) - discovers IPs to try eISCP on
 	const airplayPromise = discoverAirplayDevicesStreaming({

@@ -50,28 +50,6 @@ export interface EiscpTransportEvents {
 }
 
 /**
- * Declares the EventEmitter signature for EiscpTransport
- */
-declare interface EiscpTransport {
-	on<K extends keyof EiscpTransportEvents>(
-		event: K,
-		listener: EiscpTransportEvents[K],
-	): this;
-	once<K extends keyof EiscpTransportEvents>(
-		event: K,
-		listener: EiscpTransportEvents[K],
-	): this;
-	off<K extends keyof EiscpTransportEvents>(
-		event: K,
-		listener: EiscpTransportEvents[K],
-	): this;
-	emit<K extends keyof EiscpTransportEvents>(
-		event: K,
-		...args: Parameters<EiscpTransportEvents[K]>
-	): boolean;
-}
-
-/**
  * eISCP Network Transport
  *
  * Manages TCP connection to the receiver and handles raw packet transmission.
@@ -195,7 +173,7 @@ export class EiscpTransport extends EventEmitter {
 
 		this.socket.on("data", (data: Buffer) => {
 			// Append to receive buffer
-			this.receiveBuffer = Buffer.concat([this.receiveBuffer, data]);
+			this.receiveBuffer = Buffer.concat([this.receiveBuffer as Uint8Array<ArrayBufferLike>, data as Uint8Array<ArrayBufferLike>]);
 
 			// Try to decode complete packets
 			this.processReceiveBuffer();
@@ -295,7 +273,7 @@ export class EiscpTransport extends EventEmitter {
 			throw new Error("Not connected to receiver");
 		}
 
-		this.socket?.write(data);
+		this.socket?.write(data as Uint8Array<ArrayBufferLike>);
 	}
 
 	/**

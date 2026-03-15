@@ -221,29 +221,6 @@ export interface EiscpClientEvents {
 }
 
 /**
- * Declares the EventEmitter signature for EiscpClient
- */
-declare interface EiscpClient {
-	on<K extends keyof EiscpClientEvents>(event: K, listener: EiscpClientEvents[K]): this;
-	once<K extends keyof EiscpClientEvents>(event: K, listener: EiscpClientEvents[K]): this;
-	off<K extends keyof EiscpClientEvents>(event: K, listener: EiscpClientEvents[K]): this;
-	emit<K extends keyof EiscpClientEvents>(
-		event: K,
-		...args: Parameters<EiscpClientEvents[K]>
-	): boolean;
-}
-
-/**
- * Mixin to add typed event methods to a class
- */
-type EventEmitterWithEvents<T> = EventEmitter & {
-	on<K extends keyof T>(event: K, listener: T[K]): this;
-	once<K extends keyof T>(event: K, listener: T[K]): this;
-	off<K extends keyof T>(event: K, listener: T[K]): this;
-	emit<K extends keyof T>(event: K, ...args: Parameters<T[K]>): boolean;
-};
-
-/**
  * eISCP Client options
  */
 export interface EiscpClientOptions extends EiscpTransportOptions {
@@ -693,6 +670,22 @@ export class EiscpClient extends EventEmitter {
 		const capped = Math.min(volume, this.volumeConfig.cap);
 		const hex = Math.round(capped).toString(16).toUpperCase().padStart(2, "0");
 		return hex;
+	}
+
+	// ===== Generic Command Interface =====
+
+	/**
+	 * Send a generic command with parameter
+	 */
+	async send(command: string, parameter: string): Promise<void> {
+		await this.sendCommand(command, parameter, { expectResponse: false });
+	}
+
+	/**
+	 * Query a generic command and return the raw parameter value
+	 */
+	async query(command: string): Promise<string> {
+		return this.sendCommand(command, "QSTN", { sendRaw: true });
 	}
 
 	// ===== Power Control =====

@@ -1,47 +1,91 @@
 {
-	"Name": "Pioneer and Onkyo Receiver Network Remote",
-	"Version": "0.1.0.0",
-	"Author": "Stefan Schwetschke",
-	"Actions": [
-		{
-			"Name": "Counter",
-			"UUID": "de.schwetschke.sd.pioneer-onkyo-remote.increment",
-			"Icon": "imgs/actions/counter/icon",
-			"Tooltip": "Displays a count, which increments by one on press.",
-			"PropertyInspectorPath": "ui/increment-counter.html",
-			"Controllers": [
-				"Keypad"
-			],
-			"States": [
-				{
-					"Image": "imgs/actions/counter/key",
-					"TitleAlignment": "middle"
-				}
-			]
-		}
-	],
-	"Category": "Pioneer and Onkyo Receiver Network Remote",
-	"CategoryIcon": "imgs/plugin/category-icon",
-	"CodePath": "bin/plugin.js",
-	"Description": "Remote control for receivers which support ISCP (Integra Serial Control Protocol) over Ethernet (eISCP) protocol",
-	"Icon": "imgs/plugin/marketplace",
-	"SDKVersion": 3,
-	"Software": {
-		"MinimumVersion": "6.9"
-	},
-	"OS": [
-		{
-			"Platform": "mac",
-			"MinimumVersion": "12"
-		},
-		{
-			"Platform": "windows",
-			"MinimumVersion": "10"
-		}
-	],
-	"Nodejs": {
-		"Version": "20",
-		"Debug": "enabled"
-	},
-	"UUID": "de.schwetschke.sd.pioneer-onkyo-remote"
+  "Name": "Pioneer and Onkyo Receiver Network Remote",
+  "UUID": "de.schwetschke.sd.pioneer-onkyo-remote",
+  "Version": "0.1.0.0",
+  "Author": "Stefan Schwetschke",
+  "Description": "Remote control for receivers which support ISCP (Integra Serial Control Protocol) over Ethernet (eISCP) protocol",
+  "Icon": "imgs/plugin/marketplace",
+  "Category": "Pioneer and Onkyo Receiver Network Remote",
+  "CategoryIcon": "imgs/plugin/category-icon",
+  "CodePath": "bin/plugin.js",
+  "Nodejs": {
+    "Debug": "enabled",
+    "Version": "20"
+  },
+  "Software": {
+    "MinimumVersion": "6.9"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Actions": [
+    {
+      "Name": "eISCP Button",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Send any eISCP command. Use for volume up/down, input selection, etc.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/eiscp-button.html",
+      "States": [
+        {
+          "Image": "imgs/actions/counter/icon",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "eISCP Toggle",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-toggle",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Toggle on/off eISCP commands. Use for power, mute, direct mode, etc.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/eiscp-toggle.html",
+      "States": [
+        {
+          "Name": "Off",
+          "Image": "imgs/actions/counter/icon",
+          "TitleAlignment": "middle"
+        },
+        {
+          "Name": "On",
+          "Image": "imgs/actions/counter/icon",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "eISCP Dial",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial",
+      "Icon": "imgs/actions/counter/icon",
+      "Tooltip": "Encoder control for eISCP commands. Use for volume, input cycling, etc.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/eiscp-dial.html",
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Press action",
+          "Rotate": "Adjust"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/actions/counter/icon"
+        }
+      ]
+    }
+  ],
+  "SDKVersion": 3
 }

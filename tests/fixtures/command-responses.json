@@ -1,0 +1,7 @@
+{
+  "capturedAt": null,
+  "host": null,
+  "port": 60128,
+  "note": "Placeholder. Run 'npm run capture:responses' with EISCP_HOST set to capture real device responses.",
+  "responses": []
+}

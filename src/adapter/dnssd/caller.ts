@@ -171,7 +171,7 @@ async function executeDnsSd(
 
 			// Call onData with accumulated output so far
 			if (onData) {
-				onData(Buffer.concat(stdoutChunks).toString("utf-8"));
+				onData(Buffer.concat(stdoutChunks as Uint8Array[]).toString("utf-8"));
 			}
 
 			// Call onLine for each complete line
@@ -201,8 +201,8 @@ async function executeDnsSd(
 			}
 
 			resolve({
-				stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
-				stderr: Buffer.concat(stderrChunks).toString("utf-8"),
+				stdout: Buffer.concat(stdoutChunks as Uint8Array[]).toString("utf-8"),
+				stderr: Buffer.concat(stderrChunks as Uint8Array[]).toString("utf-8"),
 				exitCode: timedOut ? null : exitCode,
 				signal: timedOut ? null : signal,
 				timedOut,
@@ -216,7 +216,7 @@ async function executeDnsSd(
 			}
 
 			resolve({
-				stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
+				stdout: Buffer.concat(stdoutChunks as Uint8Array[]).toString("utf-8"),
 				stderr: error.message,
 				exitCode: null,
 				signal: null,

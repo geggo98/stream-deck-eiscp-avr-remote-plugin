@@ -27,7 +27,6 @@ export {
 	MuteState,
 	InputSource,
 	ListeningMode,
-	IscpCommand,
 	NetworkService,
 	UnitType,
 	Terminator,
