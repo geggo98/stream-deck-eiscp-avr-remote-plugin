@@ -18,15 +18,18 @@ import {
 } from "@elgato/streamdeck";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
-import { type EiscpActionSettings, resolveDeviceIp, formatCommandValue } from "./eiscp-base.ts";
+import { type EiscpActionSettings, resolveDeviceIp, resolveParam, formatCommandValue } from "./eiscp-base.ts";
 
 const logger = streamDeck.logger.createScope("EiscpDialIndicator");
 
 interface DialIndicatorSettings extends EiscpActionSettings {
 	upParam?: string;
+	customUpParam?: string;
 	downParam?: string;
+	customDownParam?: string;
 	pressCommand?: string;
 	pressParam?: string;
+	customPressParam?: string;
 }
 
 @action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial-indicator" })
@@ -149,8 +152,8 @@ export class EiscpDialIndicatorAction extends SingletonAction<DialIndicatorSetti
 
 	override async onDialRotate(ev: DialRotateEvent<DialIndicatorSettings>): Promise<void> {
 		const { command } = ev.payload.settings;
-		const upParam = ev.payload.settings.upParam ?? "UP";
-		const downParam = ev.payload.settings.downParam ?? "DOWN";
+		const upParam = resolveParam(ev.payload.settings.upParam, ev.payload.settings.customUpParam, "UP");
+		const downParam = resolveParam(ev.payload.settings.downParam, ev.payload.settings.customDownParam, "DOWN");
 
 		logger.info(`onDialRotate: command=${command}, ticks=${ev.payload.ticks}`);
 		if (!command) {
@@ -176,7 +179,7 @@ export class EiscpDialIndicatorAction extends SingletonAction<DialIndicatorSetti
 
 	override async onDialDown(ev: DialDownEvent<DialIndicatorSettings>): Promise<void> {
 		const pressCommand = ev.payload.settings.pressCommand ?? ev.payload.settings.command;
-		const pressParam = ev.payload.settings.pressParam;
+		const pressParam = resolveParam(ev.payload.settings.pressParam, ev.payload.settings.customPressParam);
 
 		logger.info(`onDialDown: pressCommand=${pressCommand}, pressParam=${pressParam}`);
 		if (!pressCommand || !pressParam) {

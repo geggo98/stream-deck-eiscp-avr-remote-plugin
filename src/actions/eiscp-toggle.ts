@@ -19,6 +19,7 @@ import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import {
 	type EiscpActionSettings,
 	resolveDeviceIp,
+	resolveParam,
 	formatCommandValue,
 	generateColoredBg,
 	getToggleColor,
@@ -28,7 +29,9 @@ const logger = streamDeck.logger.createScope("EiscpToggle");
 
 interface ToggleSettings extends EiscpActionSettings {
 	onValue?: string;
+	customOnValue?: string;
 	offValue?: string;
+	customOffValue?: string;
 }
 
 @action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-toggle" })
@@ -36,13 +39,15 @@ export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
 	private unsubscribers: Map<string, () => void> = new Map();
 
 	private getOnValue(settings: ToggleSettings): string {
-		if (settings.onValue) return settings.onValue;
+		const resolved = resolveParam(settings.onValue, settings.customOnValue);
+		if (resolved) return resolved;
 		const cmd = settings.command ? COMMAND_REGISTRY[settings.command] : undefined;
 		return cmd?.onValue ?? "01";
 	}
 
 	private getOffValue(settings: ToggleSettings): string {
-		if (settings.offValue) return settings.offValue;
+		const resolved = resolveParam(settings.offValue, settings.customOffValue);
+		if (resolved) return resolved;
 		const cmd = settings.command ? COMMAND_REGISTRY[settings.command] : undefined;
 		return cmd?.offValue ?? "00";
 	}

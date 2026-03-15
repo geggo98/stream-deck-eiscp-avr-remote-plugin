@@ -55,17 +55,34 @@
     </sdpi-item>
 
     <sdpi-item label="Parameter">
-        <sdpi-textfield setting="parameter" placeholder="e.g. UP, DOWN, 01, TG"></sdpi-textfield>
+        <sdpi-select setting="parameter" placeholder="Select parameter...">
+            <option value="UP">Up (UP)</option>
+            <option value="DOWN">Down (DOWN)</option>
+            <option value="TG">Toggle (TG)</option>
+            <option value="01">On (01)</option>
+            <option value="00">Off (00)</option>
+            <option value="QSTN">Query (QSTN)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Parameter" id="customParameterItem" style="display: none;">
+        <sdpi-textfield setting="customParameter" placeholder="e.g. 02, FF"></sdpi-textfield>
     </sdpi-item>
 
     <script>
-        const deviceIpEl = document.querySelector('[setting="deviceIp"]');
-        const customIpItem = document.getElementById('customIpItem');
-        if (deviceIpEl) {
-            deviceIpEl.addEventListener('change', () => {
-                customIpItem.style.display = deviceIpEl.value === 'custom' ? 'block' : 'none';
-            });
+        function setupCustomToggle(selectSetting, customItemId) {
+            const selectEl = document.querySelector('[setting="' + selectSetting + '"]');
+            const customItem = document.getElementById(customItemId);
+            if (!selectEl || !customItem) return;
+            function update() {
+                customItem.style.display = selectEl.value === 'custom' ? 'block' : 'none';
+            }
+            selectEl.addEventListener('valuechange', update);
+            setTimeout(update, 200);
         }
+        setupCustomToggle('deviceIp', 'customIpItem');
+        setupCustomToggle('parameter', 'customParameterItem');
     </script>
 </body>
 

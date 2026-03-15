@@ -37,21 +37,45 @@
     </sdpi-item>
 
     <sdpi-item label="On Value">
-        <sdpi-textfield setting="onValue" placeholder="01 (default)"></sdpi-textfield>
+        <sdpi-select setting="onValue" placeholder="Select on value...">
+            <option value="01">On (01)</option>
+            <option value="TG">Toggle (TG)</option>
+            <option value="UP">Up (UP)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom On Value" id="customOnValueItem" style="display: none;">
+        <sdpi-textfield setting="customOnValue" placeholder="e.g. 02, FF"></sdpi-textfield>
     </sdpi-item>
 
     <sdpi-item label="Off Value">
-        <sdpi-textfield setting="offValue" placeholder="00 (default)"></sdpi-textfield>
+        <sdpi-select setting="offValue" placeholder="Select off value...">
+            <option value="00">Off (00)</option>
+            <option value="TG">Toggle (TG)</option>
+            <option value="DOWN">Down (DOWN)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Off Value" id="customOffValueItem" style="display: none;">
+        <sdpi-textfield setting="customOffValue" placeholder="e.g. 02, FF"></sdpi-textfield>
     </sdpi-item>
 
     <script>
-        const deviceIpEl = document.querySelector('[setting="deviceIp"]');
-        const customIpItem = document.getElementById('customIpItem');
-        if (deviceIpEl) {
-            deviceIpEl.addEventListener('change', () => {
-                customIpItem.style.display = deviceIpEl.value === 'custom' ? 'block' : 'none';
-            });
+        function setupCustomToggle(selectSetting, customItemId) {
+            const selectEl = document.querySelector('[setting="' + selectSetting + '"]');
+            const customItem = document.getElementById(customItemId);
+            if (!selectEl || !customItem) return;
+            function update() {
+                customItem.style.display = selectEl.value === 'custom' ? 'block' : 'none';
+            }
+            selectEl.addEventListener('valuechange', update);
+            setTimeout(update, 200);
         }
+        setupCustomToggle('deviceIp', 'customIpItem');
+        setupCustomToggle('onValue', 'customOnValueItem');
+        setupCustomToggle('offValue', 'customOffValueItem');
     </script>
 </body>
 

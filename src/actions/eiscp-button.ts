@@ -14,12 +14,13 @@ import {
 	streamDeck,
 } from "@elgato/streamdeck";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
-import { type EiscpActionSettings, resolveDeviceIp, formatCommandValue } from "./eiscp-base.ts";
+import { type EiscpActionSettings, resolveDeviceIp, resolveParam, formatCommandValue } from "./eiscp-base.ts";
 
 const logger = streamDeck.logger.createScope("EiscpButton");
 
 interface ButtonSettings extends EiscpActionSettings {
 	parameter?: string;
+	customParameter?: string;
 }
 
 @action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button" })
@@ -65,7 +66,8 @@ export class EiscpButtonAction extends SingletonAction<ButtonSettings> {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<ButtonSettings>): Promise<void> {
-		const { command, parameter } = ev.payload.settings;
+		const { command } = ev.payload.settings;
+		const parameter = resolveParam(ev.payload.settings.parameter, ev.payload.settings.customParameter);
 		logger.info(`onKeyDown: command=${command}, parameter=${parameter}, host=${resolveDeviceIp(ev.payload.settings)}`);
 		if (!command || !parameter) {
 			logger.warn(`onKeyDown: Missing command=${command} or parameter=${parameter}, showing alert`);

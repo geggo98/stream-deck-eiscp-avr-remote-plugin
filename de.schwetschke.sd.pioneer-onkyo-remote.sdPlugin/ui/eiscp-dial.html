@@ -39,11 +39,25 @@
     </sdpi-item>
 
     <sdpi-item label="Up Parameter">
-        <sdpi-textfield setting="upParam" placeholder="UP (default)"></sdpi-textfield>
+        <sdpi-select setting="upParam" placeholder="Select up parameter...">
+            <option value="UP">Up (UP)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Up Param" id="customUpParamItem" style="display: none;">
+        <sdpi-textfield setting="customUpParam" placeholder="e.g. 01, FF"></sdpi-textfield>
     </sdpi-item>
 
     <sdpi-item label="Down Parameter">
-        <sdpi-textfield setting="downParam" placeholder="DOWN (default)"></sdpi-textfield>
+        <sdpi-select setting="downParam" placeholder="Select down parameter...">
+            <option value="DOWN">Down (DOWN)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Down Param" id="customDownParamItem" style="display: none;">
+        <sdpi-textfield setting="customDownParam" placeholder="e.g. 01, FF"></sdpi-textfield>
     </sdpi-item>
 
     <div class="sdpi-divider" style="margin: 16px 0;"></div>
@@ -58,17 +72,34 @@
     </sdpi-item>
 
     <sdpi-item label="Press Parameter">
-        <sdpi-textfield setting="pressParam" placeholder="e.g. TG, 01"></sdpi-textfield>
+        <sdpi-select setting="pressParam" placeholder="Select press parameter...">
+            <option value="TG">Toggle (TG)</option>
+            <option value="01">On (01)</option>
+            <option value="00">Off (00)</option>
+            <option value="QSTN">Query (QSTN)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Press Param" id="customPressParamItem" style="display: none;">
+        <sdpi-textfield setting="customPressParam" placeholder="e.g. 02, FF"></sdpi-textfield>
     </sdpi-item>
 
     <script>
-        const deviceIpEl = document.querySelector('[setting="deviceIp"]');
-        const customIpItem = document.getElementById('customIpItem');
-        if (deviceIpEl) {
-            deviceIpEl.addEventListener('change', () => {
-                customIpItem.style.display = deviceIpEl.value === 'custom' ? 'block' : 'none';
-            });
+        function setupCustomToggle(selectSetting, customItemId) {
+            const selectEl = document.querySelector('[setting="' + selectSetting + '"]');
+            const customItem = document.getElementById(customItemId);
+            if (!selectEl || !customItem) return;
+            function update() {
+                customItem.style.display = selectEl.value === 'custom' ? 'block' : 'none';
+            }
+            selectEl.addEventListener('valuechange', update);
+            setTimeout(update, 200);
         }
+        setupCustomToggle('deviceIp', 'customIpItem');
+        setupCustomToggle('upParam', 'customUpParamItem');
+        setupCustomToggle('downParam', 'customDownParamItem');
+        setupCustomToggle('pressParam', 'customPressParamItem');
     </script>
 </body>
 

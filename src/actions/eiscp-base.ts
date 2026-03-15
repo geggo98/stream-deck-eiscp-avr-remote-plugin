@@ -16,6 +16,14 @@ interface GlobalSettings {
 	deviceIp?: string;
 }
 
+export function resolveParam(value: string | undefined, customValue: string | undefined, fallback: string): string;
+export function resolveParam(value?: string, customValue?: string, fallback?: string): string | undefined;
+export function resolveParam(value?: string, customValue?: string, fallback?: string): string | undefined {
+	if (!value) return fallback;
+	if (value === "custom") return customValue || fallback;
+	return value;
+}
+
 export function resolveDeviceIp(settings: EiscpActionSettings): string {
 	if (settings.deviceIp && settings.deviceIp !== "custom") {
 		return settings.deviceIp;
