@@ -30,6 +30,8 @@ interface DialIndicatorSettings extends EiscpActionSettings {
 	pressCommand?: string;
 	pressParam?: string;
 	customPressParam?: string;
+	barColor?: string;
+	barMutedColor?: string;
 }
 
 @action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial-indicator" })
@@ -58,9 +60,12 @@ export class EiscpDialIndicatorAction extends SingletonAction<DialIndicatorSetti
 		if (!ev.action.isDial()) return;
 
 		const cmd = COMMAND_REGISTRY[command];
-		const pressOn = this.isPressOn(ev.action.id, ev.payload.settings);
-		const pressCmd = ev.payload.settings.pressCommand;
+		const settings = ev.payload.settings;
+		const pressOn = this.isPressOn(ev.action.id, settings);
+		const pressCmd = settings.pressCommand;
 		const pressDef = pressCmd ? COMMAND_REGISTRY[pressCmd] : undefined;
+		const barColor = settings.barColor || "#4CAF50";
+		const barMutedColor = settings.barMutedColor || "#F44336";
 
 		// Title: show press command status when active, otherwise command name
 		let title: string;
@@ -74,12 +79,11 @@ export class EiscpDialIndicatorAction extends SingletonAction<DialIndicatorSetti
 			const num = parseInt(rawValue, 16);
 			const max = this.getMaxValue(command);
 			const percent = Math.round((num / max) * 100);
+			const fillColor = pressOn ? barMutedColor : barColor;
 			ev.action.setFeedback({
 				value: `${num}`,
 				title: title,
-				indicator: pressOn
-					? { value: Math.min(percent, 100), bar_fill_c: "#F44336" }
-					: { value: Math.min(percent, 100) },
+				indicator: { value: Math.min(percent, 100), bar_fill_c: fillColor },
 			});
 		} else {
 			const label = formatCommandValue(command, rawValue);

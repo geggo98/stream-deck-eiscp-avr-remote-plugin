@@ -94,6 +94,16 @@
         <sdpi-textfield setting="customPressParam" placeholder="e.g. 02, FF"></sdpi-textfield>
     </sdpi-item>
 
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <sdpi-item label="Bar Color">
+        <sdpi-color setting="barColor" default="#4CAF50"></sdpi-color>
+    </sdpi-item>
+
+    <sdpi-item label="Muted Bar Color">
+        <sdpi-color setting="barMutedColor" default="#F44336"></sdpi-color>
+    </sdpi-item>
+
     <script>
         function setupCustomToggle(selectSetting, customItemId) {
             const selectEl = document.querySelector('[setting="' + selectSetting + '"]');
