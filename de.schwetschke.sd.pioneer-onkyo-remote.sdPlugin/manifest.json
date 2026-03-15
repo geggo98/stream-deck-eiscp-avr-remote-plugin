@@ -27,33 +27,6 @@
   ],
   "Actions": [
     {
-      "Name": "Counter",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.increment",
-      "Icon": "imgs/actions/counter/icon",
-      "Tooltip": "Displays a count, which increments by one on press.",
-      "Controllers": [
-        "Keypad"
-      ],
-      "PropertyInspectorPath": "ui/increment-counter.html",
-      "States": [
-        {
-          "Image": "imgs/actions/counter/key",
-          "TitleAlignment": "middle"
-        }
-      ]
-    },
-    {
-      "Name": "Power Control",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.power-control",
-      "Icon": "assets/actions/power-control/icon",
-      "PropertyInspectorPath": "assets/actions/power-control/pi.html",
-      "States": [
-        {
-          "Image": "assets/actions/power-control/state0"
-        }
-      ]
-    },
-    {
       "Name": "eISCP Button",
       "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button",
       "Icon": "imgs/actions/counter/icon",
