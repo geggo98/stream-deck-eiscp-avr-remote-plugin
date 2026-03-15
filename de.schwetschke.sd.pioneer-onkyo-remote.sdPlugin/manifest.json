@@ -37,6 +37,7 @@
       "PropertyInspectorPath": "ui/eiscp-button.html",
       "States": [
         {
+          "Image": "imgs/actions/counter/icon",
           "TitleAlignment": "middle"
         }
       ]
@@ -52,12 +53,14 @@
       "PropertyInspectorPath": "ui/eiscp-toggle.html",
       "States": [
         {
-          "TitleAlignment": "middle",
-          "Name": "Off"
+          "Name": "Off",
+          "Image": "imgs/actions/counter/icon",
+          "TitleAlignment": "middle"
         },
         {
-          "TitleAlignment": "middle",
-          "Name": "On"
+          "Name": "On",
+          "Image": "imgs/actions/counter/icon",
+          "TitleAlignment": "middle"
         }
       ]
     },
@@ -73,12 +76,14 @@
       "Encoder": {
         "layout": "$B1",
         "TriggerDescription": {
-          "Rotate": "Adjust",
-          "Push": "Press action"
+          "Push": "Press action",
+          "Rotate": "Adjust"
         }
       },
       "States": [
-        {}
+        {
+          "Image": "imgs/actions/counter/icon"
+        }
       ]
     }
   ],
