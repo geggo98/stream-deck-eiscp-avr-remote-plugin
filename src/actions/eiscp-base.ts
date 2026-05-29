@@ -46,6 +46,19 @@ export function getToggleColor(command: string, isOn: boolean): string {
 	return command === "AMT" ? "#F44336" : "#4CAF50";
 }
 
+/**
+ * Decode the receiver's display-field (FLD) parameter — hex-encoded ASCII — into
+ * readable text, e.g. "20445453204E657572616C3A5820" -> "DTS Neural:X".
+ * Matches the client's FLD decoding.
+ */
+export function decodeDisplayText(hex: string): string {
+	try {
+		return Buffer.from(hex, "hex").toString("ascii").trim();
+	} catch {
+		return "";
+	}
+}
+
 export function formatCommandValue(command: string, rawValue: string): string {
 	// Try to find a human-readable name from the registry
 	const name = getValueName(command, rawValue);

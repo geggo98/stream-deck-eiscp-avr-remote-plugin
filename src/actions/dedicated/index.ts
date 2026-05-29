@@ -11,7 +11,8 @@ import {
 	type KeyAction,
 	type WillAppearEvent,
 } from "@elgato/streamdeck";
-import type { EiscpActionSettings } from "../eiscp-base.ts";
+import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
+import { type EiscpActionSettings, resolveDeviceIp } from "../eiscp-base.ts";
 import {
 	DialActionBase,
 	KeyActionBase,
@@ -21,6 +22,7 @@ import {
 	type ToggleConfig,
 } from "../eiscp-action-base.ts";
 import { SPEC_BY_ID, uuidFor } from "./catalog.ts";
+import { lmdDisplayName, noteFld, noteLmd } from "./lmd-display.ts";
 
 function toggleCfg(id: string): ToggleConfig {
 	const s = SPEC_BY_ID[id];
@@ -104,21 +106,63 @@ export class InputPrevAction extends FixedKeyAction {
 	}
 }
 
+/**
+ * Listening-mode cyclers. Sends LMD UP/DOWN, but shows the receiver's OWN mode
+ * name (learned from the FLD display) instead of the model-generic registry
+ * name; unavailable modes (LMD "N/A") render as "Not Available".
+ */
+abstract class ListeningModeKeyAction extends KeyActionBase<EiscpActionSettings> {
+	protected abstract id: string;
+
+	protected getKeyConfig(): KeyConfig {
+		return keyCfg(this.id);
+	}
+
+	override async onWillAppear(ev: WillAppearEvent<EiscpActionSettings>): Promise<void> {
+		if (!ev.action.isKey()) return;
+		const action = ev.action;
+		this.clearSubs(action.id);
+		const host = resolveDeviceIp(ev.payload.settings);
+		const mgr = ConnectionManager.getInstance();
+		const refresh = () => action.setTitle(lmdDisplayName(host, mgr.getCachedValue(host, "LMD")));
+
+		this.trackSub(
+			action.id,
+			mgr.onCommandUpdate(host, "LMD", (raw) => {
+				noteLmd(host, raw);
+				refresh();
+			}),
+		);
+		// FLD carries the model-correct name shortly after a mode change.
+		this.trackSub(
+			action.id,
+			mgr.onCommandUpdate(host, "FLD", (hex) => {
+				if (noteFld(host, hex)) refresh();
+			}),
+		);
+
+		try {
+			noteLmd(host, await mgr.queryCommand(host, "LMD"));
+			refresh();
+		} catch (err) {
+			this.logger.error(`onWillAppear: query LMD failed: ${err}`);
+		}
+	}
+}
+
 @action({ UUID: uuidFor("mode-next") })
-export class ModeNextAction extends FixedKeyAction {
+export class ModeNextAction extends ListeningModeKeyAction {
 	protected id = "mode-next";
 	constructor() {
 		super("ModeNext");
-		this.showsState = true;
 	}
 }
 
 @action({ UUID: uuidFor("mode-prev") })
-export class ModePrevAction extends FixedKeyAction {
+export class ModePrevAction extends ListeningModeKeyAction {
 	protected id = "mode-prev";
 	constructor() {
 		super("ModePrev");
-		this.showsState = true;
 	}
 }
 
