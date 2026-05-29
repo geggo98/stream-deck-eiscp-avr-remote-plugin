@@ -6,26 +6,10 @@
  * Shows current state as background color (green=on, red=muted, dark=off).
  */
 
-import {
-	action,
-	KeyDownEvent,
-	SingletonAction,
-	WillAppearEvent,
-	WillDisappearEvent,
-	streamDeck,
-} from "@elgato/streamdeck";
-import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
+import { action } from "@elgato/streamdeck";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
-import {
-	type EiscpActionSettings,
-	resolveDeviceIp,
-	resolveParam,
-	formatCommandValue,
-	generateColoredBg,
-	getToggleColor,
-} from "./eiscp-base.ts";
-
-const logger = streamDeck.logger.createScope("EiscpToggle");
+import { type EiscpActionSettings, resolveParam } from "./eiscp-base.ts";
+import { ToggleActionBase, type ToggleConfig } from "./eiscp-action-base.ts";
 
 interface ToggleSettings extends EiscpActionSettings {
 	onValue?: string;
@@ -35,110 +19,17 @@ interface ToggleSettings extends EiscpActionSettings {
 }
 
 @action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-toggle" })
-export class EiscpToggleAction extends SingletonAction<ToggleSettings> {
-	private unsubscribers: Map<string, () => void> = new Map();
-
-	private getOnValue(settings: ToggleSettings): string {
-		const resolved = resolveParam(settings.onValue, settings.customOnValue);
-		if (resolved) return resolved;
-		const cmd = settings.command ? COMMAND_REGISTRY[settings.command] : undefined;
-		return cmd?.onValue ?? "01";
+export class EiscpToggleAction extends ToggleActionBase<ToggleSettings> {
+	constructor() {
+		super("EiscpToggle");
 	}
 
-	private getOffValue(settings: ToggleSettings): string {
-		const resolved = resolveParam(settings.offValue, settings.customOffValue);
-		if (resolved) return resolved;
-		const cmd = settings.command ? COMMAND_REGISTRY[settings.command] : undefined;
-		return cmd?.offValue ?? "00";
-	}
-
-	private isOnState(rawValue: string, settings: ToggleSettings): boolean {
-		return rawValue === this.getOnValue(settings);
-	}
-
-	private updateVisualState(
-		actionRef: WillAppearEvent<ToggleSettings>["action"],
-		command: string,
-		rawValue: string,
-		settings: ToggleSettings,
-	): void {
-		const isOn = this.isOnState(rawValue, settings);
-		logger.debug(`Visual update for ${command}: ${rawValue} -> isOn=${isOn}`);
-		if (actionRef.isKey()) {
-			actionRef.setState(isOn ? 1 : 0);
-			actionRef.setImage(generateColoredBg(getToggleColor(command, isOn)));
-			actionRef.setTitle(formatCommandValue(command, rawValue));
-		}
-	}
-
-	override async onWillAppear(ev: WillAppearEvent<ToggleSettings>): Promise<void> {
-		const { command } = ev.payload.settings;
-		logger.info(`onWillAppear: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
-		if (!command) {
-			logger.warn("onWillAppear: No command configured, skipping");
-			return;
-		}
-
-		const host = resolveDeviceIp(ev.payload.settings);
-		const mgr = ConnectionManager.getInstance();
-		const actionId = ev.action.id;
-
-		// Subscribe to command updates (handles external changes on the receiver)
-		const unsub = mgr.onCommandUpdate(host, command, (rawValue) => {
-			this.updateVisualState(ev.action, command, rawValue, ev.payload.settings);
-		});
-		this.unsubscribers.set(actionId, unsub);
-
-		// Query current state
-		try {
-			const value = await mgr.queryCommand(host, command);
-			logger.info(`onWillAppear: Initial state for ${command}: ${value}`);
-			this.updateVisualState(ev.action, command, value, ev.payload.settings);
-		} catch (err) {
-			logger.error(`onWillAppear: Query failed for ${command}: ${err}`);
-		}
-	}
-
-	override async onWillDisappear(ev: WillDisappearEvent<ToggleSettings>): Promise<void> {
-		const unsub = this.unsubscribers.get(ev.action.id);
-		if (unsub) {
-			unsub();
-			this.unsubscribers.delete(ev.action.id);
-		}
-	}
-
-	override async onKeyDown(ev: KeyDownEvent<ToggleSettings>): Promise<void> {
-		const { command } = ev.payload.settings;
-		logger.info(`onKeyDown: command=${command}, settings=${JSON.stringify(ev.payload.settings)}`);
-		if (!command) {
-			logger.warn("onKeyDown: No command configured, showing alert");
-			ev.action.showAlert();
-			return;
-		}
-
-		const host = resolveDeviceIp(ev.payload.settings);
-		const mgr = ConnectionManager.getInstance();
+	protected getToggleConfig(settings: ToggleSettings): ToggleConfig | undefined {
+		const command = settings.command;
+		if (!command) return undefined;
 		const cmd = COMMAND_REGISTRY[command];
-
-		try {
-			// Prefer TG (toggle) command if available
-			if (cmd?.toggleValue) {
-				logger.info(`onKeyDown: Using toggle value ${cmd.toggleValue} for ${command}`);
-				await mgr.sendCommand(host, command, cmd.toggleValue);
-			} else {
-				// Flip based on cached state
-				const cached = mgr.getCachedValue(host, command);
-				const isOn = cached === this.getOnValue(ev.payload.settings);
-				const newValue = isOn
-					? this.getOffValue(ev.payload.settings)
-					: this.getOnValue(ev.payload.settings);
-				logger.info(`onKeyDown: Flipping ${command}: cached=${cached}, isOn=${isOn}, sending=${newValue}`);
-				await mgr.sendCommand(host, command, newValue);
-			}
-			if (ev.action.isKey()) ev.action.showOk();
-		} catch (err) {
-			logger.error(`onKeyDown: Toggle ${command} failed: ${err}`);
-			ev.action.showAlert();
-		}
+		const onValue = resolveParam(settings.onValue, settings.customOnValue) ?? cmd?.onValue ?? "01";
+		const offValue = resolveParam(settings.offValue, settings.customOffValue) ?? cmd?.offValue ?? "00";
+		return { command, onValue, offValue, toggleValue: cmd?.toggleValue };
 	}
 }

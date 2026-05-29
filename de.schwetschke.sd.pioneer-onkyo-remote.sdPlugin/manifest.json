@@ -29,15 +29,15 @@
     {
       "Name": "eISCP Button",
       "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button",
-      "Icon": "imgs/actions/counter/icon",
-      "Tooltip": "Send any eISCP command. Use for volume up/down, input selection, etc.",
+      "Icon": "imgs/actions/eiscp-button/icon",
+      "Tooltip": "Send any eISCP command. Use for one-shot commands, volume up/down, etc.",
       "Controllers": [
         "Keypad"
       ],
       "PropertyInspectorPath": "ui/eiscp-button.html",
       "States": [
         {
-          "Image": "imgs/actions/counter/icon",
+          "Image": "imgs/actions/eiscp-button/key",
           "TitleAlignment": "middle"
         }
       ]
@@ -45,7 +45,7 @@
     {
       "Name": "eISCP Toggle",
       "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-toggle",
-      "Icon": "imgs/actions/counter/icon",
+      "Icon": "imgs/actions/eiscp-toggle/icon",
       "Tooltip": "Toggle on/off eISCP commands. Use for power, mute, direct mode, etc.",
       "Controllers": [
         "Keypad"
@@ -54,12 +54,12 @@
       "States": [
         {
           "Name": "Off",
-          "Image": "imgs/actions/counter/icon",
+          "Image": "imgs/actions/eiscp-toggle/key",
           "TitleAlignment": "middle"
         },
         {
           "Name": "On",
-          "Image": "imgs/actions/counter/icon",
+          "Image": "imgs/actions/eiscp-toggle/key",
           "TitleAlignment": "middle"
         }
       ]
@@ -67,44 +67,321 @@
     {
       "Name": "eISCP Dial Value",
       "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial",
-      "Icon": "imgs/actions/counter/icon",
+      "Icon": "imgs/actions/eiscp-dial/icon",
       "Tooltip": "Encoder for text-based eISCP values. Use for input selector, listening mode, etc.",
       "Controllers": [
         "Encoder"
       ],
       "PropertyInspectorPath": "ui/eiscp-dial.html",
+      "States": [
+        {
+          "Image": "imgs/actions/eiscp-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
       "Encoder": {
         "layout": "$A1",
         "TriggerDescription": {
           "Push": "Press action",
-          "Rotate": "Cycle values"
+          "Rotate": "Adjust"
         }
-      },
-      "States": [
-        {
-          "Image": "imgs/actions/counter/icon"
-        }
-      ]
+      }
     },
     {
       "Name": "eISCP Dial Indicator",
       "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial-indicator",
-      "Icon": "imgs/actions/counter/icon",
+      "Icon": "imgs/actions/eiscp-dial-indicator/icon",
       "Tooltip": "Encoder with progress bar for numeric eISCP values. Use for volume, center level, etc.",
       "Controllers": [
         "Encoder"
       ],
       "PropertyInspectorPath": "ui/eiscp-dial-indicator.html",
+      "States": [
+        {
+          "Image": "imgs/actions/eiscp-dial-indicator/key",
+          "TitleAlignment": "middle"
+        }
+      ],
       "Encoder": {
         "layout": "$B1",
         "TriggerDescription": {
           "Push": "Press action",
-          "Rotate": "Adjust level"
+          "Rotate": "Adjust"
         }
-      },
+      }
+    },
+    {
+      "Name": "Power",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.power",
+      "Icon": "imgs/actions/power/icon",
+      "Tooltip": "Toggle the receiver on/standby (PWR).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
       "States": [
         {
-          "Image": "imgs/actions/counter/icon"
+          "Name": "Off",
+          "Image": "imgs/actions/power/key",
+          "TitleAlignment": "middle"
+        },
+        {
+          "Name": "On",
+          "Image": "imgs/actions/power/key-on",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Mute",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mute",
+      "Icon": "imgs/actions/mute/icon",
+      "Tooltip": "Toggle audio muting (AMT).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Name": "Off",
+          "Image": "imgs/actions/mute/key",
+          "TitleAlignment": "middle"
+        },
+        {
+          "Name": "On",
+          "Image": "imgs/actions/mute/key-on",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Volume Up",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.volume-up",
+      "Icon": "imgs/actions/volume-up/icon",
+      "Tooltip": "Raise master volume (MVL UP).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/volume-up/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Volume Down",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.volume-down",
+      "Icon": "imgs/actions/volume-down/icon",
+      "Tooltip": "Lower master volume (MVL DOWN).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/volume-down/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Volume",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.volume-dial",
+      "Icon": "imgs/actions/volume-dial/icon",
+      "Tooltip": "Adjust master volume; press to mute.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/volume-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Mute",
+          "Rotate": "Adjust volume"
+        }
+      }
+    },
+    {
+      "Name": "Next Input",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.input-next",
+      "Icon": "imgs/actions/input-next/icon",
+      "Tooltip": "Cycle to the next input source (SLI UP).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/input-next/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Previous Input",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.input-prev",
+      "Icon": "imgs/actions/input-prev/icon",
+      "Tooltip": "Cycle to the previous input source (SLI DOWN).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/input-prev/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Next Listening Mode",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mode-next",
+      "Icon": "imgs/actions/mode-next/icon",
+      "Tooltip": "Cycle to the next listening mode (LMD UP).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/mode-next/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Previous Listening Mode",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mode-prev",
+      "Icon": "imgs/actions/mode-prev/icon",
+      "Tooltip": "Cycle to the previous listening mode (LMD DOWN).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/mode-prev/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Transport",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.transport",
+      "Icon": "imgs/actions/transport/icon",
+      "Tooltip": "Network/USB transport key (play, pause, stop, next, previous).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/transport.html",
+      "States": [
+        {
+          "Image": "imgs/actions/transport/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Bass +",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.bass-up",
+      "Icon": "imgs/actions/bass-up/icon",
+      "Tooltip": "Increase front bass (TFR BUP).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/bass-up/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Bass −",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.bass-down",
+      "Icon": "imgs/actions/bass-down/icon",
+      "Tooltip": "Decrease front bass (TFR BDOWN).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/bass-down/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Treble +",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.treble-up",
+      "Icon": "imgs/actions/treble-up/icon",
+      "Tooltip": "Increase front treble (TFR TUP).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/treble-up/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Treble −",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.treble-down",
+      "Icon": "imgs/actions/treble-down/icon",
+      "Tooltip": "Decrease front treble (TFR TDOWN).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/treble-down/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Next Preset",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.preset-next",
+      "Icon": "imgs/actions/preset-next/icon",
+      "Tooltip": "Tuner preset up (PRS UP).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/preset-next/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Previous Preset",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.preset-prev",
+      "Icon": "imgs/actions/preset-prev/icon",
+      "Tooltip": "Tuner preset down (PRS DOWN).",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/preset-prev/key",
+          "TitleAlignment": "middle"
         }
       ]
     }

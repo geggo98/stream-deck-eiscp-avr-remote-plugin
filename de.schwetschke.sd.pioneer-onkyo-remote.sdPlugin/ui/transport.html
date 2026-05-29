@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>Transport Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <script src="commands.js"></script>
+    <script src="eiscp-pi.js"></script>
+</head>
+
+<body>
+    <div id="deviceIp"></div>
+
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <sdpi-item label="Transport Key">
+        <sdpi-select setting="transportKey" placeholder="Play/Pause" default="P/P">
+            <option value="P/P">Play / Pause</option>
+            <option value="PLAY">Play</option>
+            <option value="PAUSE">Pause</option>
+            <option value="STOP">Stop</option>
+            <option value="TRUP">Next Track</option>
+            <option value="TRDN">Previous Track</option>
+            <option value="FF">Fast Forward</option>
+            <option value="REW">Rewind</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            EiscpPI.renderDeviceIp('deviceIp');
+        });
+    </script>
+</body>
+
+</html>

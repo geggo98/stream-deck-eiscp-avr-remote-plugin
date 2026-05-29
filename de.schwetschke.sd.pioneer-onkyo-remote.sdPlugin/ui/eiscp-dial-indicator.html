@@ -5,50 +5,21 @@
     <title>eISCP Dial Indicator Settings</title>
     <meta charset="utf-8" />
     <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <script src="commands.js"></script>
+    <script src="eiscp-pi.js"></script>
 </head>
 
 <body>
-    <sdpi-item label="Device IP">
-        <sdpi-select setting="deviceIp" placeholder="Select device">
-            <optgroup label="Pre-configured">
-                <option value="10.2.0.32">Receiver (10.2.0.32)</option>
-            </optgroup>
-            <option value="custom">Custom IP...</option>
-        </sdpi-select>
-    </sdpi-item>
-
-    <sdpi-item label="Custom IP" id="customIpItem" style="display: none;">
-        <sdpi-textfield setting="customIp" placeholder="192.168.1.100"></sdpi-textfield>
-    </sdpi-item>
+    <div id="deviceIp"></div>
 
     <div class="sdpi-divider" style="margin: 16px 0;"></div>
 
     <sdpi-item label="Rotate Command">
-        <sdpi-select setting="command" placeholder="Select command...">
-            <optgroup label="Volume">
-                <option value="MVL">Master Volume (MVL)</option>
-                <option value="CTL">Center Level (CTL)</option>
-            </optgroup>
-            <optgroup label="Input / Mode">
-                <option value="SLI">Input Selector (SLI)</option>
-                <option value="LMD">Listening Mode (LMD)</option>
-                <option value="DIM">Dimmer (DIM)</option>
-                <option value="HDO">HDMI Output (HDO)</option>
-            </optgroup>
-            <optgroup label="Audio Processing">
-                <option value="LTN">Late Night (LTN)</option>
-                <option value="ADY">Audyssey EQ (ADY)</option>
-                <option value="ADQ">Audyssey Dynamic EQ (ADQ)</option>
-            </optgroup>
-            <optgroup label="Speaker">
-                <option value="SPA">Speaker A (SPA)</option>
-                <option value="SPB">Speaker B (SPB)</option>
-            </optgroup>
-        </sdpi-select>
+        <sdpi-select setting="command" placeholder="Select command..."></sdpi-select>
     </sdpi-item>
 
     <sdpi-item label="Up Parameter">
-        <sdpi-select setting="upParam" placeholder="Select up parameter...">
+        <sdpi-select setting="upParam" placeholder="Up (UP)">
             <option value="UP">Up (UP)</option>
             <option value="custom">Custom...</option>
         </sdpi-select>
@@ -59,7 +30,7 @@
     </sdpi-item>
 
     <sdpi-item label="Down Parameter">
-        <sdpi-select setting="downParam" placeholder="Select down parameter...">
+        <sdpi-select setting="downParam" placeholder="Down (DOWN)">
             <option value="DOWN">Down (DOWN)</option>
             <option value="custom">Custom...</option>
         </sdpi-select>
@@ -72,11 +43,8 @@
     <div class="sdpi-divider" style="margin: 16px 0;"></div>
 
     <sdpi-item label="Press Command">
-        <sdpi-select setting="pressCommand" placeholder="Select press command...">
+        <sdpi-select setting="pressCommand" placeholder="Same as rotate">
             <option value="">Same as rotate</option>
-            <option value="AMT">Audio Muting (AMT)</option>
-            <option value="PWR">Power (PWR)</option>
-            <option value="DIR">Direct (DIR)</option>
         </sdpi-select>
     </sdpi-item>
 
@@ -105,20 +73,14 @@
     </sdpi-item>
 
     <script>
-        function setupCustomToggle(selectSetting, customItemId) {
-            const selectEl = document.querySelector('[setting="' + selectSetting + '"]');
-            const customItem = document.getElementById(customItemId);
-            if (!selectEl || !customItem) return;
-            function update() {
-                customItem.style.display = selectEl.value === 'custom' ? 'block' : 'none';
-            }
-            selectEl.addEventListener('valuechange', update);
-            setTimeout(update, 200);
-        }
-        setupCustomToggle('deviceIp', 'customIpItem');
-        setupCustomToggle('upParam', 'customUpParamItem');
-        setupCustomToggle('downParam', 'customDownParamItem');
-        setupCustomToggle('pressParam', 'customPressParamItem');
+        document.addEventListener('DOMContentLoaded', () => {
+            EiscpPI.renderDeviceIp('deviceIp');
+            EiscpPI.buildCommandSelect(document.querySelector('[setting="command"]'), null);
+            EiscpPI.buildCommandSelect(document.querySelector('[setting="pressCommand"]'), null);
+            EiscpPI.setupCustomToggle('upParam', 'customUpParamItem');
+            EiscpPI.setupCustomToggle('downParam', 'customDownParamItem');
+            EiscpPI.setupCustomToggle('pressParam', 'customPressParamItem');
+        });
     </script>
 </body>
 

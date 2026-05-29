@@ -12,6 +12,9 @@
     "discover-eiscp-ip-scan": "tsx scripts/discover-eiscp-ip-scan.ts",
     "discover-all": "tsx scripts/discover-all.ts",
     "generate:commands": "tsx scripts/generate-command-registry.ts",
+    "generate:icons": "tsx scripts/generate-icons.ts",
+    "generate:manifest": "tsx scripts/generate-manifest.ts",
+    "generate": "npm run generate:commands && npm run generate:icons && npm run generate:manifest",
     "capture:responses": "tsx scripts/capture-command-responses.ts"
   },
   "type": "module",
@@ -23,6 +26,7 @@
     "@rollup/plugin-typescript": "^12.1.0",
     "@tsconfig/node20": "^20.1.2",
     "@types/node": "~20.15.0",
+    "lucide-static": "^1.17.0",
     "rollup": "^4.0.2",
     "tslib": "^2.6.2",
     "typescript": "^5.2.2",

@@ -94,7 +94,7 @@ export const ListeningMode = {
 	Unknown20: { decimal: 20, hex: "14", name: "Unknown Mode 20" },
 	WHOLE_HOUSE_MODE: { decimal: 64, hex: "40", name: "Whole House Mode" },
 	Unknown128: { decimal: 128, hex: "80", name: "Unknown Mode 128" },
-	FrontStage: { decimal: 130, hex: "82", name: "Front Stage" },
+	DTS_X_NEO6_CINEMA: { decimal: 130, hex: "82", name: "DTS:X / Neo:6 Cinema" },
 	THX_CINEMA: { decimal: 66, hex: "42", name: "THX Cinema" },
 	DTS_NEURAL_X: { decimal: 80, hex: "50", name: "DTS Neural:X" },
 	DOLBY_SURROUND: { decimal: 81, hex: "51", name: "Dolby Surround" },
