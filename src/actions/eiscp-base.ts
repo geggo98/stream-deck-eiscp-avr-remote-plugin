@@ -2,7 +2,6 @@
  * Shared helpers for eISCP actions
  */
 
-import { streamDeck } from "@elgato/streamdeck";
 import { COMMAND_REGISTRY, getValueName } from "../adapter/eiscp/command-registry.ts";
 
 export interface EiscpActionSettings {
@@ -12,8 +11,27 @@ export interface EiscpActionSettings {
 	[key: string]: any;
 }
 
-interface GlobalSettings {
+/** JSON-compatible value (mirrors the SDK's JsonValue; undefined is allowed). */
+type JsonValue = string | number | boolean | null | undefined | JsonValue[] | { [key: string]: JsonValue };
+
+/** Learned option names, persisted in global settings: host -> command -> code -> name. */
+export type SerializedNames = { [host: string]: { [command: string]: { [code: string]: string } } };
+
+/** Plugin-wide persisted settings (Stream Deck global settings). */
+export interface GlobalSettings {
 	deviceIp?: string;
+	names?: SerializedNames;
+	[key: string]: JsonValue;
+}
+
+// getGlobalSettings() is async, so reads must come from a cache kept fresh by
+// plugin.ts (initial load + onDidReceiveGlobalSettings).
+let cachedGlobalSettings: GlobalSettings = {};
+export function setCachedGlobalSettings(settings: GlobalSettings | undefined): void {
+	cachedGlobalSettings = settings ?? {};
+}
+export function getCachedGlobalSettings(): GlobalSettings {
+	return cachedGlobalSettings;
 }
 
 export function resolveParam(value: string | undefined, customValue: string | undefined, fallback: string): string;
@@ -31,8 +49,7 @@ export function resolveDeviceIp(settings: EiscpActionSettings): string {
 	if (settings.customIp) {
 		return settings.customIp;
 	}
-	const global = streamDeck.settings.getGlobalSettings() as GlobalSettings;
-	return global.deviceIp || "10.2.0.32";
+	return getCachedGlobalSettings().deviceIp || "10.2.0.32";
 }
 
 export function generateColoredBg(color: string): string {

@@ -176,7 +176,12 @@ export const GENERIC_SPECS: GenericSpec[] = [
 
 /** Property Inspector path for a dedicated action. */
 export function dedicatedPropertyInspector(spec: DedicatedSpec): string {
-	return spec.id === "transport" ? "ui/transport.html" : "ui/dedicated.html";
+	if (spec.id === "transport") return "ui/transport.html";
+	// Input + listening-mode cyclers get the Auto-Discover button.
+	if (["input-next", "input-prev", "mode-next", "mode-prev"].includes(spec.id)) {
+		return "ui/discover.html";
+	}
+	return "ui/dedicated.html";
 }
 
 /** Accent background color for a toggle's ON state. */

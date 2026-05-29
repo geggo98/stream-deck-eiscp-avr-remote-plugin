@@ -84,5 +84,71 @@
 		}
 	}
 
-	window.EiscpPI = { renderDeviceIp, setupCustomToggle, buildCommandSelect, buildParamSelect };
+	/**
+	 * Inject an "Auto-Discover" button (with a warning + live progress) that asks
+	 * the plugin to sweep every option and learn its name from the receiver.
+	 */
+	function renderDiscover(containerId, optionLabel) {
+		const c = document.getElementById(containerId);
+		if (!c) return;
+		const label = optionLabel || "option";
+		c.innerHTML =
+			'<div class="sdpi-item">' +
+			'  <button id="discoverBtn" class="sdpi-item-value" style="width:100%;">Auto-Discover ' +
+			label +
+			" names</button>" +
+			"</div>" +
+			'<div id="discoverWarn" style="display:none; margin:8px 4px; font-size:12px;">' +
+			'  <p style="color:#f5a623;">This cycles the receiver through every ' +
+			label +
+			" to read each name from its display. The " +
+			label +
+			" will change repeatedly and is restored at the end.</p>" +
+			'  <button id="discoverConfirm">Discover</button>&nbsp;' +
+			'  <button id="discoverCancel">Cancel</button>' +
+			"</div>" +
+			'<div id="discoverStatus" style="display:none; margin:8px 4px; font-size:12px; opacity:.75;"></div>';
+
+		const btn = c.querySelector("#discoverBtn");
+		const warn = c.querySelector("#discoverWarn");
+		const status = c.querySelector("#discoverStatus");
+		const show = (el, on) => {
+			if (el) el.style.display = on ? "block" : "none";
+		};
+
+		btn.addEventListener("click", () => show(warn, true));
+		c.querySelector("#discoverCancel").addEventListener("click", () => show(warn, false));
+		c.querySelector("#discoverConfirm").addEventListener("click", () => {
+			show(warn, false);
+			show(status, true);
+			show(btn, false);
+			status.textContent = "Starting discovery…";
+			try {
+				SDPIComponents.streamDeckClient.send("sendToPlugin", { action: "discover" });
+			} catch (e) {
+				status.textContent = "Could not start: " + e;
+				show(btn, true);
+			}
+		});
+
+		try {
+			SDPIComponents.streamDeckClient.sendToPropertyInspector.subscribe((ev) => {
+				const p = ev && ev.payload ? ev.payload : ev;
+				if (!p || p.event !== "discover") return;
+				if (p.phase === "progress") {
+					status.textContent = "Discovering… " + p.done + ": " + (p.current || "");
+				} else if (p.phase === "done") {
+					status.textContent = "Done — discovered " + (p.count || 0) + " names. Re-open the action to see them.";
+					show(btn, true);
+				} else if (p.phase === "error") {
+					status.textContent = "Failed: " + (p.message || "unknown error");
+					show(btn, true);
+				}
+			});
+		} catch (e) {
+			/* sdpi client not ready; button still sends, progress just won't show */
+		}
+	}
+
+	window.EiscpPI = { renderDeviceIp, setupCustomToggle, buildCommandSelect, buildParamSelect, renderDiscover };
 })();

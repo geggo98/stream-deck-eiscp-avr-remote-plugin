@@ -4,13 +4,15 @@
  * bases in eiscp-action-base.ts; all configuration comes from ./catalog.ts.
  */
 
-import {
+import streamDeck, {
 	action,
 	type DialAction,
 	type DidReceiveSettingsEvent,
 	type KeyAction,
+	type SendToPluginEvent,
 	type WillAppearEvent,
 } from "@elgato/streamdeck";
+import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
 import { type EiscpActionSettings, resolveDeviceIp } from "../eiscp-base.ts";
 import {
@@ -22,7 +24,8 @@ import {
 	type ToggleConfig,
 } from "../eiscp-action-base.ts";
 import { SPEC_BY_ID, uuidFor } from "./catalog.ts";
-import { lmdDisplayName, noteFld, noteLmd } from "./lmd-display.ts";
+import { nameFor, type TrackedCommand } from "./name-store.ts";
+import { runSweep } from "./discovery.ts";
 
 function toggleCfg(id: string): ToggleConfig {
 	const s = SPEC_BY_ID[id];
@@ -88,34 +91,24 @@ export class VolumeDownAction extends FixedKeyAction {
 	}
 }
 
-@action({ UUID: uuidFor("input-next") })
-export class InputNextAction extends FixedKeyAction {
-	protected id = "input-next";
-	constructor() {
-		super("InputNext");
-		this.showsState = true;
-	}
-}
-
-@action({ UUID: uuidFor("input-prev") })
-export class InputPrevAction extends FixedKeyAction {
-	protected id = "input-prev";
-	constructor() {
-		super("InputPrev");
-		this.showsState = true;
-	}
-}
+// Input cyclers defined below (extend LearnedNameKeyAction, declared later).
 
 /**
- * Listening-mode cyclers. Sends LMD UP/DOWN, but shows the receiver's OWN mode
- * name (learned from the FLD display) instead of the model-generic registry
- * name; unavailable modes (LMD "N/A") render as "Not Available".
+ * Cycler that shows the receiver's OWN learned name for its command (LMD modes
+ * or SLI inputs) instead of the generic registry name, and offers an
+ * Auto-Discover sweep from the Property Inspector. Names are learned passively
+ * (see discovery.ts) and read from the name store; unavailable LMD modes ("N/A")
+ * render as "Not Available".
  */
-abstract class ListeningModeKeyAction extends KeyActionBase<EiscpActionSettings> {
+abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 	protected abstract id: string;
 
 	protected getKeyConfig(): KeyConfig {
 		return keyCfg(this.id);
+	}
+
+	private displayCommand(): TrackedCommand {
+		return SPEC_BY_ID[this.id].command as TrackedCommand;
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<EiscpActionSettings>): Promise<void> {
@@ -123,35 +116,52 @@ abstract class ListeningModeKeyAction extends KeyActionBase<EiscpActionSettings>
 		const action = ev.action;
 		this.clearSubs(action.id);
 		const host = resolveDeviceIp(ev.payload.settings);
+		const command = this.displayCommand();
 		const mgr = ConnectionManager.getInstance();
-		const refresh = () => action.setTitle(lmdDisplayName(host, mgr.getCachedValue(host, "LMD")));
+		const refresh = () => action.setTitle(nameFor(host, command, mgr.getCachedValue(host, command)));
 
-		this.trackSub(
-			action.id,
-			mgr.onCommandUpdate(host, "LMD", (raw) => {
-				noteLmd(host, raw);
-				refresh();
-			}),
-		);
-		// FLD carries the model-correct name shortly after a mode change.
-		this.trackSub(
-			action.id,
-			mgr.onCommandUpdate(host, "FLD", (hex) => {
-				if (noteFld(host, hex)) refresh();
-			}),
-		);
+		// Re-render on a value change, or when a name is learned (FLD arrives).
+		this.trackSub(action.id, mgr.onCommandUpdate(host, command, () => refresh()));
+		this.trackSub(action.id, mgr.onCommandUpdate(host, "FLD", () => refresh()));
 
 		try {
-			noteLmd(host, await mgr.queryCommand(host, "LMD"));
+			await mgr.queryCommand(host, command);
 			refresh();
 		} catch (err) {
-			this.logger.error(`onWillAppear: query LMD failed: ${err}`);
+			this.logger.error(`onWillAppear: query ${command} failed: ${err}`);
+		}
+	}
+
+	/** PI "Auto-Discover" button → sweep all options, learning each name. */
+	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, EiscpActionSettings>): Promise<void> {
+		const payload = ev.payload as { action?: string } | null;
+		if (!payload || typeof payload !== "object" || payload.action !== "discover") return;
+		if (!ev.action.isKey()) return;
+		const action = ev.action;
+		const settings = await action.getSettings();
+		const host = resolveDeviceIp(settings);
+		const command = this.displayCommand();
+		// Plugin -> PI messages go through the global UI controller (targets the
+		// currently-visible property inspector, which is this action's PI).
+		const send = (m: JsonValue) => void streamDeck.ui.sendToPropertyInspector(m);
+
+		send({ event: "discover", phase: "start", command });
+		try {
+			const { count } = await runSweep(host, command, (p) =>
+				send({ event: "discover", phase: "progress", done: p.done, current: p.current }),
+			);
+			send({ event: "discover", phase: "done", count });
+			action.showOk();
+		} catch (err) {
+			this.logger.error(`discover sweep failed: ${err}`);
+			send({ event: "discover", phase: "error", message: String(err) });
+			action.showAlert();
 		}
 	}
 }
 
 @action({ UUID: uuidFor("mode-next") })
-export class ModeNextAction extends ListeningModeKeyAction {
+export class ModeNextAction extends LearnedNameKeyAction {
 	protected id = "mode-next";
 	constructor() {
 		super("ModeNext");
@@ -159,10 +169,26 @@ export class ModeNextAction extends ListeningModeKeyAction {
 }
 
 @action({ UUID: uuidFor("mode-prev") })
-export class ModePrevAction extends ListeningModeKeyAction {
+export class ModePrevAction extends LearnedNameKeyAction {
 	protected id = "mode-prev";
 	constructor() {
 		super("ModePrev");
+	}
+}
+
+@action({ UUID: uuidFor("input-next") })
+export class InputNextAction extends LearnedNameKeyAction {
+	protected id = "input-next";
+	constructor() {
+		super("InputNext");
+	}
+}
+
+@action({ UUID: uuidFor("input-prev") })
+export class InputPrevAction extends LearnedNameKeyAction {
+	protected id = "input-prev";
+	constructor() {
+		super("InputPrev");
 	}
 }
 

@@ -217,7 +217,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/input-next/key",
@@ -233,7 +233,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/input-prev/key",
@@ -249,7 +249,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/mode-next/key",
@@ -265,7 +265,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/mode-prev/key",
