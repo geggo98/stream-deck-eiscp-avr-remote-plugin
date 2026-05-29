@@ -5,75 +5,25 @@
  * Shows current state as title text.
  */
 
-import {
-	action,
-	KeyDownEvent,
-	SingletonAction,
-	WillAppearEvent,
-	WillDisappearEvent,
-	streamDeck,
-} from "@elgato/streamdeck";
-import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
-import { type EiscpActionSettings, resolveDeviceIp, formatCommandValue } from "./eiscp-base.ts";
+import { action } from "@elgato/streamdeck";
+import { type EiscpActionSettings, resolveParam } from "./eiscp-base.ts";
+import { KeyActionBase, type KeyConfig } from "./eiscp-action-base.ts";
 
 interface ButtonSettings extends EiscpActionSettings {
 	parameter?: string;
+	customParameter?: string;
 }
 
 @action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button" })
-export class EiscpButtonAction extends SingletonAction<ButtonSettings> {
-	private unsubscribers: Map<string, () => void> = new Map();
-
-	override async onWillAppear(ev: WillAppearEvent<ButtonSettings>): Promise<void> {
-		const { command } = ev.payload.settings;
-		if (!command) {
-			await ev.action.setTitle("?");
-			return;
-		}
-
-		const host = resolveDeviceIp(ev.payload.settings);
-		const mgr = ConnectionManager.getInstance();
-		const actionId = ev.action.id;
-
-		// Subscribe to command updates
-		const unsub = mgr.onCommandUpdate(host, command, (rawValue) => {
-			ev.action.setTitle(formatCommandValue(command, rawValue));
-		});
-		this.unsubscribers.set(actionId, unsub);
-
-		// Query current state
-		try {
-			const value = await mgr.queryCommand(host, command);
-			await ev.action.setTitle(formatCommandValue(command, value));
-		} catch {
-			await ev.action.setTitle(command);
-		}
+export class EiscpButtonAction extends KeyActionBase<ButtonSettings> {
+	constructor() {
+		super("EiscpButton");
 	}
 
-	override async onWillDisappear(ev: WillDisappearEvent<ButtonSettings>): Promise<void> {
-		const unsub = this.unsubscribers.get(ev.action.id);
-		if (unsub) {
-			unsub();
-			this.unsubscribers.delete(ev.action.id);
-		}
-	}
-
-	override async onKeyDown(ev: KeyDownEvent<ButtonSettings>): Promise<void> {
-		const { command, parameter } = ev.payload.settings;
-		if (!command || !parameter) {
-			ev.action.showAlert();
-			return;
-		}
-
-		const host = resolveDeviceIp(ev.payload.settings);
-		const mgr = ConnectionManager.getInstance();
-
-		try {
-			await mgr.sendCommand(host, command, parameter);
-			ev.action.showOk();
-		} catch (err) {
-			streamDeck.logger.error(`Button action error: ${err}`);
-			ev.action.showAlert();
-		}
+	protected getKeyConfig(settings: ButtonSettings): KeyConfig | undefined {
+		const command = settings.command;
+		if (!command) return undefined;
+		const parameter = resolveParam(settings.parameter, settings.customParameter);
+		return { command, parameter };
 	}
 }

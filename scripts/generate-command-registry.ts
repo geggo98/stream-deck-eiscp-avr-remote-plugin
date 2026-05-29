@@ -41,6 +41,7 @@ interface CommandDef {
 	code: string;
 	name: string;
 	description: string;
+	category: string;
 	actionType: CommandActionType;
 	values: CommandValueDef[];
 	hasQuery: boolean;
@@ -50,12 +51,44 @@ interface CommandDef {
 	toggleValue?: string;
 }
 
-// Commands to include in the registry (main zone, most useful)
+// Commands to include in the registry (most useful for an AV remote).
 const INCLUDED_COMMANDS = [
 	"PWR", "AMT", "MVL", "SLI", "LMD", "DIM", "HDO",
 	"SPA", "SPB", "DIR", "LTN", "RAS", "CTL",
 	"ADY", "ADQ", "PMB",
+	// Added: tone, preset, transport, Zone 2.
+	"TFR", "PRS", "NTC", "ZPW", "ZMT", "ZVL", "SLZ",
 ];
+
+// Most commands live in the `main` section. A few of the included codes also
+// (or only) exist in other sections; pin those explicitly so lookup is
+// deterministic. NTC's richest copy is in the `dock` (network) section.
+const ZONE_OVERRIDE: Record<string, string> = {
+	NTC: "dock",
+	ZPW: "zone2",
+	ZMT: "zone2",
+	ZVL: "zone2",
+	SLZ: "zone2",
+};
+
+// Human-readable grouping used for Property-Inspector optgroups.
+const CODE_CATEGORY: Record<string, string> = {
+	PWR: "Power / Mute", AMT: "Power / Mute",
+	MVL: "Volume", CTL: "Volume",
+	SLI: "Input / Mode", LMD: "Input / Mode",
+	TFR: "Tone",
+	PRS: "Tuner",
+	NTC: "Transport",
+	DIM: "Display / Video", HDO: "Display / Video",
+	SPA: "Speaker", SPB: "Speaker",
+	DIR: "Audio Processing", LTN: "Audio Processing", RAS: "Audio Processing",
+	ADY: "Audio Processing", ADQ: "Audio Processing", PMB: "Audio Processing",
+	ZPW: "Zone 2", ZMT: "Zone 2", ZVL: "Zone 2", SLZ: "Zone 2",
+};
+
+// Commands whose numeric value keys are literal digits (e.g. network-menu
+// number entry), NOT hex byte codes — their params must pass through verbatim.
+const NO_HEX_PAD = new Set(["NTC"]);
 
 function classifyCommand(code: string, values: Record<string, YamlValue>): CommandActionType {
 	const keys = Object.keys(values);
@@ -77,7 +110,7 @@ function classifyCommand(code: string, values: Record<string, YamlValue>): Comma
 	});
 
 	// Stepper: has UP/DOWN + numeric range + QSTN (volume-like controls)
-	if (hasUP && hasDOWN && (hasNumericRange || code === "MVL" || code === "CTL")) {
+	if (hasUP && hasDOWN && (hasNumericRange || ["MVL", "CTL", "ZVL"].includes(code))) {
 		return "stepper";
 	}
 
@@ -113,27 +146,35 @@ function normalizeName(name: string | string[]): string {
 	return name;
 }
 
-function normalizeParam(param: string): string {
-	// YAML may parse "08" as integer 8. Ensure hex-like params are zero-padded.
-	const num = Number(param);
-	if (!isNaN(num) && param === String(num) && num >= 0 && num <= 255) {
-		return num.toString(16).toUpperCase().padStart(2, "0");
-	}
+function normalizeParam(param: string, code: string): string {
+	// eISCP value keys are already 2-char hex strings in the YAML (quoted, e.g.
+	// '10', '23', '2B'). The only damage YAML does is strip the leading zero
+	// from unquoted single-digit keys (`08` -> 8, `09` -> 9). So we only left-pad
+	// a lone digit to two chars; we must NOT convert decimal -> hex (that turned
+	// CD '23' into '17', FM '24' into '18', etc.).
+	if (NO_HEX_PAD.has(code)) return String(param); // literal digits, pass through
+	if (/^[0-9]$/.test(param)) return param.padStart(2, "0");
 	return String(param);
 }
 
-function extractValues(values: Record<string, YamlValue>): CommandValueDef[] {
+// Template placeholder keys like `B{xx}` / `T{xx}` / `{xx}` are not sendable
+// literals — they describe a value range, not a concrete parameter.
+function isTemplateKey(key: string): boolean {
+	return /[{}]/.test(key);
+}
+
+function extractValues(values: Record<string, YamlValue>, code: string): CommandValueDef[] {
 	const result: CommandValueDef[] = [];
 
 	for (const [param, def] of Object.entries(values)) {
-		// Skip range keys (numeric arrays)
-		if (isRangeKey(param)) continue;
+		// Skip range keys (numeric arrays, e.g. "[ 0, 200 ]") and templates.
+		if (isRangeKey(param) || isTemplateKey(param)) continue;
 
 		// Skip QSTN (it's metadata, not a sendable value in the action sense)
 		if (param === "QSTN") continue;
 
 		const name = normalizeName(def.name ?? param);
-		const normalizedParam = normalizeParam(param);
+		const normalizedParam = normalizeParam(param, code);
 		result.push({
 			param: normalizedParam,
 			name: String(name),
@@ -149,20 +190,25 @@ function generateRegistry(): CommandDef[] {
 	const yamlContent = readFileSync(yamlPath, "utf-8");
 	const parsed = parse(yamlContent);
 
-	const mainCommands = parsed.main as Record<string, YamlCommand>;
+	const sections: Record<string, Record<string, YamlCommand>> = {
+		main: (parsed.main ?? {}) as Record<string, YamlCommand>,
+		zone2: (parsed.zone2 ?? {}) as Record<string, YamlCommand>,
+		dock: (parsed.dock ?? {}) as Record<string, YamlCommand>,
+	};
 	const registry: CommandDef[] = [];
 
 	for (const code of INCLUDED_COMMANDS) {
-		const cmd = mainCommands[code];
+		const section = ZONE_OVERRIDE[code] ?? "main";
+		const cmd = sections[section]?.[code];
 		if (!cmd) {
-			console.warn(`Warning: Command ${code} not found in YAML`);
+			console.warn(`Warning: Command ${code} not found in YAML section "${section}"`);
 			continue;
 		}
 
 		const values = cmd.values ?? {};
 		const keys = Object.keys(values);
 		const actionType = classifyCommand(code, values);
-		const extractedValues = extractValues(values);
+		const extractedValues = extractValues(values, code);
 
 		const hasQuery = keys.includes("QSTN");
 		const hasUP = keys.includes("UP");
@@ -173,6 +219,7 @@ function generateRegistry(): CommandDef[] {
 			code,
 			name: normalizeName(cmd.name),
 			description: cmd.description,
+			category: CODE_CATEGORY[code] ?? "Other",
 			actionType,
 			values: extractedValues,
 			hasQuery,
@@ -210,6 +257,7 @@ function generateTypeScript(registry: CommandDef[]): string {
 	lines.push(`\tcode: string;`);
 	lines.push(`\tname: string;`);
 	lines.push(`\tdescription: string;`);
+	lines.push(`\tcategory: string;`);
 	lines.push(`\tactionType: CommandActionType;`);
 	lines.push(`\tvalues: CommandValueDef[];`);
 	lines.push(`\thasQuery: boolean;`);
@@ -226,6 +274,7 @@ function generateTypeScript(registry: CommandDef[]): string {
 		lines.push(`\t\tcode: ${JSON.stringify(cmd.code)},`);
 		lines.push(`\t\tname: ${JSON.stringify(cmd.name)},`);
 		lines.push(`\t\tdescription: ${JSON.stringify(cmd.description)},`);
+		lines.push(`\t\tcategory: ${JSON.stringify(cmd.category)},`);
 		lines.push(`\t\tactionType: ${JSON.stringify(cmd.actionType)},`);
 		lines.push(`\t\tvalues: [`);
 		for (const v of cmd.values) {
@@ -267,14 +316,46 @@ function generateTypeScript(registry: CommandDef[]): string {
 	return lines.join("\n");
 }
 
+const SD_PLUGIN = "de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin";
+
+/**
+ * Emit a browser-loadable copy of the registry for the Property Inspectors.
+ * The PI is a webview; a plain `<script>` that sets a global avoids any
+ * fetch/CORS concerns. Kept in sync with the TS registry on every generate.
+ */
+function generateCommandsJs(registry: CommandDef[]): string {
+	const payload = registry.map((c) => ({
+		code: c.code,
+		name: c.name,
+		description: c.description,
+		category: c.category,
+		actionType: c.actionType,
+		values: c.values.map((v) => ({ param: v.param, name: v.name })),
+		hasQuery: c.hasQuery,
+		hasUpDown: c.hasUpDown,
+		onValue: c.onValue,
+		offValue: c.offValue,
+		toggleValue: c.toggleValue,
+	}));
+	return (
+		`// Auto-generated by scripts/generate-command-registry.ts\n` +
+		`// Do not edit manually. Re-generate with: npm run generate:commands\n` +
+		`window.EISCP_COMMANDS = ${JSON.stringify(payload, null, 2)};\n`
+	);
+}
+
 // Main
 const registry = generateRegistry();
-const output = generateTypeScript(registry);
+
 const outputPath = resolve(PROJECT_ROOT, "src/adapter/eiscp/command-registry.ts");
-writeFileSync(outputPath, output, "utf-8");
+writeFileSync(outputPath, generateTypeScript(registry), "utf-8");
+
+const commandsJsPath = resolve(PROJECT_ROOT, SD_PLUGIN, "ui/commands.js");
+writeFileSync(commandsJsPath, generateCommandsJs(registry), "utf-8");
 
 console.log(`Generated command registry with ${registry.length} commands:`);
 for (const cmd of registry) {
-	console.log(`  ${cmd.code} (${cmd.actionType}): ${cmd.name} - ${cmd.values.length} values`);
+	console.log(`  ${cmd.code} (${cmd.actionType}, ${cmd.category}): ${cmd.name} - ${cmd.values.length} values`);
 }
 console.log(`\nOutput: ${outputPath}`);
+console.log(`Output: ${commandsJsPath}`);

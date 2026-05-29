@@ -83,6 +83,69 @@ describe("command registry", () => {
 			assert.equal(cmd.actionType, "toggle");
 			assert.equal(cmd.toggleValue, "TG");
 		});
+
+		it("should classify TFR (tone) as selector with bass/treble steps", () => {
+			const cmd = COMMAND_REGISTRY.TFR;
+			assert.equal(cmd.actionType, "selector");
+			const params = cmd.values.map((v) => v.param);
+			assert.deepEqual(params, ["BUP", "BDOWN", "TUP", "TDOWN"]);
+		});
+
+		it("should classify NTC (transport) as selector with transport keys", () => {
+			const cmd = COMMAND_REGISTRY.NTC;
+			assert.equal(cmd.actionType, "selector");
+			const params = cmd.values.map((v) => v.param);
+			for (const p of ["PLAY", "STOP", "PAUSE", "P/P", "TRUP", "TRDN"]) {
+				assert.ok(params.includes(p), `NTC should have ${p}`);
+			}
+		});
+
+		it("should classify ZPW as toggle and ZMT as toggle with TG", () => {
+			assert.equal(COMMAND_REGISTRY.ZPW.actionType, "toggle");
+			assert.equal(COMMAND_REGISTRY.ZPW.onValue, "01");
+			assert.equal(COMMAND_REGISTRY.ZPW.offValue, "00");
+			assert.equal(COMMAND_REGISTRY.ZMT.actionType, "toggle");
+			assert.equal(COMMAND_REGISTRY.ZMT.toggleValue, "TG");
+		});
+
+		it("should classify ZVL (zone2 volume) as stepper", () => {
+			const cmd = COMMAND_REGISTRY.ZVL;
+			assert.equal(cmd.actionType, "stepper");
+			assert.ok(cmd.hasUpDown);
+		});
+	});
+
+	describe("value normalization", () => {
+		it("should preserve 2-char hex input codes (regression: decimal->hex bug)", () => {
+			// Previously normalizeParam turned '23' into '17' (decimal 23 -> hex).
+			assert.equal(getValueName("SLI", "23"), "cd");
+			assert.equal(getValueName("SLI", "24"), "fm");
+			assert.equal(getValueName("SLI", "10"), "dvd");
+			assert.equal(getValueName("SLI", "2B"), "network");
+		});
+
+		it("should keep NTC numeric keys as literal digits, not hex-padded", () => {
+			const params = COMMAND_REGISTRY.NTC.values.map((v) => v.param);
+			assert.ok(params.includes("0"), "NTC should have literal '0'");
+			assert.ok(!params.includes("00"), "NTC should NOT hex-pad to '00'");
+		});
+
+		it("should not leak range or template keys as values", () => {
+			for (const [code, cmd] of Object.entries(COMMAND_REGISTRY)) {
+				for (const v of cmd.values) {
+					assert.ok(!/[[\]{}]/.test(v.param), `${code} leaked a range/template param: ${v.param}`);
+					assert.ok(!/^\d+\s*,\s*\d+$/.test(v.param), `${code} leaked a range param: ${v.param}`);
+				}
+			}
+		});
+	});
+
+	describe("metadata", () => {
+		it("every command should have a category", () => {
+			for (const [code, cmd] of Object.entries(COMMAND_REGISTRY)) {
+				assert.ok(cmd.category, `${code} should have a category`);
+			}
+		});
 	});
 
 	describe("helper functions", () => {

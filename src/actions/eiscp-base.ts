@@ -16,6 +16,14 @@ interface GlobalSettings {
 	deviceIp?: string;
 }
 
+export function resolveParam(value: string | undefined, customValue: string | undefined, fallback: string): string;
+export function resolveParam(value?: string, customValue?: string, fallback?: string): string | undefined;
+export function resolveParam(value?: string, customValue?: string, fallback?: string): string | undefined {
+	if (!value) return fallback;
+	if (value === "custom") return customValue || fallback;
+	return value;
+}
+
 export function resolveDeviceIp(settings: EiscpActionSettings): string {
 	if (settings.deviceIp && settings.deviceIp !== "custom") {
 		return settings.deviceIp;
@@ -25,6 +33,17 @@ export function resolveDeviceIp(settings: EiscpActionSettings): string {
 	}
 	const global = streamDeck.settings.getGlobalSettings() as GlobalSettings;
 	return global.deviceIp || "10.2.0.32";
+}
+
+export function generateColoredBg(color: string): string {
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144"><rect width="144" height="144" fill="${color}"/></svg>`;
+	return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+export function getToggleColor(command: string, isOn: boolean): string {
+	if (!isOn) return "#555555";
+	// Mute ON = warning (red), everything else ON = active (green)
+	return command === "AMT" ? "#F44336" : "#4CAF50";
 }
 
 export function formatCommandValue(command: string, rawValue: string): string {

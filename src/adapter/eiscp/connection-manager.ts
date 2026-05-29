@@ -5,7 +5,10 @@
  * command interface for the universal Stream Deck actions.
  */
 
+import { streamDeck } from "@elgato/streamdeck";
 import { EiscpClient, createClient, type DecodedMessage } from "./client.ts";
+
+const logger = streamDeck.logger.createScope("ConnectionManager");
 
 type CommandCallback = (rawValue: string) => void;
 
@@ -31,10 +34,12 @@ export class ConnectionManager {
 	async ensureConnected(host: string, port = 60128): Promise<EiscpClient> {
 		let client = this.clients.get(host);
 		if (client && client.isConnected()) {
+			logger.debug(`Reusing existing connection to ${host}:${port}`);
 			return client;
 		}
 
 		if (!client) {
+			logger.info(`Creating new client for ${host}:${port}`);
 			client = createClient({
 				host,
 				port,
@@ -46,25 +51,43 @@ export class ConnectionManager {
 
 			// Listen for all messages to update cache and notify subscribers
 			client.on("message", (msg: DecodedMessage) => {
+				logger.debug(`Received message from ${host}: ${msg.command} ${msg.parameter}`);
 				this.handleMessage(host, msg);
 			});
+
+			client.on("error", (err: Error) => {
+				logger.error(`Client error for ${host}: ${err.message}`);
+			});
+
+			client.on("disconnected", () => {
+				logger.warn(`Client disconnected from ${host}`);
+			});
+		} else {
+			logger.info(`Reconnecting existing client to ${host}:${port}`);
 		}
 
 		if (!client.isConnected()) {
+			logger.info(`Connecting to ${host}:${port}...`);
 			await client.connect();
+			logger.info(`Connected to ${host}:${port}`);
 		}
 
 		return client;
 	}
 
 	async sendCommand(host: string, command: string, parameter: string): Promise<void> {
+		logger.info(`sendCommand: ${command} ${parameter} -> ${host}`);
 		const client = await this.ensureConnected(host);
 		await client.send(command, parameter);
+		logger.debug(`sendCommand: ${command} ${parameter} sent successfully`);
 	}
 
 	async queryCommand(host: string, command: string): Promise<string> {
+		logger.info(`queryCommand: ${command} -> ${host}`);
 		const client = await this.ensureConnected(host);
-		return client.query(command);
+		const result = await client.query(command);
+		logger.info(`queryCommand: ${command} -> ${result}`);
+		return result;
 	}
 
 	getCachedValue(host: string, command: string): string | undefined {
