@@ -26,7 +26,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
 const MANIFEST_PATH = resolve(
 	PROJECT_ROOT,
-	"de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin/manifest.json",
+	"de.schwetschke.sd.eiscp-avr-remote.sdPlugin/manifest.json",
 );
 
 interface ManifestState {

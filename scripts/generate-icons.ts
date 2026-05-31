@@ -23,7 +23,7 @@ import { DEDICATED_SPECS, GENERIC_SPECS, onStateColor, type IconSpec } from "../
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
 const LUCIDE_DIR = resolve(PROJECT_ROOT, "node_modules/lucide-static/icons");
-const SD_PLUGIN = "de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin";
+const SD_PLUGIN = "de.schwetschke.sd.eiscp-avr-remote.sdPlugin";
 const ACTIONS_IMG_DIR = resolve(PROJECT_ROOT, SD_PLUGIN, "imgs/actions");
 
 const STROKE = "#FFFFFF";

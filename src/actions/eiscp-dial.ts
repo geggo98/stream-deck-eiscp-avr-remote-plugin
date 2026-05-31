@@ -21,7 +21,7 @@ interface DialSettings extends EiscpActionSettings {
 	customPressParam?: string;
 }
 
-@action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial" })
+@action({ UUID: "de.schwetschke.sd.eiscp-avr-remote.eiscp-dial" })
 export class EiscpDialAction extends DialActionBase<DialSettings> {
 	constructor() {
 		super("EiscpDial");

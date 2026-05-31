@@ -24,7 +24,7 @@ interface DialIndicatorSettings extends EiscpActionSettings {
 	barMutedColor?: string;
 }
 
-@action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial-indicator" })
+@action({ UUID: "de.schwetschke.sd.eiscp-avr-remote.eiscp-dial-indicator" })
 export class EiscpDialIndicatorAction extends DialActionBase<DialIndicatorSettings> {
 	constructor() {
 		super("EiscpDialIndicator");

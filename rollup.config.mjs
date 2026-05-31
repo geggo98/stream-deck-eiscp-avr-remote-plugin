@@ -6,7 +6,7 @@ import path from "node:path";
 import url from "node:url";
 
 const isWatching = !!process.env.ROLLUP_WATCH;
-const sdPlugin = "de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin";
+const sdPlugin = "de.schwetschke.sd.eiscp-avr-remote.sdPlugin";
 
 /**
  * @type {import('rollup').RollupOptions}

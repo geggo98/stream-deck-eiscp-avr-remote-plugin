@@ -1,7 +1,7 @@
 {
   "scripts": {
     "build": "rollup -c",
-    "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.pioneer-onkyo-remote\"",
+    "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.eiscp-avr-remote\"",
     "test": "node --test tests/**/*.test.ts",
     "test:unit": "node --test tests/**/*.test.ts",
     "test:eiscp": "node --test tests/eiscp-*.test.ts",

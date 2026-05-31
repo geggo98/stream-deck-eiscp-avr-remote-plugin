@@ -14,7 +14,7 @@ interface ButtonSettings extends EiscpActionSettings {
 	customParameter?: string;
 }
 
-@action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button" })
+@action({ UUID: "de.schwetschke.sd.eiscp-avr-remote.eiscp-button" })
 export class EiscpButtonAction extends KeyActionBase<ButtonSettings> {
 	constructor() {
 		super("EiscpButton");

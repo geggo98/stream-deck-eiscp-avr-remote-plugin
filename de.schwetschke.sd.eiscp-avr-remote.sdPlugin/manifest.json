@@ -1,11 +1,11 @@
 {
-  "Name": "Pioneer and Onkyo Receiver Network Remote",
-  "UUID": "de.schwetschke.sd.pioneer-onkyo-remote",
+  "Name": "eISCP AV Receiver Remote Control",
+  "UUID": "de.schwetschke.sd.eiscp-avr-remote",
   "Version": "0.1.0.0",
   "Author": "Stefan Schwetschke",
-  "Description": "Remote control for receivers which support ISCP (Integra Serial Control Protocol) over Ethernet (eISCP) protocol",
+  "Description": "Remote control for AV receivers that support the Integra Serial Control Protocol over Ethernet (eISCP). Compatible with many Pioneer, Onkyo and Integra network receivers. Independent project, not affiliated with or endorsed by these manufacturers.",
   "Icon": "imgs/plugin/marketplace",
-  "Category": "Pioneer and Onkyo Receiver Network Remote",
+  "Category": "eISCP AV Receiver Remote",
   "CategoryIcon": "imgs/plugin/category-icon",
   "CodePath": "bin/plugin.js",
   "Nodejs": {
@@ -28,7 +28,7 @@
   "Actions": [
     {
       "Name": "eISCP Button",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-button",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.eiscp-button",
       "Icon": "imgs/actions/eiscp-button/icon",
       "Tooltip": "Send any eISCP command. Use for one-shot commands, volume up/down, etc.",
       "Controllers": [
@@ -44,7 +44,7 @@
     },
     {
       "Name": "eISCP Toggle",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-toggle",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.eiscp-toggle",
       "Icon": "imgs/actions/eiscp-toggle/icon",
       "Tooltip": "Toggle on/off eISCP commands. Use for power, mute, direct mode, etc.",
       "Controllers": [
@@ -66,7 +66,7 @@
     },
     {
       "Name": "eISCP Dial Value",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.eiscp-dial",
       "Icon": "imgs/actions/eiscp-dial/icon",
       "Tooltip": "Encoder for text-based eISCP values. Use for input selector, listening mode, etc.",
       "Controllers": [
@@ -89,7 +89,7 @@
     },
     {
       "Name": "eISCP Dial Indicator",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-dial-indicator",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.eiscp-dial-indicator",
       "Icon": "imgs/actions/eiscp-dial-indicator/icon",
       "Tooltip": "Encoder with progress bar for numeric eISCP values. Use for volume, center level, etc.",
       "Controllers": [
@@ -112,7 +112,7 @@
     },
     {
       "Name": "Power",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.power",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.power",
       "Icon": "imgs/actions/power/icon",
       "Tooltip": "Toggle the receiver on/standby (PWR).",
       "Controllers": [
@@ -134,7 +134,7 @@
     },
     {
       "Name": "Mute",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mute",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.mute",
       "Icon": "imgs/actions/mute/icon",
       "Tooltip": "Toggle audio muting (AMT).",
       "Controllers": [
@@ -156,7 +156,7 @@
     },
     {
       "Name": "Volume Up",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.volume-up",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.volume-up",
       "Icon": "imgs/actions/volume-up/icon",
       "Tooltip": "Raise master volume (MVL UP).",
       "Controllers": [
@@ -172,7 +172,7 @@
     },
     {
       "Name": "Volume Down",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.volume-down",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.volume-down",
       "Icon": "imgs/actions/volume-down/icon",
       "Tooltip": "Lower master volume (MVL DOWN).",
       "Controllers": [
@@ -188,7 +188,7 @@
     },
     {
       "Name": "Volume",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.volume-dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.volume-dial",
       "Icon": "imgs/actions/volume-dial/icon",
       "Tooltip": "Adjust master volume; press to mute.",
       "Controllers": [
@@ -211,7 +211,7 @@
     },
     {
       "Name": "Next Input",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.input-next",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.input-next",
       "Icon": "imgs/actions/input-next/icon",
       "Tooltip": "Cycle to the next input source (SLI UP).",
       "Controllers": [
@@ -227,7 +227,7 @@
     },
     {
       "Name": "Previous Input",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.input-prev",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.input-prev",
       "Icon": "imgs/actions/input-prev/icon",
       "Tooltip": "Cycle to the previous input source (SLI DOWN).",
       "Controllers": [
@@ -243,7 +243,7 @@
     },
     {
       "Name": "Next Listening Mode",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mode-next",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.mode-next",
       "Icon": "imgs/actions/mode-next/icon",
       "Tooltip": "Cycle to the next listening mode (LMD UP).",
       "Controllers": [
@@ -259,7 +259,7 @@
     },
     {
       "Name": "Previous Listening Mode",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mode-prev",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.mode-prev",
       "Icon": "imgs/actions/mode-prev/icon",
       "Tooltip": "Cycle to the previous listening mode (LMD DOWN).",
       "Controllers": [
@@ -275,7 +275,7 @@
     },
     {
       "Name": "Transport",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.transport",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.transport",
       "Icon": "imgs/actions/transport/icon",
       "Tooltip": "Network/USB transport key (play, pause, stop, next, previous).",
       "Controllers": [
@@ -291,7 +291,7 @@
     },
     {
       "Name": "Bass +",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.bass-up",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.bass-up",
       "Icon": "imgs/actions/bass-up/icon",
       "Tooltip": "Increase front bass (TFR BUP).",
       "Controllers": [
@@ -307,7 +307,7 @@
     },
     {
       "Name": "Bass −",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.bass-down",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.bass-down",
       "Icon": "imgs/actions/bass-down/icon",
       "Tooltip": "Decrease front bass (TFR BDOWN).",
       "Controllers": [
@@ -323,7 +323,7 @@
     },
     {
       "Name": "Treble +",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.treble-up",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.treble-up",
       "Icon": "imgs/actions/treble-up/icon",
       "Tooltip": "Increase front treble (TFR TUP).",
       "Controllers": [
@@ -339,7 +339,7 @@
     },
     {
       "Name": "Treble −",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.treble-down",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.treble-down",
       "Icon": "imgs/actions/treble-down/icon",
       "Tooltip": "Decrease front treble (TFR TDOWN).",
       "Controllers": [
@@ -355,7 +355,7 @@
     },
     {
       "Name": "Next Preset",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.preset-next",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.preset-next",
       "Icon": "imgs/actions/preset-next/icon",
       "Tooltip": "Tuner preset up (PRS UP).",
       "Controllers": [
@@ -371,7 +371,7 @@
     },
     {
       "Name": "Previous Preset",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.preset-prev",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.preset-prev",
       "Icon": "imgs/actions/preset-prev/icon",
       "Tooltip": "Tuner preset down (PRS DOWN).",
       "Controllers": [
@@ -387,7 +387,7 @@
     },
     {
       "Name": "Input",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.input-dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.input-dial",
       "Icon": "imgs/actions/input-dial/icon",
       "Tooltip": "Rotate to change input source; press for the chosen action (default Mute).",
       "Controllers": [
@@ -410,7 +410,7 @@
     },
     {
       "Name": "Listening Mode",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mode-dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.mode-dial",
       "Icon": "imgs/actions/mode-dial/icon",
       "Tooltip": "Rotate to change the listening mode; press for the chosen action (default Mute).",
       "Controllers": [
@@ -433,7 +433,7 @@
     },
     {
       "Name": "Bass",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.bass-dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.bass-dial",
       "Icon": "imgs/actions/bass-dial/icon",
       "Tooltip": "Rotate to adjust front bass; press for the chosen action (default Mute).",
       "Controllers": [
@@ -456,7 +456,7 @@
     },
     {
       "Name": "Treble",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.treble-dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.treble-dial",
       "Icon": "imgs/actions/treble-dial/icon",
       "Tooltip": "Rotate to adjust front treble; press for the chosen action (default Mute).",
       "Controllers": [
@@ -479,7 +479,7 @@
     },
     {
       "Name": "Preset",
-      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.preset-dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.preset-dial",
       "Icon": "imgs/actions/preset-dial/icon",
       "Tooltip": "Rotate to change the tuner preset; press to select the Tuner input.",
       "Controllers": [
