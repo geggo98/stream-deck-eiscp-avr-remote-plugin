@@ -18,13 +18,16 @@ import {
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
+	type SendToPluginEvent,
 	SingletonAction,
 	type WillAppearEvent,
 	type WillDisappearEvent,
 	streamDeck,
 } from "@elgato/streamdeck";
+import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
+import { handleDeviceListMessage } from "./pi-devices.ts";
 import {
 	type EiscpActionSettings,
 	resolveDeviceIp,
@@ -87,6 +90,15 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 
 	override async onWillDisappear(ev: WillDisappearEvent<TSettings>): Promise<void> {
 		this.clearSubs(ev.action.id);
+	}
+
+	/**
+	 * Answer the PI's Device IP data-source request. Every action's PI shows the
+	 * device dropdown, so it lives on the shared base; subclasses that override
+	 * onSendToPlugin (e.g. the learned-name cyclers) must call super.
+	 */
+	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, TSettings>): Promise<void> {
+		await handleDeviceListMessage(ev);
 	}
 }
 

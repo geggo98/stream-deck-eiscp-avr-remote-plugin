@@ -11,6 +11,7 @@
     "discover-eiscp-broadcast": "tsx scripts/discover-eiscp-broadcast.ts",
     "discover-eiscp-ip-scan": "tsx scripts/discover-eiscp-ip-scan.ts",
     "discover-all": "tsx scripts/discover-all.ts",
+    "dummy:discovery": "tsx scripts/dummy-eiscp-discovery.ts",
     "generate:commands": "tsx scripts/generate-command-registry.ts",
     "generate:icons": "tsx scripts/generate-icons.ts",
     "generate:manifest": "tsx scripts/generate-manifest.ts",

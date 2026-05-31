@@ -27,14 +27,16 @@
 	function renderDeviceIp(containerId) {
 		const c = document.getElementById(containerId);
 		if (!c) return;
+		// sdpi-select renders only the options present at first paint and ignores
+		// any injected via innerHTML or appended later, so a hand-built dropdown
+		// stays empty. Use the sdpi-components "datasource" round-trip instead: the
+		// plugin answers a "getDevices" request with the discovered receivers (see
+		// src/actions/pi-devices.ts); hot-reload lets it push the list as discovery
+		// completes. The list includes a "Custom IP…" entry that reveals the field.
 		c.innerHTML =
 			'<sdpi-item label="Device IP">' +
-			'  <sdpi-select setting="deviceIp" placeholder="Select device">' +
-			'    <optgroup label="Pre-configured">' +
-			'      <option value="10.2.0.32">Receiver (10.2.0.32)</option>' +
-			"    </optgroup>" +
-			'    <option value="custom">Custom IP...</option>' +
-			"  </sdpi-select>" +
+			'  <sdpi-select setting="deviceIp" placeholder="Select device"' +
+			'    datasource="getDevices" loading="Scanning the network…" hot-reload></sdpi-select>' +
 			"</sdpi-item>" +
 			'<sdpi-item label="Custom IP" id="customIpItem" style="display:none;">' +
 			'  <sdpi-textfield setting="customIp" placeholder="192.168.1.100"></sdpi-textfield>' +

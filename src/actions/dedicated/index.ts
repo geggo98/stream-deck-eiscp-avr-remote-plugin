@@ -132,9 +132,10 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		}
 	}
 
-	/** PI "Auto-Discover" button → sweep all options, learning each name. */
+	/** PI "Auto-Discover" button → sweep all options; also serve the device list (super). */
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, EiscpActionSettings>): Promise<void> {
-		return handleDiscoverMessage(ev, this.displayCommand(), this.logger);
+		await handleDiscoverMessage(ev, this.displayCommand(), this.logger);
+		await super.onSendToPlugin(ev);
 	}
 }
 
@@ -354,7 +355,8 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, EiscpActionSettings>): Promise<void> {
-		return handleDiscoverMessage(ev, this.command(), this.logger);
+		await handleDiscoverMessage(ev, this.command(), this.logger);
+		await super.onSendToPlugin(ev);
 	}
 }
 
