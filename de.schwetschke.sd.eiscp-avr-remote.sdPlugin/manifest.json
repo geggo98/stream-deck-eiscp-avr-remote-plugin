@@ -10,10 +10,10 @@
   "CodePath": "bin/plugin.js",
   "Nodejs": {
     "Debug": "enabled",
-    "Version": "20"
+    "Version": "24"
   },
   "Software": {
-    "MinimumVersion": "6.9"
+    "MinimumVersion": "7.1"
   },
   "OS": [
     {
