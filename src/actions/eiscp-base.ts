@@ -44,6 +44,9 @@ export function resolveParam(value?: string, customValue?: string, fallback?: st
 	return value;
 }
 
+/** Fallback receiver IP when nothing is configured (the developer's test unit). */
+export const DEFAULT_DEVICE_IP = "10.2.0.32";
+
 export function resolveDeviceIp(settings: EiscpActionSettings): string {
 	if (settings.deviceIp && settings.deviceIp !== "custom") {
 		return settings.deviceIp;
@@ -51,7 +54,7 @@ export function resolveDeviceIp(settings: EiscpActionSettings): string {
 	if (settings.customIp) {
 		return settings.customIp;
 	}
-	return getCachedGlobalSettings().deviceIp || "10.2.0.32";
+	return getCachedGlobalSettings().deviceIp || DEFAULT_DEVICE_IP;
 }
 
 export function generateColoredBg(color: string): string {
