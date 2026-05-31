@@ -69,7 +69,7 @@ class MyAction extends SingletonAction<Settings> {
 ## Important Notes
 
 - **Plugin ID:** `de.schwetschke.sd.eiscp-avr-remote`
-- **Node.js requirement:** Plugin requires Node.js 20 (dev env uses 24)
+- **Node.js requirement:** Plugin targets the Node.js 24 runtime (manifest `Nodejs.Version` 24), which needs Stream Deck 7.1+ (`Software.MinimumVersion` 7.1); dev env also uses Node 24
 - **Debug mode:** Enabled in manifest
 - **Build output ignored:** `*.sdPlugin/bin` is gitignored, plugin source is tracked
 - **Logging:** Currently set to "trace" level in `plugin.ts`
