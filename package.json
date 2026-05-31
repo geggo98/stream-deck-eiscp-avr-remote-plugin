@@ -8,6 +8,10 @@
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.eiscp-avr-remote\"",
+    "validate": "streamdeck validate de.schwetschke.sd.eiscp-avr-remote.sdPlugin",
+    "pack": "streamdeck pack de.schwetschke.sd.eiscp-avr-remote.sdPlugin --output . --force",
+    "scan": "osv-scanner scan source --lockfile=package-lock.json --lockfile=streamdeck_manifest.deno.lock --licenses",
+    "scan:vulns": "osv-scanner scan source --lockfile=package-lock.json --lockfile=streamdeck_manifest.deno.lock",
     "test": "node --test tests/**/*.test.ts",
     "test:unit": "node --test tests/**/*.test.ts",
     "test:eiscp": "node --test tests/eiscp-*.test.ts",
