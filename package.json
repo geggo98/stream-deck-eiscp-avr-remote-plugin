@@ -8,8 +8,8 @@
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.eiscp-avr-remote\"",
-    "validate": "streamdeck validate de.schwetschke.sd.eiscp-avr-remote.sdPlugin",
-    "pack": "streamdeck pack de.schwetschke.sd.eiscp-avr-remote.sdPlugin --output . --force",
+    "validate": "streamdeck validate de.schwetschke.sd.eiscp-avr-remote.sdPlugin --no-update-check",
+    "pack": "streamdeck pack de.schwetschke.sd.eiscp-avr-remote.sdPlugin --output . --force --no-update-check",
     "scan": "osv-scanner scan source --lockfile=package-lock.json --licenses",
     "scan:vulns": "osv-scanner scan source --lockfile=package-lock.json",
     "test": "node --test tests/**/*.test.ts",
