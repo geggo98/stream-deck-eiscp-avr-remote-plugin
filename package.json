@@ -1,7 +1,17 @@
 {
+  "name": "eiscp-avr-remote",
+  "version": "0.1.0",
+  "description": "Stream Deck plugin to remote-control AV receivers over eISCP (Integra Serial Control Protocol over Ethernet). Compatible with many Pioneer, Onkyo and Integra network receivers. Independent project, not affiliated with or endorsed by these manufacturers.",
+  "author": "Stefan Schwetschke <stefan@schwetschke.de>",
+  "license": "MIT",
+  "private": true,
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.eiscp-avr-remote\"",
+    "validate": "streamdeck validate de.schwetschke.sd.eiscp-avr-remote.sdPlugin",
+    "pack": "streamdeck pack de.schwetschke.sd.eiscp-avr-remote.sdPlugin --output . --force",
+    "scan": "osv-scanner scan source --lockfile=package-lock.json --lockfile=streamdeck_manifest.deno.lock --licenses",
+    "scan:vulns": "osv-scanner scan source --lockfile=package-lock.json --lockfile=streamdeck_manifest.deno.lock",
     "test": "node --test tests/**/*.test.ts",
     "test:unit": "node --test tests/**/*.test.ts",
     "test:eiscp": "node --test tests/eiscp-*.test.ts",

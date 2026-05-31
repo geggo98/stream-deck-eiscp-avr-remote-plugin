@@ -1,0 +1,20 @@
+eISCP AV Receiver Remote Control
+Copyright (c) 2026 Stefan Schwetschke
+
+This product is licensed under the MIT License (see LICENSE).
+
+Trademarks and non-affiliation
+------------------------------
+"Pioneer", "Onkyo" and "Integra" are trademarks of their respective owners.
+This is an independent, community project. It is not produced, authorised,
+sponsored, or endorsed by any of these companies. Brand and model names are
+used only to describe the receivers this software is compatible with.
+
+Third-party material
+--------------------
+- Action icons are derived from Lucide (https://lucide.dev), ISC License.
+  See de.schwetschke.sd.eiscp-avr-remote.sdPlugin/imgs/icons/LICENSE-lucide.txt.
+- The eISCP command reference in docs/ is compiled from public, community
+  documentation of the protocol (e.g. the OpenHAB Onkyo binding and the
+  miracle2k/onkyo-eiscp project). See docs/eiscp-reference.md for sources.
+- Built on the Elgato Stream Deck SDK (@elgato/streamdeck), MIT License.

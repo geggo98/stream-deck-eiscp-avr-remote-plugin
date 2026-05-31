@@ -5,7 +5,7 @@
   "Author": "Stefan Schwetschke",
   "Description": "Remote control for AV receivers that support the Integra Serial Control Protocol over Ethernet (eISCP). Compatible with many Pioneer, Onkyo and Integra network receivers. Independent project, not affiliated with or endorsed by these manufacturers.",
   "Icon": "imgs/plugin/marketplace",
-  "Category": "eISCP AV Receiver Remote",
+  "Category": "eISCP AV Receiver Remote Control",
   "CategoryIcon": "imgs/plugin/category-icon",
   "CodePath": "bin/plugin.js",
   "Nodejs": {
