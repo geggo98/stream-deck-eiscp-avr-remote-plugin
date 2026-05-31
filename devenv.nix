@@ -61,8 +61,27 @@
   '';
 
   # https://devenv.sh/git-hooks/
-  # Enforce Conventional Commits on the commit message (see CONTRIBUTING.md).
-  git-hooks.hooks.commitizen.enable = true;
+  git-hooks.hooks = {
+    # Enforce Conventional Commits on the commit message (see CONTRIBUTING.md).
+    commitizen.enable = true;
+    # Block secrets from being committed (pre-commit).
+    gitleaks = {
+      enable = true;
+      name = "gitleaks (secret scan)";
+      entry = "${pkgs.gitleaks}/bin/gitleaks git --staged --no-banner --redact";
+      language = "system";
+      pass_filenames = false;
+    };
+    # Scan dependencies for known vulnerabilities before pushing (pre-push).
+    osv-scanner = {
+      enable = true;
+      name = "osv-scanner (dependency vulnerabilities)";
+      entry = "${pkgs.osv-scanner}/bin/osv-scanner scan source --lockfile=package-lock.json";
+      language = "system";
+      pass_filenames = false;
+      stages = [ "pre-push" ];
+    };
+  };
 
   # See full reference at https://devenv.sh/reference/options/
 }
