@@ -8,6 +8,11 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+    # One combined PR per run instead of one per action.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # npm dependencies.
   - package-ecosystem: npm
@@ -17,3 +22,10 @@ updates:
     commit-message:
       prefix: build
       prefix-development: build
+    # One combined PR per run instead of one per package. Security updates are
+    # not grouped (groups apply to version updates), so fixes still arrive
+    # individually and promptly.
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
