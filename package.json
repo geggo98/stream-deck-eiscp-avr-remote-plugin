@@ -5,6 +5,12 @@
   "author": "Stefan Schwetschke <stefan@schwetschke.de>",
   "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin.git"
+  },
+  "homepage": "https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin#readme",
+  "bugs": "https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/issues",
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.eiscp-avr-remote\"",
