@@ -5,7 +5,13 @@
   env.GREET = "devenv";
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git pkgs.tsx ];
+  packages = [
+    pkgs.git
+    pkgs.tsx
+    pkgs.git-crypt # decrypt docs/*.enc.* (git-crypt-tracked vendor docs)
+    pkgs.osv-scanner # dependency vulnerability + license scanning (npm run scan)
+    pkgs.pinact # pin GitHub Actions to full commit SHAs
+  ];
 
   # https://devenv.sh/languages/
   languages.javascript = {
