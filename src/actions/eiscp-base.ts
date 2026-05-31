@@ -8,6 +8,8 @@ export interface EiscpActionSettings {
 	deviceIp?: string;
 	customIp?: string;
 	command?: string;
+	/** Configurable dial press action key (see resolveDialPress / ui/dial-*.html). */
+	pressAction?: string;
 	[key: string]: any;
 }
 
@@ -89,4 +91,46 @@ export function formatCommandValue(command: string, rawValue: string): string {
 	}
 
 	return rawValue;
+}
+
+/**
+ * Parse a tone readout (TFR/TFW/... "B{xx}T{yy}") into signed bass/treble in the
+ * receiver's −10..+10 range. Each token is the receiver's signed text encoding:
+ * "00" is zero, otherwise a sign ("+"/"-") followed by one hex nibble 0..A
+ * (e.g. "+2" -> +2, "-A" -> −10). Returns undefined if the string isn't a tone
+ * readout. The generated registry omits these B{xx}/T{yy} value templates, so
+ * the dial actions parse the raw value here rather than via formatCommandValue.
+ */
+export function parseTone(raw: string): { bass: number; treble: number } | undefined {
+	const m = /B([+-][0-9A]|00)T([+-][0-9A]|00)/i.exec(raw);
+	if (!m) return undefined;
+	const dec = (t: string): number => (t === "00" ? 0 : (t[0] === "-" ? -1 : 1) * parseInt(t[1], 16));
+	return { bass: dec(m[1]), treble: dec(m[2]) };
+}
+
+/**
+ * Press-button actions a configurable dial can run on push (chosen in the PI).
+ * The receiver may not implement every one — e.g. DIR (Direct) is a no-op on some
+ * Pioneer units — so "mute" is the safe default. Mirrored by ui/dial-*.html.
+ */
+export interface DialPressAction {
+	/** eISCP command sent on press. */
+	command: string;
+	/** Parameter sent on press (TG toggles; an absolute value sets it). */
+	param: string;
+	/** Raw value of `command` that means "on" — drives the touch-strip overlay. */
+	on: string;
+	/** Title shown on the touch strip while the press reads on. */
+	label: string;
+}
+
+export const DIAL_PRESS_ACTIONS: Record<string, DialPressAction> = {
+	mute: { command: "AMT", param: "TG", on: "01", label: "MUTED" },
+	direct: { command: "DIR", param: "TG", on: "01", label: "DIRECT" },
+	stereo: { command: "LMD", param: "00", on: "00", label: "STEREO" },
+};
+
+/** Resolve a dial's `pressAction` setting to its press behavior, defaulting to mute. */
+export function resolveDialPress(action: string | undefined): DialPressAction {
+	return DIAL_PRESS_ACTIONS[action ?? "mute"] ?? DIAL_PRESS_ACTIONS.mute;
 }

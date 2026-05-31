@@ -132,6 +132,40 @@ export const DEDICATED_SPECS: DedicatedSpec[] = [
 		kind: "key", controller: "Keypad", command: "PRS", parameter: "DOWN", showsState: true,
 		states: 1, icon: { primary: "radio", badge: "chevron-left" },
 	},
+	// --- Dials (Stream Deck Plus rotary encoders): rotate to adjust, press for a configurable action ---
+	// pressCommand/pressParam below are the DEFAULT; input/mode/bass/treble let the
+	// user pick the press from a PI dropdown (Mute / Direct / Stereo), so the manifest
+	// Push hint reflects the default (Mute). Preset's press is fixed (jump to Tuner).
+	{
+		id: "input-dial", name: "Input", tooltip: "Rotate to change input source; press for the chosen action (default Mute).",
+		kind: "dial", controller: "Encoder", command: "SLI", upParam: "UP", downParam: "DOWN",
+		pressCommand: "AMT", pressParam: "TG", encoderLayout: "$A1",
+		states: 1, icon: { primary: "monitor" },
+	},
+	{
+		id: "mode-dial", name: "Listening Mode", tooltip: "Rotate to change the listening mode; press for the chosen action (default Mute).",
+		kind: "dial", controller: "Encoder", command: "LMD", upParam: "UP", downParam: "DOWN",
+		pressCommand: "AMT", pressParam: "TG", encoderLayout: "$A1",
+		states: 1, icon: { primary: "audio-lines" },
+	},
+	{
+		id: "bass-dial", name: "Bass", tooltip: "Rotate to adjust front bass; press for the chosen action (default Mute).",
+		kind: "dial", controller: "Encoder", command: "TFR", upParam: "BUP", downParam: "BDOWN",
+		pressCommand: "AMT", pressParam: "TG", encoderLayout: "$B1",
+		states: 1, icon: { primary: "waves" },
+	},
+	{
+		id: "treble-dial", name: "Treble", tooltip: "Rotate to adjust front treble; press for the chosen action (default Mute).",
+		kind: "dial", controller: "Encoder", command: "TFR", upParam: "TUP", downParam: "TDOWN",
+		pressCommand: "AMT", pressParam: "TG", encoderLayout: "$B1",
+		states: 1, icon: { primary: "audio-waveform" },
+	},
+	{
+		id: "preset-dial", name: "Preset", tooltip: "Rotate to change the tuner preset; press to select the Tuner input.",
+		kind: "dial", controller: "Encoder", command: "PRS", upParam: "UP", downParam: "DOWN",
+		pressCommand: "SLI", pressParam: "26", encoderLayout: "$A1",
+		states: 1, icon: { primary: "radio" },
+	},
 ];
 
 export const SPEC_BY_ID: Record<string, DedicatedSpec> = Object.fromEntries(
@@ -177,7 +211,11 @@ export const GENERIC_SPECS: GenericSpec[] = [
 /** Property Inspector path for a dedicated action. */
 export function dedicatedPropertyInspector(spec: DedicatedSpec): string {
 	if (spec.id === "transport") return "ui/transport.html";
-	// Input + listening-mode cyclers get the Auto-Discover button.
+	// Learned-name dials: Auto-Discover + configurable press dropdown.
+	if (["input-dial", "mode-dial"].includes(spec.id)) return "ui/dial-discover.html";
+	// Tone dials: configurable press dropdown.
+	if (["bass-dial", "treble-dial"].includes(spec.id)) return "ui/dial-press.html";
+	// Input + listening-mode key cyclers get the Auto-Discover button.
 	if (["input-next", "input-prev", "mode-next", "mode-prev"].includes(spec.id)) {
 		return "ui/discover.html";
 	}

@@ -15,6 +15,7 @@ import {
 	type DialAction,
 	type DialDownEvent,
 	type DialRotateEvent,
+	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
 	SingletonAction,
@@ -56,6 +57,10 @@ export interface DialConfig {
 	/** Optional secondary command sent on press, e.g. AMT to mute. */
 	pressCommand?: string;
 	pressParam?: string;
+	/** Raw value of pressCommand that means "on" (defaults to its registry onValue, then "01"). */
+	pressOnValue?: string;
+	/** Title shown while the press command reads on (e.g. "MUTED"); falls back to "ON". */
+	pressLabel?: string;
 }
 
 /** Common plumbing: scoped logger + per-action subscription bookkeeping. */
@@ -239,22 +244,43 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		const raw = this.pressState.get(actionId);
 		if (!raw) return false;
 		const def = COMMAND_REGISTRY[pressCmd];
-		return raw === (def?.onValue ?? "01");
+		return raw === (cfg.pressOnValue ?? def?.onValue ?? "01");
+	}
+
+	/**
+	 * Extra commands that should ALSO trigger a re-render of the touch strip,
+	 * re-using the cached value of `cfg.command`. Used by learned-name dials that
+	 * must redraw when an "FLD" name-learning event arrives even though the
+	 * SLI/LMD value itself did not change. Defaults to none.
+	 */
+	protected extraRerenderCommands(_cfg: DialConfig): string[] {
+		return [];
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<TSettings>): Promise<void> {
-		const cfg = this.getDialConfig(ev.payload.settings);
+		if (ev.action.isDial()) await this.bind(ev.action, ev.payload.settings);
+	}
+
+	/**
+	 * Re-bind when settings change in the PI (e.g. the press action was switched):
+	 * the SDK does not re-fire onWillAppear, so re-subscribe to the (possibly new)
+	 * press command and re-render. onDialDown already reads fresh settings.
+	 */
+	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TSettings>): Promise<void> {
+		if (ev.action.isDial()) await this.bind(ev.action, ev.payload.settings);
+	}
+
+	/** Wire up live subscriptions and render the initial value. Idempotent. */
+	private async bind(action: DialAction<TSettings>, settings: TSettings): Promise<void> {
+		const cfg = this.getDialConfig(settings);
 		if (!cfg) {
-			this.logger.warn("onWillAppear: no command configured, skipping");
+			this.logger.warn("bind: no command configured, skipping");
 			return;
 		}
-		if (!ev.action.isDial()) return;
-		const action = ev.action;
-		const settings = ev.payload.settings;
 		const host = resolveDeviceIp(settings);
 		const mgr = ConnectionManager.getInstance();
 		const actionId = action.id;
-		// Drop stale subs/press-state on a repeated onWillAppear (no disappear).
+		// Drop stale subs/press-state on a repeated bind (no disappear).
 		this.clearSubs(actionId);
 		this.pressState.delete(actionId);
 
@@ -262,6 +288,19 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			this.updateFeedback(action, cfg, raw, settings, this.isPressOn(actionId, cfg));
 
 		this.trackSub(actionId, mgr.onCommandUpdate(host, cfg.command, rerender));
+
+		// Learned-name dials redraw when an FLD name event arrives, even though the
+		// main SLI/LMD value is unchanged — re-render from the cached main value.
+		for (const extra of this.extraRerenderCommands(cfg)) {
+			if (extra === cfg.command || extra === cfg.pressCommand) continue;
+			this.trackSub(
+				actionId,
+				mgr.onCommandUpdate(host, extra, () => {
+					const mainValue = mgr.getCachedValue(host, cfg.command);
+					if (mainValue) rerender(mainValue);
+				}),
+			);
+		}
 
 		if (cfg.pressCommand && cfg.pressCommand !== cfg.command) {
 			this.trackSub(
@@ -281,7 +320,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			const value = await mgr.queryCommand(host, cfg.command);
 			rerender(value);
 		} catch (err) {
-			this.logger.error(`onWillAppear: query ${cfg.command} failed: ${err}`);
+			this.logger.error(`bind: query ${cfg.command} failed: ${err}`);
 		}
 	}
 

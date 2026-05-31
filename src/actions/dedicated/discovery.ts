@@ -9,8 +9,10 @@
  * Active: runSweep() cycles a command with UP until it wraps, letting the
  * passive observer learn each option's name, then restores the original value.
  */
-import { streamDeck } from "@elgato/streamdeck";
+import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
+import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
+import { type EiscpActionSettings, resolveDeviceIp } from "../eiscp-base.ts";
 import { nameFor, noteChange, noteFld, recordSli, setSliSweeping, type TrackedCommand } from "./name-store.ts";
 
 const logger = streamDeck.logger.createScope("Discovery");
@@ -111,4 +113,40 @@ export async function runSweep(
 		logger.info(`sweep ${command} done (${count} steps), restored ${start}`);
 	}
 	return { count };
+}
+
+/**
+ * Handle the Property Inspector "Auto-Discover" button for a learned-name action
+ * (key OR dial): run the sweep for `command`, learning each option's name, and
+ * stream progress back to the visible PI. Shared by the input/mode key cyclers
+ * and the input/mode dials — both controllers expose getSettings/showOk/showAlert.
+ */
+export async function handleDiscoverMessage(
+	ev: SendToPluginEvent<JsonValue, EiscpActionSettings>,
+	command: TrackedCommand,
+	log: { error(msg: string): void },
+): Promise<void> {
+	const payload = ev.payload as { action?: string } | null;
+	if (!payload || typeof payload !== "object" || payload.action !== "discover") return;
+	if (!ev.action.isKey() && !ev.action.isDial()) return;
+	const action = ev.action;
+	const settings = await action.getSettings();
+	const host = resolveDeviceIp(settings);
+	// Plugin -> PI messages go through the global UI controller (the currently
+	// visible property inspector, i.e. this action's PI).
+	const send = (m: JsonValue) => void streamDeck.ui.sendToPropertyInspector(m);
+
+	send({ event: "discover", phase: "start", command });
+	try {
+		const { count } = await runSweep(host, command, (p) =>
+			send({ event: "discover", phase: "progress", done: p.done, current: p.current }),
+		);
+		send({ event: "discover", phase: "done", count });
+		// showOk/showAlert are Keypad-only; dials report status via the PI messages.
+		if (action.isKey()) action.showOk();
+	} catch (err) {
+		log.error(`discover sweep failed: ${err}`);
+		send({ event: "discover", phase: "error", message: String(err) });
+		if (action.isKey()) action.showAlert();
+	}
 }
