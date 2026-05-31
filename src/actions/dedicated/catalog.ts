@@ -10,7 +10,7 @@
  * class decorator, the manifest, and the generated images can never drift.
  */
 
-export const PLUGIN_ID = "de.schwetschke.sd.pioneer-onkyo-remote";
+export const PLUGIN_ID = "de.schwetschke.sd.eiscp-avr-remote";
 export const uuidFor = (id: string): string => `${PLUGIN_ID}.${id}`;
 
 export type DedicatedKind = "toggle" | "key" | "dial";

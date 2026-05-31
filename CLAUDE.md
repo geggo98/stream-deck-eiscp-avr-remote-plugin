@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Stream Deck plugin for remote controlling Pioneer and Onkyo network receivers using the ISCP (Integra Serial Control Protocol) over Ethernet (eISCP protocol). Currently in early development (v0.1.0.0) with a template counter action that demonstrates the plugin architecture.
+Stream Deck plugin ("eISCP AV Receiver Remote Control") for remote controlling AV receivers that speak the ISCP (Integra Serial Control Protocol) over Ethernet (eISCP). Compatible with many Pioneer, Onkyo and Integra network receivers; this is an independent project, not affiliated with or endorsed by those manufacturers. Currently in early development (v0.1.0.0).
 
 ## Development Commands
 
@@ -42,15 +42,15 @@ Stream Deck App → Plugin (Node.js) → Action Classes → Settings/Events
 
 1. **Entry Point** (`src/plugin.ts`) - Initializes Stream Deck connection, registers actions, configures logging
 2. **Actions** (`src/actions/`) - Action classes extending `SingletonAction` or `Action` from `@elgato/streamdeck`
-3. **Manifest** (`de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin/manifest.json`) - Plugin metadata, action definitions, requirements
-4. **Property Inspectors** (`de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin/ui/`) - HTML settings panels using SDPI Components v4
+3. **Manifest** (`de.schwetschke.sd.eiscp-avr-remote.sdPlugin/manifest.json`) - Plugin metadata, action definitions, requirements
+4. **Property Inspectors** (`de.schwetschke.sd.eiscp-avr-remote.sdPlugin/ui/`) - HTML settings panels using SDPI Components v4
 
 ### Action Pattern
 
 Actions use TypeScript decorators and extend SDK base classes:
 
 ```typescript
-@action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.action-name" })
+@action({ UUID: "de.schwetschke.sd.eiscp-avr-remote.action-name" })
 class MyAction extends SingletonAction<Settings> {
   onWillAppear(ev, context): void { ... }
   onKeyDown(ev, context): void { ... }
@@ -63,12 +63,12 @@ class MyAction extends SingletonAction<Settings> {
 
 - **Tool:** Rollup with TypeScript compilation
 - **Entry:** `src/plugin.ts`
-- **Output:** `de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin/bin/plugin.js`
+- **Output:** `de.schwetschke.sd.eiscp-avr-remote.sdPlugin/bin/plugin.js`
 - **Watch mode:** Generates source maps, disables minification, auto-restarts plugin
 
 ## Important Notes
 
-- **Plugin ID:** `de.schwetschke.sd.pioneer-onkyo-remote`
+- **Plugin ID:** `de.schwetschke.sd.eiscp-avr-remote`
 - **Node.js requirement:** Plugin requires Node.js 20 (dev env uses 24)
 - **Debug mode:** Enabled in manifest
 - **Build output ignored:** `*.sdPlugin/bin` is gitignored, plugin source is tracked
@@ -117,7 +117,7 @@ Stream Deck in debug mode exposes Chrome DevTools Protocol at
   closes it.
 - PI HTML/JS edits (`*.sdPlugin/ui/`) take effect on a PI reload — no build needed.
   Plugin (`src/`) changes need `npm run build` then
-  `npx streamdeck restart de.schwetschke.sd.pioneer-onkyo-remote`.
+  `npx streamdeck restart de.schwetschke.sd.eiscp-avr-remote`.
 
 ## Live test receiver
 

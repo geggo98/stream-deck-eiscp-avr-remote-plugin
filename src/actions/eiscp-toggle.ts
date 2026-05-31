@@ -18,7 +18,7 @@ interface ToggleSettings extends EiscpActionSettings {
 	customOffValue?: string;
 }
 
-@action({ UUID: "de.schwetschke.sd.pioneer-onkyo-remote.eiscp-toggle" })
+@action({ UUID: "de.schwetschke.sd.eiscp-avr-remote.eiscp-toggle" })
 export class EiscpToggleAction extends ToggleActionBase<ToggleSettings> {
 	constructor() {
 		super("EiscpToggle");

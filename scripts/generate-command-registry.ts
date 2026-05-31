@@ -316,7 +316,7 @@ function generateTypeScript(registry: CommandDef[]): string {
 	return lines.join("\n");
 }
 
-const SD_PLUGIN = "de.schwetschke.sd.pioneer-onkyo-remote.sdPlugin";
+const SD_PLUGIN = "de.schwetschke.sd.eiscp-avr-remote.sdPlugin";
 
 /**
  * Emit a browser-loadable copy of the registry for the Property Inspectors.
