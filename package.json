@@ -42,7 +42,7 @@
     "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^12.1.0",
     "@tsconfig/node20": "^20.1.9",
-    "@types/node": "~20.15.0",
+    "@types/node": "~25.9.1",
     "lucide-static": "^1.17.0",
     "rollup": "^4.0.2",
     "tslib": "^2.6.2",
