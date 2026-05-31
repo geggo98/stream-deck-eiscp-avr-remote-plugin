@@ -21,6 +21,15 @@ Actions, icons and the manifest's action list are generated from a single
 catalog — after editing `src/actions/dedicated/catalog.ts`, run `npm run
 generate`. See [CLAUDE.md](CLAUDE.md) for the architecture in depth.
 
+### Git hooks
+
+Entering the devenv shell installs git hooks (via `git-hooks.nix`):
+
+- **commit-msg** — `commitizen` checks the Conventional Commit format.
+- **pre-commit** — `gitleaks` scans staged changes for secrets.
+- **pre-push** — `osv-scanner` scans `package-lock.json` for known
+  vulnerabilities (needs network).
+
 Some `docs/*.enc.*` files are encrypted with `git-crypt` and need the repository
 key to read; they are not required to build or run the plugin.
 
