@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned to fresh commit SHAs (the `# vX.Y.Z` comments
+  # pinact writes are read by Dependabot to track the underlying version).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+
+  # npm dependencies.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      prefix-development: build
