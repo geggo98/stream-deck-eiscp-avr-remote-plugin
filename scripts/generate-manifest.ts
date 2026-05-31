@@ -93,10 +93,25 @@ function dedicatedAction(spec: DedicatedSpec): ManifestAction {
 	if (spec.kind === "dial") {
 		a.Encoder = {
 			layout: spec.encoderLayout ?? "$B1",
-			TriggerDescription: { Push: "Mute", Rotate: "Adjust volume" },
+			TriggerDescription: dialTriggerDescription(spec),
 		};
 	}
 	return a;
+}
+
+/** Touch-strip Rotate/Push hints, derived from the spec so they match behaviour. */
+function dialTriggerDescription(spec: DedicatedSpec): { Push: string; Rotate: string } {
+	const push =
+		spec.pressCommand === "AMT"
+			? "Mute"
+			: spec.pressCommand === "DIR"
+				? "Toggle Direct"
+				: spec.pressCommand === "SLI"
+					? "Select Tuner"
+					: "Press";
+	const selector = spec.command === "SLI" || spec.command === "LMD" || spec.command === "PRS";
+	const rotate = `${selector ? "Change" : "Adjust"} ${spec.name.toLowerCase()}`;
+	return { Push: push, Rotate: rotate };
 }
 
 const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf-8"));

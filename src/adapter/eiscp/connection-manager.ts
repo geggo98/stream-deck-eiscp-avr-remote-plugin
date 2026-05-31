@@ -18,11 +18,14 @@ interface Subscription {
 	callback: CommandCallback;
 }
 
+type MessageObserver = (host: string, command: string, parameter: string) => void;
+
 export class ConnectionManager {
 	private static instance: ConnectionManager;
 	private clients: Map<string, EiscpClient> = new Map();
 	private stateCache: Map<string, Map<string, string>> = new Map();
 	private subscriptions: Subscription[] = [];
+	private messageObservers: MessageObserver[] = [];
 
 	static getInstance(): ConnectionManager {
 		if (!ConnectionManager.instance) {
@@ -104,6 +107,15 @@ export class ConnectionManager {
 		};
 	}
 
+	/**
+	 * Observe every decoded message from every host (after the cache is updated).
+	 * Used by passive name discovery, which must see all traffic regardless of
+	 * which actions are subscribed.
+	 */
+	addMessageObserver(cb: MessageObserver): void {
+		this.messageObservers.push(cb);
+	}
+
 	private handleMessage(host: string, msg: DecodedMessage): void {
 		const command = msg.command;
 		const parameter = msg.parameter;
@@ -118,6 +130,15 @@ export class ConnectionManager {
 		for (const sub of this.subscriptions) {
 			if (sub.host === host && sub.command === command) {
 				sub.callback(parameter);
+			}
+		}
+
+		// Notify generic observers (cache is already up to date).
+		for (const observer of this.messageObservers) {
+			try {
+				observer(host, command, parameter);
+			} catch (err) {
+				logger.error(`message observer failed for ${command}: ${err}`);
 			}
 		}
 	}

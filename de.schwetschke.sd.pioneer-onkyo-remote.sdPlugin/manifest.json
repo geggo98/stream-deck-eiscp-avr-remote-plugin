@@ -217,7 +217,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/input-next/key",
@@ -233,7 +233,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/input-prev/key",
@@ -249,7 +249,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/mode-next/key",
@@ -265,7 +265,7 @@
       "Controllers": [
         "Keypad"
       ],
-      "PropertyInspectorPath": "ui/dedicated.html",
+      "PropertyInspectorPath": "ui/discover.html",
       "States": [
         {
           "Image": "imgs/actions/mode-prev/key",
@@ -384,6 +384,121 @@
           "TitleAlignment": "middle"
         }
       ]
+    },
+    {
+      "Name": "Input",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.input-dial",
+      "Icon": "imgs/actions/input-dial/icon",
+      "Tooltip": "Rotate to change input source; press for the chosen action (default Mute).",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dial-discover.html",
+      "States": [
+        {
+          "Image": "imgs/actions/input-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$A1",
+        "TriggerDescription": {
+          "Push": "Mute",
+          "Rotate": "Change input"
+        }
+      }
+    },
+    {
+      "Name": "Listening Mode",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.mode-dial",
+      "Icon": "imgs/actions/mode-dial/icon",
+      "Tooltip": "Rotate to change the listening mode; press for the chosen action (default Mute).",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dial-discover.html",
+      "States": [
+        {
+          "Image": "imgs/actions/mode-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$A1",
+        "TriggerDescription": {
+          "Push": "Mute",
+          "Rotate": "Change listening mode"
+        }
+      }
+    },
+    {
+      "Name": "Bass",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.bass-dial",
+      "Icon": "imgs/actions/bass-dial/icon",
+      "Tooltip": "Rotate to adjust front bass; press for the chosen action (default Mute).",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dial-press.html",
+      "States": [
+        {
+          "Image": "imgs/actions/bass-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Mute",
+          "Rotate": "Adjust bass"
+        }
+      }
+    },
+    {
+      "Name": "Treble",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.treble-dial",
+      "Icon": "imgs/actions/treble-dial/icon",
+      "Tooltip": "Rotate to adjust front treble; press for the chosen action (default Mute).",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dial-press.html",
+      "States": [
+        {
+          "Image": "imgs/actions/treble-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Mute",
+          "Rotate": "Adjust treble"
+        }
+      }
+    },
+    {
+      "Name": "Preset",
+      "UUID": "de.schwetschke.sd.pioneer-onkyo-remote.preset-dial",
+      "Icon": "imgs/actions/preset-dial/icon",
+      "Tooltip": "Rotate to change the tuner preset; press to select the Tuner input.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/preset-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$A1",
+        "TriggerDescription": {
+          "Push": "Select Tuner",
+          "Rotate": "Change preset"
+        }
+      }
     }
   ],
   "SDKVersion": 3

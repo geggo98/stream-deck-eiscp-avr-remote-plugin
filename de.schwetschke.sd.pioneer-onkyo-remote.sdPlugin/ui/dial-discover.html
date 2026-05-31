@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>eISCP Dial Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <script src="commands.js"></script>
+    <script src="eiscp-pi.js"></script>
+</head>
+
+<body>
+    <div id="deviceIp"></div>
+
+    <sdpi-item label="Press action">
+        <sdpi-select setting="pressAction" default="mute">
+            <option value="mute">Mute</option>
+            <option value="direct">Direct (Pure Audio)</option>
+            <option value="stereo">Stereo mode</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <div id="discover"></div>
+
+    <p style="opacity: 0.6; font-size: 11px; margin: 12px 4px;">
+        Rotate to change the option; the touch strip shows the receiver's own name for it.
+        Names are also learned automatically as you use the receiver — Auto-Discover fills
+        them all in one pass. Press runs the chosen action above.
+    </p>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            EiscpPI.renderDeviceIp('deviceIp');
+            EiscpPI.renderDiscover('discover', 'option');
+        });
+    </script>
+</body>
+
+</html>
