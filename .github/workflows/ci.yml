@@ -29,7 +29,7 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Set up Cachix (devenv binary cache)
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: devenv
 
@@ -47,7 +47,7 @@ jobs:
           '
 
       - name: Upload plugin bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: streamdeck-plugin
           path: "*.streamDeckPlugin"
@@ -69,7 +69,7 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Set up Cachix (devenv binary cache)
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: devenv
 

@@ -23,7 +23,7 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Set up Cachix (devenv binary cache)
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: devenv
 
@@ -40,7 +40,7 @@ jobs:
           '
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           files: "*.streamDeckPlugin"
           fail_on_unmatched_files: true
