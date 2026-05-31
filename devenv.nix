@@ -61,7 +61,8 @@
   '';
 
   # https://devenv.sh/git-hooks/
-  # git-hooks.hooks.shellcheck.enable = true;
+  # Enforce Conventional Commits on the commit message (see CONTRIBUTING.md).
+  git-hooks.hooks.commitizen.enable = true;
 
   # See full reference at https://devenv.sh/reference/options/
 }
