@@ -6,6 +6,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Wait 14 days after a release before proposing it (let early regressions
+    # surface first).
+    cooldown:
+      default-days: 14
     commit-message:
       prefix: ci
     # One combined PR per run instead of one per action.
@@ -19,6 +23,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Wait 14 days after a release before proposing it.
+    cooldown:
+      default-days: 14
     commit-message:
       prefix: build
       prefix-development: build

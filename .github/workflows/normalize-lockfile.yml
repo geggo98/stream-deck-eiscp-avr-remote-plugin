@@ -1,0 +1,58 @@
+name: Normalize lockfile
+
+# After a dependency change lands on main (e.g. a Dependabot merge), re-resolve
+# package-lock.json with the same npm as local dev so npm's "peer" metadata
+# stays in sync and the working tree doesn't drift. Commits the result back.
+on:
+  push:
+    branches: [main]
+    paths:
+      - package-lock.json
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: normalize-lockfile
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    # Don't react to our own normalization commit (belt-and-suspenders with the
+    # [skip ci] in that commit's message).
+    if: ${{ !contains(github.event.head_commit.message, 'normalize package-lock') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Set up Cachix (devenv binary cache)
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: devenv
+
+      - name: Install devenv
+        run: nix profile add nixpkgs#devenv
+
+      - name: Re-resolve package-lock.json
+        run: devenv shell -- npm install --package-lock-only
+
+      - name: Commit normalized lockfile if it changed
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already normalized — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "build(deps): normalize package-lock.json peer metadata [skip ci]"
+          git push
