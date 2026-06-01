@@ -8,7 +8,6 @@
   packages = [
     pkgs.git
     pkgs.tsx
-    pkgs.git-crypt # decrypt docs/*.enc.* (git-crypt-tracked vendor docs)
     pkgs.osv-scanner # dependency vulnerability + license scanning (npm run scan)
     pkgs.pinact # pin GitHub Actions to full commit SHAs
   ];
@@ -64,6 +63,23 @@
   git-hooks.hooks = {
     # Enforce Conventional Commits on the commit message (see CONTRIBUTING.md).
     commitizen.enable = true;
+    # Refuse to commit the unencrypted ISCP spec (defence in depth on top of
+    # .gitignore; catches `git add -f`). gitleaks can't scan binary content, so
+    # this is a path check, not a gitleaks rule. Commit the .gpg instead.
+    forbid-plaintext-spec = {
+      enable = true;
+      name = "forbid committing the unencrypted ISCP spec";
+      entry = "${pkgs.writeShellScript "forbid-plaintext-spec" ''
+        if git diff --cached --name-only --diff-filter=AM | grep -qiE '(^|/)ISCP_AVR_134[^/]*\.xlsx$'; then
+          echo "ERROR: refusing to commit the unencrypted ISCP_AVR_134 spreadsheet (it is gitignored)." >&2
+          echo "Commit docs/ISCP_AVR_134.xlsx.gpg instead." >&2
+          exit 1
+        fi
+      ''}";
+      language = "system";
+      pass_filenames = false;
+      always_run = true;
+    };
     # Block secrets from being committed (pre-commit).
     gitleaks = {
       enable = true;

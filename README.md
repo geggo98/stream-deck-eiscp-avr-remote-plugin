@@ -45,7 +45,7 @@ Most actions subscribe to the receiver and reflect its current state on the key.
 ## Development
 
 The dev environment is defined with [devenv](https://devenv.sh) (Nix), pinning
-Node.js 24 and the tooling (`git-crypt`, `osv-scanner`, `pinact`). With
+Node.js 24 and the tooling (`osv-scanner`, `pinact`). With
 [direnv](https://direnv.net) it loads automatically on `cd`; otherwise run
 `devenv shell`.
 
@@ -62,9 +62,9 @@ catalog (`src/actions/dedicated/catalog.ts`) via `npm run generate`. See
 [CLAUDE.md](CLAUDE.md) for the full architecture and contribution notes, and
 [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions.
 
-Some files under `docs/` are encrypted with `git-crypt` (vendor protocol
-documentation); you need the repository key to decrypt them, but they are not
-required to build or run the plugin.
+The vendor protocol spreadsheet under `docs/` is committed only in PGP-encrypted
+form (`docs/ISCP_AVR_134.xlsx.gpg`) — see [docs/ISCP_AVR_134.md](docs/ISCP_AVR_134.md)
+for how to obtain or decrypt it. It is not required to build or run the plugin.
 
 ## License
 

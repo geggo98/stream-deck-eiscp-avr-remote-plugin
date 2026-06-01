@@ -5,7 +5,7 @@ Thanks for your interest in improving **eISCP AV Receiver Remote Control**.
 ## Development environment
 
 The toolchain is defined with [devenv](https://devenv.sh) (Nix), pinning Node.js
-24 plus `git-crypt`, `osv-scanner` and `pinact`. With
+24 plus `osv-scanner` and `pinact`. With
 [direnv](https://direnv.net) it loads on `cd`; otherwise run `devenv shell`.
 
 ```bash
@@ -26,12 +26,14 @@ generate`. See [CLAUDE.md](CLAUDE.md) for the architecture in depth.
 Entering the devenv shell installs git hooks (via `git-hooks.nix`):
 
 - **commit-msg** — `commitizen` checks the Conventional Commit format.
-- **pre-commit** — `gitleaks` scans staged changes for secrets.
+- **pre-commit** — `gitleaks` scans staged changes for secrets, and a guard
+  refuses to commit the unencrypted ISCP spec.
 - **pre-push** — `osv-scanner` scans `package-lock.json` for known
   vulnerabilities (needs network).
 
-Some `docs/*.enc.*` files are encrypted with `git-crypt` and need the repository
-key to read; they are not required to build or run the plugin.
+The vendor ISCP spec under `docs/` is committed only as a PGP-encrypted file
+(`docs/ISCP_AVR_134.xlsx.gpg`); see [docs/ISCP_AVR_134.md](docs/ISCP_AVR_134.md)
+to obtain or decrypt it. It is not required to build or run the plugin.
 
 ## Commit messages
 
