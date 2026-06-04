@@ -12,7 +12,8 @@
   "homepage": "https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin#readme",
   "bugs": "https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/issues",
   "scripts": {
-    "build": "rollup -c",
+    "sync:version": "tsx scripts/sync-manifest-version.ts",
+    "build": "tsx scripts/sync-manifest-version.ts && rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart de.schwetschke.sd.eiscp-avr-remote\"",
     "validate": "streamdeck validate de.schwetschke.sd.eiscp-avr-remote.sdPlugin --no-update-check",
     "pack": "streamdeck pack de.schwetschke.sd.eiscp-avr-remote.sdPlugin --output . --force --no-update-check",
