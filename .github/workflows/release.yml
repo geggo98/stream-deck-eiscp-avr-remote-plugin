@@ -1,15 +1,41 @@
 name: Release
 
+# release-please drives the whole release:
+#   1. Every push to main opens/updates a "release" PR that maintains
+#      CHANGELOG.md and bumps the version in package.json + package-lock.json
+#      from the Conventional Commits. (The Stream Deck manifest's 4-part Version
+#      is derived from package.json at build time by scripts/sync-manifest-version.ts,
+#      not bumped by release-please — the CLI requires a 4-part version that 3-part
+#      SemVer can't express.)
+#   2. Merging that PR makes release-please create the vX.Y.Z tag + GitHub
+#      Release; the publish job then builds and attaches the .streamDeckPlugin.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
-  contents: write # create the release and upload the .streamDeckPlugin asset
+  contents: write # create the release/tag and upload the .streamDeckPlugin asset
+  pull-requests: write # open and update the release PR
 
 jobs:
-  release:
-    name: Build and publish .streamDeckPlugin
+  release-please:
+    name: Maintain release PR / cut release
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - name: Run release-please
+        id: rp
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    name: Build and attach .streamDeckPlugin
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,9 +65,7 @@ jobs:
             npm run pack
           '
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
-        with:
-          files: "*.streamDeckPlugin"
-          fail_on_unmatched_files: true
-          generate_release_notes: true
+      - name: Attach .streamDeckPlugin to the release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" *.streamDeckPlugin --clobber
