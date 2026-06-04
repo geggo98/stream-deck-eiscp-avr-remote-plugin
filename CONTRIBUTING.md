@@ -125,6 +125,16 @@ trailers for AI tools. The marker records only that an AI agent assisted; the
 author remains the human who made and reviewed the change. Commits with no AI
 involvement — and automated dependency bumps — omit the marker.
 
+## Releases
+
+Releases are automated from these commits with
+[release-please](https://github.com/googleapis/release-please): merging to `main`
+maintains a release PR that bumps the version and `CHANGELOG.md` from the commit
+types above, and merging that PR tags the release and publishes the
+`.streamDeckPlugin`. This is why the commit `type` matters — `feat` drives a minor
+bump, `fix`/`perf` a patch. See [docs/PUBLISHING.md](docs/PUBLISHING.md) for the
+full release, Marketplace, and OpenDeck flow.
+
 ## Before opening a pull request
 
 Run the checks CI will run:
