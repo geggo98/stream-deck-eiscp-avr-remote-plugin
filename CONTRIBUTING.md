@@ -111,6 +111,20 @@ docs(project): document the release process
 chore(security): bump @rollup/plugin-terser to clear GHSA-5c6j-r48x-rmvq
 ```
 
+### AI assistance
+
+Commits created with the help of an AI agent end with a one-line marker as the
+**last line** of the message:
+
+```
+AI-assisted 🤖
+```
+
+Do **not** name the tool, model, or agent, and do **not** add `Co-Authored-By`
+trailers for AI tools. The marker records only that an AI agent assisted; the
+author remains the human who made and reviewed the change. Commits with no AI
+involvement — and automated dependency bumps — omit the marker.
+
 ## Before opening a pull request
 
 Run the checks CI will run:
