@@ -36,10 +36,11 @@ jobs:
       - name: Install devenv
         run: nix profile add nixpkgs#devenv
 
-      - name: Build, test, validate, pack (through devenv)
+      - name: Typecheck, build, test, validate, pack (through devenv)
         run: |
           devenv shell -- bash -ceuo pipefail '
             npm ci
+            npm run typecheck
             npm run build
             npm test
             npm run validate
