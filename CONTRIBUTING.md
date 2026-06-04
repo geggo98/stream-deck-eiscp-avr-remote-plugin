@@ -2,6 +2,13 @@
 
 Thanks for your interest in improving **eISCP AV Receiver Remote Control**.
 
+## How this project is maintained
+
+This is a hobby project, worked on in spare time. Contributions, bug reports,
+and ideas are all very welcome — but there's no guarantee of when, or whether,
+they can be reviewed. If something is urgent for you, please **fork** the project
+(see [Forking and renaming IDs](#forking-and-renaming-ids)) rather than wait.
+
 ## Development environment
 
 The toolchain is defined with [devenv](https://devenv.sh) (Nix), pinning Node.js
@@ -114,3 +121,34 @@ npm run build && npm test && npm run validate && npm run scan:vulns
 
 GitHub Actions also verifies that every action is pinned to a commit SHA
 (`pinact run --check`). If you add or bump an action, pin it with `pinact run`.
+
+## Forking and renaming IDs
+
+A Stream Deck plugin is identified by a globally unique reverse-DNS **plugin ID**
+(`de.schwetschke.sd.eiscp-avr-remote`), and every action's UUID derives from it.
+Publishing a fork without changing these makes it collide with this plugin in
+users' Stream Deck installs. **Before releasing a fork, rename every identifier
+to your own namespace.**
+
+The plugin ID lives in one place — `PLUGIN_ID` in
+`src/actions/dedicated/catalog.ts` — and the dedicated actions derive their UUIDs
+from it. To re-brand a fork:
+
+1. Set your own `PLUGIN_ID` in `src/actions/dedicated/catalog.ts`
+   (e.g. `com.yourname.sd.your-plugin`).
+2. Run `npm run generate` to rewrite the manifest's action list and the icons.
+3. Rename the `de.schwetschke.sd.eiscp-avr-remote.sdPlugin/` folder to match the
+   new ID — Stream Deck requires the folder name to equal the plugin ID.
+4. Update the references to that folder name in `rollup.config.mjs`,
+   `scripts/generate-icons.ts`, `scripts/generate-command-registry.ts`, and the
+   `watch`/`validate`/`pack` scripts in `package.json`.
+5. Update the generic action UUIDs, which are hand-written rather than generated:
+   `src/actions/eiscp-button.ts`, `eiscp-toggle.ts`, `eiscp-dial.ts`, and
+   `eiscp-dial-indicator.ts`.
+6. Replace the author and repository metadata pointing at the original:
+   `manifest.json` (`Author`), `package.json` (`author` and the
+   repository/homepage/bugs URLs), and the contact details in `SECURITY.md` and
+   `docs/`.
+
+It's your fork to maintain — no permission needed, and no obligation to upstream
+anything (though PRs are welcome if you'd like to).

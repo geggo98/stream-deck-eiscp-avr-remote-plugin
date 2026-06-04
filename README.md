@@ -12,6 +12,18 @@ eISCP command, with live state shown on the keys.
 > companies. Their names appear only to describe which receivers the plugin can
 > talk to.
 
+## Project status
+
+This is a **hobby project**, built and maintained in spare time. Every bug
+report, idea, and pull request is genuinely welcome — but there's no promise of
+*when*, or *whether*, it gets a response. Please don't depend on a timely reply.
+
+Need a fix or feature urgently? The fastest path is to **fork** it and carry it
+yourself. A published Stream Deck plugin must use globally unique identifiers, so
+a fork **must rename every plugin-specific ID** (the plugin ID, the action
+UUIDs, and the `*.sdPlugin` folder) before release — see
+[CONTRIBUTING.md](CONTRIBUTING.md#forking-and-renaming-ids).
+
 ## Compatibility
 
 Works with network receivers that speak ISCP over Ethernet (eISCP) on the
