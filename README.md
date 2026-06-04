@@ -51,8 +51,34 @@ Most actions subscribe to the receiver and reflect its current state on the key.
 
 ## Requirements
 
-- Stream Deck app 6.9 or newer (Windows 10+ / macOS 12+).
+- Stream Deck app 7.1 or newer (Windows 10+ / macOS 12+). The plugin runs on the
+  Node.js 24 runtime, which the Stream Deck app ships from version 7.1 onward.
 - A receiver reachable on the local network with eISCP enabled.
+
+## Installation
+
+The plugin is distributed as a `.streamDeckPlugin` file. There is no DRM on it —
+the GitHub release artifact is built with the Stream Deck CLI, which never applies
+DRM (that only happens to Marketplace copies, server-side at Elgato). Pick whichever
+matches your setup:
+
+1. **Elgato Stream Deck app (recommended).** Download the latest
+   `de.schwetschke.sd.eiscp-avr-remote.streamDeckPlugin` from the
+   [GitHub Releases](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/releases)
+   page and double-click it — the Stream Deck app installs it. (Once it is on the
+   Elgato Marketplace you can also install it from there with **Get**.)
+
+2. **Manual / folder install.** A `.streamDeckPlugin` is a ZIP archive. Rename it to
+   `.zip`, extract the `de.schwetschke.sd.eiscp-avr-remote.sdPlugin` folder, and drop
+   it into the plugins directory, then restart the Stream Deck app:
+   - macOS: `~/Library/Application Support/com.elgato.StreamDeck/Plugins/`
+   - Windows: `%APPDATA%\Elgato\StreamDeck\Plugins\`
+
+3. **[OpenDeck](https://github.com/nekename/OpenDeck) (Linux / Windows / macOS).**
+   OpenDeck is an open-source host for Stream Deck hardware that supports the
+   original Stream Deck plugin format. Install the same DRM-free
+   `.streamDeckPlugin` from GitHub Releases through OpenDeck's **Plugins** tab. See
+   [docs/PUBLISHING.md](docs/PUBLISHING.md#3-opendeck) for current compatibility notes.
 
 ## Development
 
