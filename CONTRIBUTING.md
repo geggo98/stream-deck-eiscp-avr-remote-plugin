@@ -140,7 +140,7 @@ full release, Marketplace, and OpenDeck flow.
 Run the checks CI will run:
 
 ```bash
-npm run build && npm test && npm run validate && npm run scan:vulns
+npm run typecheck && npm run build && npm test && npm run validate && npm run scan:vulns
 ```
 
 GitHub Actions also verifies that every action is pinned to a commit SHA
