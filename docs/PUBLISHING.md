@@ -137,14 +137,27 @@ registry exists at `marketplace.rivul.us`.
   case-sensitive Linux filesystems (audited; see `.sdignore` and the case audit).
 - Lean bundle via `.sdignore` (no source maps, caches, logs).
 
-**Open verification item (run on Linux):** the manifest declares the Node.js 24
-runtime (`Nodejs.Version: 24`). The official Stream Deck app ships that runtime;
-OpenDeck may rely on a system Node. Install the release `.streamDeckPlugin` in
-OpenDeck and confirm the plugin process starts and actions/PI render. Record the
-result here:
+**Verified on Linux ✅** (OpenDeck 2.12.1 arm64, Ubuntu 25.10 in OrbStack, headless
+via xvfb; 2026-06-04):
 
-- [ ] OpenDeck (Linux) — actions appear, plugin process runs, icons/PI render.
-      _Tested version: ___ · OpenDeck version: ___ · Notes: ____
+- [x] **Plugin registers** — `Registered plugin de.schwetschke.sd.eiscp-avr-remote.sdPlugin`;
+      no manifest/case errors. Its **"eISCP AV Receiver"** category and actions show up in
+      OpenDeck's action list.
+- [x] **Node plugin runs** — OpenDeck spawns `node bin/plugin.js -port … -registerEvent
+      registerPlugin -info {…}` (the standard Stream Deck SDK handshake), the WebSocket
+      server listens, and the plugin connects cleanly (its SDK log shows
+      `INFO Discovery: passive name discovery registered`, no errors).
+
+**The one real caveat — OpenDeck does not bundle a Node runtime.** Unlike the Elgato app
+(which ships the Node version from `Nodejs.Version`), OpenDeck runs the plugin with the
+**system `node`** on `PATH`. So OpenDeck users must have Node installed (Node 24 to match
+`Nodejs.Version: 24`); without it the plugin can't launch. Worth stating in the OpenDeck
+install notes.
+
+Minor: OpenDeck reports `platform: "windows"` to the plugin (it maps to our manifest `OS`,
+which lists mac/windows). Harmless here — the plugin is platform-agnostic JS. Do **not** add
+`linux` to the manifest `OS` to "fix" this: OpenDeck runs the plugin fine without it, and a
+`linux` platform would not pass Elgato's Marketplace validation.
 
 ---
 

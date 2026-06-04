@@ -77,8 +77,11 @@ matches your setup:
 3. **[OpenDeck](https://github.com/nekename/OpenDeck) (Linux / Windows / macOS).**
    OpenDeck is an open-source host for Stream Deck hardware that supports the
    original Stream Deck plugin format. Install the same DRM-free
-   `.streamDeckPlugin` from GitHub Releases through OpenDeck's **Plugins** tab. See
-   [docs/PUBLISHING.md](docs/PUBLISHING.md#3-opendeck) for current compatibility notes.
+   `.streamDeckPlugin` from GitHub Releases through OpenDeck's **Plugins** tab.
+   OpenDeck runs the plugin with your **system Node.js** (it does not bundle one,
+   unlike the Elgato app), so install **Node.js 24** first. Verified working on
+   OpenDeck 2.12.1 (Linux); see
+   [docs/PUBLISHING.md](docs/PUBLISHING.md#3-opendeck) for details.
 
 ## Development
 
