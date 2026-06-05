@@ -86,4 +86,9 @@ jobs:
         run: devenv shell -- npm run scan:vulns
 
       - name: osv-scanner (license report, informational)
+        # Truly informational: --licenses queries the external deps.dev service,
+        # which is intermittently unavailable ("rpc error: ... service
+        # unavailable") and would otherwise fail the whole job. The gating
+        # vulnerability scan above does not touch deps.dev.
+        continue-on-error: true
         run: devenv shell -- npm run scan
