@@ -87,8 +87,8 @@ describe("name-store persistence", () => {
 		noteFld(host, CD_VOL);
 
 		const snapshot = serialize();
-		assert.equal(snapshot[host].LMD["82"], "DTS Neural:X");
-		assert.equal(snapshot[host].SLI["23"], "CD");
+		assert.equal(snapshot[host]!.LMD!["82"], "DTS Neural:X");
+		assert.equal(snapshot[host]!.SLI!["23"], "CD");
 
 		// Loading into a fresh host key restores the names.
 		load({ "ns-loaded": { LMD: { "11": "Pure Audio" }, SLI: { "24": "FM" } } });

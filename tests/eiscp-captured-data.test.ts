@@ -258,7 +258,7 @@ describe("eISCP captured data tests", () => {
 						if (msg.parameter.startsWith("U")) {
 							const match = msg.parameter.match(/U\d-(.+)/);
 							if (match) {
-								services.add(match[1]);
+								services.add(match[1]!);
 							}
 						}
 					}

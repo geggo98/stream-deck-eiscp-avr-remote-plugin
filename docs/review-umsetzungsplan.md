@@ -341,12 +341,12 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
 - [x] **`addMessageObserver` ohne Gegenstück** (`connection-manager.ts:115`):
       `removeMessageObserver` ergänzen (oder Permanenz dokumentieren und
       bewusst machen). → Gibt jetzt eine Unsubscribe-Funktion zurück.
-- [ ] **Snapshot-Aliasing im unified-controller**
+- [x] **Snapshot-Aliasing im unified-controller**
       (`unified-controller.ts:344, 380, 429, 585`): emittierte
       `currentState`-Snapshots teilen das live `ips`-Array/`metadata`-Objekt —
       spätere Mutation ändert bereits emittierte Events. Deep-copy oder
       `readonly`-Felder + Neuaufbau bei Änderung.
-- [ ] **Geräte-Identität vereinheitlichen** (`unified-controller.ts:56/70/140/589`):
+- [x] **Geräte-Identität vereinheitlichen** (`unified-controller.ts:56/70/140/589`):
       drei Vokabulare (`id: string`, `deviceId: number`, stringifizierte Zahl)
       → ein konsistenter `DeviceId`-Typ; die sechsfach wiederholte
       „primary source"-Ableitung (`Array.from(tracked.sources)[0] ?? ...`,
@@ -599,7 +599,7 @@ Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
       der triviale `isDnsSdAvailable`-Plattform-Check; die
       Spawn-/Streaming-Logik in `caller.ts`/`controller.ts` ist komplett
       ungedeckt. Akzeptieren oder macOS-Runner/Injektion erwägen.
-- [ ] **`noUncheckedIndexedAccess`** aktivieren? Code ist teils schon so
+- [x] **`noUncheckedIndexedAccess`** aktivieren? → Aktiviert (Nutzer-Entscheidung); Code ist teils schon so
       geschrieben (`parts[0]!`); würde alle `Record`-Lookups härten
       (u. a. `COMMAND_REGISTRY[command]`, `SPEC_BY_ID`).
 

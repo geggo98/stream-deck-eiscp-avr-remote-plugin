@@ -597,9 +597,10 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 				if ((subCommand === "U" || subCommand === "A") && message.parameter.includes("-")) {
 					const match = message.parameter.match(/[UA](\d+)-(.+)/);
 					if (match) {
+						// Both capture groups are non-optional, so they exist when the regex matched.
 						service = {
-							key: match[1],
-							name: match[2],
+							key: match[1]!,
+							name: match[2]!,
 						};
 					}
 				}

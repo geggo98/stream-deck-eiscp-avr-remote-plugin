@@ -141,7 +141,7 @@ function isRangeKey(key: string): boolean {
 
 function normalizeName(name: string | string[]): string {
 	if (Array.isArray(name)) {
-		return name[0];
+		return name[0]!;
 	}
 	return name;
 }

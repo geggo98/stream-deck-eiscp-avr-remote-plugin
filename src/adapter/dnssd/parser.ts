@@ -119,15 +119,24 @@ export function parseBrowseOutput(output: string): BrowseResult[] {
 			continue;
 		}
 
-		const [, timestamp, action, flags, iface, domain, serviceType, instanceName] =
-			match;
+		// All capture groups in the regex are non-optional, so they exist when it matched.
+		const timestamp = match[1]!;
+		const action = match[2]!;
+		const iface = match[4]!;
+		const domain = match[5]!;
+		const serviceType = match[6]!;
+		const instanceName = match[7]!;
 
 		// Convert timestamp to milliseconds since epoch (simplified - just use the string as identifier)
 		// For a real implementation, you'd parse the date/time from context
 		const timeMatch = timestamp.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
 		let timeValue = 0;
 		if (timeMatch) {
-			const [, hours, minutes, seconds, millis] = timeMatch;
+			// All four capture groups are non-optional, so they exist when the regex matched.
+			const hours = timeMatch[1]!;
+			const minutes = timeMatch[2]!;
+			const seconds = timeMatch[3]!;
+			const millis = timeMatch[4]!;
 			timeValue =
 				(Number.parseInt(hours, 10) * 3600 +
 					Number.parseInt(minutes, 10) * 60 +
@@ -205,7 +214,10 @@ export function parseLookupOutput(output: string): LookupResult {
 		throw new ParseError(`Cannot parse lookup first line: ${firstLine}`, output);
 	}
 
-	const [, instanceName, hostname, portStr] = firstLineMatch;
+	// Capture groups 1-3 are non-optional, so they exist when the regex matched.
+	const instanceName = firstLineMatch[1]!;
+	const hostname = firstLineMatch[2]!;
+	const portStr = firstLineMatch[3]!;
 
 	// Parse TXT records from remaining lines
 	// Format: key1=value1 key2=value2 (space-separated, not comma-separated)
@@ -324,7 +336,8 @@ export function parseGetAddrOutput(output: string): AddressResult[] {
 			simpleFormat = true;
 			const hostnameMatch = trimmed.match(/^DNS-SD \(v4v6\)\s+(.+)\.$/);
 			if (hostnameMatch) {
-				hostname = hostnameMatch[1];
+				// The capture group is non-optional, so it exists when the regex matched.
+				hostname = hostnameMatch[1]!;
 			}
 			continue;
 		}
@@ -333,7 +346,9 @@ export function parseGetAddrOutput(output: string): AddressResult[] {
 		if (simpleFormat) {
 			const addressMatch = trimmed.match(/^>\s+(IPv4|IPv6)\s+address:\s+(.+)$/);
 			if (addressMatch) {
-				const [, type, address] = addressMatch;
+				// Both capture groups are non-optional, so they exist when the regex matched.
+				const type = addressMatch[1]!;
+				const address = addressMatch[2]!;
 				results.push({
 					hostname,
 					addressType: type === "IPv4" ? "ipv4" : "ipv6",
@@ -350,7 +365,10 @@ export function parseGetAddrOutput(output: string): AddressResult[] {
 			/^\d{2}:\d{2}:\d{2}\.\d+\s+(Add|Rmv)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s+(\d+)$/,
 		);
 		if (tableMatch) {
-			const [, action, flags, iface, host, address, ttl] = tableMatch;
+			// All capture groups are non-optional, so they exist when the regex matched.
+			const flags = tableMatch[2]!;
+			const host = tableMatch[4]!;
+			const address = tableMatch[5]!;
 			// Last hex digit of flags: 2 = IPv4, 3 = IPv6
 			const lastFlag = flags.slice(-1);
 			const addressType = lastFlag === "2" ? "ipv4" : "ipv6";

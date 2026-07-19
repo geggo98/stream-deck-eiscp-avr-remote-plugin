@@ -47,19 +47,22 @@ describe("command registry", () => {
 	describe("classification", () => {
 		it("should classify PWR as toggle", () => {
 			const cmd = COMMAND_REGISTRY.PWR;
-			assert.equal(cmd.actionType, "toggle");
+			assert.ok(cmd);
+			assert.ok(cmd.actionType === "toggle");
 			assert.equal(cmd.onValue, "01");
 			assert.equal(cmd.offValue, "00");
 		});
 
 		it("should classify AMT as toggle with TG", () => {
 			const cmd = COMMAND_REGISTRY.AMT;
-			assert.equal(cmd.actionType, "toggle");
+			assert.ok(cmd);
+			assert.ok(cmd.actionType === "toggle");
 			assert.equal(cmd.toggleValue, "TG");
 		});
 
 		it("should classify MVL as stepper", () => {
 			const cmd = COMMAND_REGISTRY.MVL;
+			assert.ok(cmd);
 			assert.equal(cmd.actionType, "stepper");
 			assert.ok(cmd.hasUpDown);
 			assert.ok(cmd.values.some((v) => v.param === "UP"));
@@ -68,24 +71,28 @@ describe("command registry", () => {
 
 		it("should classify SLI as selector", () => {
 			const cmd = COMMAND_REGISTRY.SLI;
+			assert.ok(cmd);
 			assert.equal(cmd.actionType, "selector");
 			assert.ok(cmd.values.length > 10, "SLI should have many values");
 		});
 
 		it("should classify LMD as selector", () => {
 			const cmd = COMMAND_REGISTRY.LMD;
+			assert.ok(cmd);
 			assert.equal(cmd.actionType, "selector");
 			assert.ok(cmd.values.length > 10, "LMD should have many values");
 		});
 
 		it("should classify DIR as toggle", () => {
 			const cmd = COMMAND_REGISTRY.DIR;
-			assert.equal(cmd.actionType, "toggle");
+			assert.ok(cmd);
+			assert.ok(cmd.actionType === "toggle");
 			assert.equal(cmd.toggleValue, "TG");
 		});
 
 		it("should classify TFR (tone) as selector with bass/treble steps", () => {
 			const cmd = COMMAND_REGISTRY.TFR;
+			assert.ok(cmd);
 			assert.equal(cmd.actionType, "selector");
 			const params = cmd.values.map((v) => v.param);
 			assert.deepEqual(params, ["BUP", "BDOWN", "TUP", "TDOWN"]);
@@ -93,6 +100,7 @@ describe("command registry", () => {
 
 		it("should classify NTC (transport) as selector with transport keys", () => {
 			const cmd = COMMAND_REGISTRY.NTC;
+			assert.ok(cmd);
 			assert.equal(cmd.actionType, "selector");
 			const params = cmd.values.map((v) => v.param);
 			for (const p of ["PLAY", "STOP", "PAUSE", "P/P", "TRUP", "TRDN"]) {
@@ -101,15 +109,20 @@ describe("command registry", () => {
 		});
 
 		it("should classify ZPW as toggle and ZMT as toggle with TG", () => {
-			assert.equal(COMMAND_REGISTRY.ZPW.actionType, "toggle");
-			assert.equal(COMMAND_REGISTRY.ZPW.onValue, "01");
-			assert.equal(COMMAND_REGISTRY.ZPW.offValue, "00");
-			assert.equal(COMMAND_REGISTRY.ZMT.actionType, "toggle");
-			assert.equal(COMMAND_REGISTRY.ZMT.toggleValue, "TG");
+			const zpw = COMMAND_REGISTRY.ZPW;
+			assert.ok(zpw);
+			assert.ok(zpw.actionType === "toggle");
+			assert.equal(zpw.onValue, "01");
+			assert.equal(zpw.offValue, "00");
+			const zmt = COMMAND_REGISTRY.ZMT;
+			assert.ok(zmt);
+			assert.ok(zmt.actionType === "toggle");
+			assert.equal(zmt.toggleValue, "TG");
 		});
 
 		it("should classify ZVL (zone2 volume) as stepper", () => {
 			const cmd = COMMAND_REGISTRY.ZVL;
+			assert.ok(cmd);
 			assert.equal(cmd.actionType, "stepper");
 			assert.ok(cmd.hasUpDown);
 		});
@@ -125,7 +138,7 @@ describe("command registry", () => {
 		});
 
 		it("should keep NTC numeric keys as literal digits, not hex-padded", () => {
-			const params = COMMAND_REGISTRY.NTC.values.map((v) => v.param);
+			const params = COMMAND_REGISTRY.NTC!.values.map((v) => v.param);
 			assert.ok(params.includes("0"), "NTC should have literal '0'");
 			assert.ok(!params.includes("00"), "NTC should NOT hex-pad to '00'");
 		});

@@ -129,8 +129,10 @@ export function formatCommandValue(command: string, rawValue: string): string {
 export function parseTone(raw: string): { bass: number; treble: number } | undefined {
 	const m = /B([+-][0-9A]|00)T([+-][0-9A]|00)/i.exec(raw);
 	if (!m) return undefined;
-	const dec = (t: string): number => (t === "00" ? 0 : (t[0] === "-" ? -1 : 1) * parseInt(t[1], 16));
-	return { bass: dec(m[1]), treble: dec(m[2]) };
+	// t[1] exists: per the regex, t is either "00" (handled first) or a sign plus one hex digit.
+	const dec = (t: string): number => (t === "00" ? 0 : (t[0] === "-" ? -1 : 1) * parseInt(t[1]!, 16));
+	// Both capture groups are non-optional, so m[1]/m[2] exist when the regex matched.
+	return { bass: dec(m[1]!), treble: dec(m[2]!) };
 }
 
 /**
@@ -157,5 +159,6 @@ export const DIAL_PRESS_ACTIONS: Record<string, DialPressAction> = {
 
 /** Resolve a dial's `pressAction` setting to its press behavior, defaulting to mute. */
 export function resolveDialPress(action: string | undefined): DialPressAction {
-	return DIAL_PRESS_ACTIONS[action ?? "mute"] ?? DIAL_PRESS_ACTIONS.mute;
+	// "mute" is a key of the DIAL_PRESS_ACTIONS literal above, so the fallback always exists.
+	return DIAL_PRESS_ACTIONS[action ?? "mute"] ?? DIAL_PRESS_ACTIONS.mute!;
 }

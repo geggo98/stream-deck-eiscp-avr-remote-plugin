@@ -35,7 +35,7 @@ function lucideInner(name: string): string {
 	const raw = readFileSync(file, "utf-8");
 	const m = raw.replace(/<!--[\s\S]*?-->/g, "").match(/<svg[^>]*>([\s\S]*?)<\/svg>/);
 	if (!m) throw new Error(`Could not parse Lucide icon: ${name}`);
-	return m[1].replace(/\s+/g, " ").trim();
+	return m[1]!.replace(/\s+/g, " ").trim();
 }
 
 /** A <g> that draws a Lucide glyph (24-unit space) at the given box, white stroke. */
