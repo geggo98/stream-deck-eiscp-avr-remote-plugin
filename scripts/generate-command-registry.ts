@@ -49,7 +49,22 @@ interface CommandDef {
 	onValue?: string;
 	offValue?: string;
 	toggleValue?: string;
+	maxValue?: number;
 }
+
+/**
+ * UI range for stepper commands (progress bars). The YAML only carries
+ * ambiguous model-dependent ranges (MVL: 0-200/0-100/0-80/0-50), so this is
+ * curated: MVL/ZVL 0-80 is verified against the VSX-S520D; the rest use the
+ * conservative small-level default the dial indicator always assumed.
+ */
+const STEPPER_MAX: Record<string, number> = {
+	MVL: 80,
+	ZVL: 80,
+	CTL: 24,
+	PRS: 40,
+};
+const STEPPER_MAX_DEFAULT = 24;
 
 // Commands to include in the registry (most useful for an AV remote).
 const INCLUDED_COMMANDS = [
@@ -226,6 +241,10 @@ function generateRegistry(): CommandDef[] {
 			hasUpDown,
 		};
 
+		if (actionType === "stepper") {
+			def.maxValue = STEPPER_MAX[code] ?? STEPPER_MAX_DEFAULT;
+		}
+
 		// For toggles, identify on/off/toggle values
 		if (actionType === "toggle") {
 			if (keys.includes("01") || keys.includes("'01'") || keys.includes("1")) def.onValue = "01";
@@ -279,6 +298,8 @@ function generateTypeScript(registry: CommandDef[]): string {
 	lines.push(`/** Numeric command adjusted via UP/DOWN or absolute hex values. */`);
 	lines.push(`export interface StepperCommandDef extends CommandDefBase {`);
 	lines.push(`\tactionType: "stepper";`);
+	lines.push(`\t/** Upper bound of the value range, for progress-bar UIs. */`);
+	lines.push(`\tmaxValue: number;`);
 	lines.push(`}`);
 	lines.push(``);
 	lines.push(`/** Enumerated command whose values name discrete options. */`);
@@ -311,6 +332,7 @@ function generateTypeScript(registry: CommandDef[]): string {
 			lines.push(`\t\toffValue: ${JSON.stringify(cmd.offValue)},`);
 		if (cmd.toggleValue !== undefined)
 			lines.push(`\t\ttoggleValue: ${JSON.stringify(cmd.toggleValue)},`);
+		if (cmd.maxValue !== undefined) lines.push(`\t\tmaxValue: ${cmd.maxValue},`);
 		lines.push(`\t},`);
 	}
 

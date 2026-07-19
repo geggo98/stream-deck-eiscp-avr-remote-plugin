@@ -14,6 +14,7 @@ import {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
+import { COMMAND_REGISTRY } from "../../adapter/eiscp/command-registry.ts";
 import {
 	type EiscpActionSettings,
 	fireAndLog,
@@ -310,13 +311,15 @@ export class VolumeDialAction extends DialActionBase<EiscpActionSettings> {
 
 	protected updateFeedback(
 		action: DialAction<EiscpActionSettings>,
-		_cfg: DialConfig,
+		cfg: DialConfig,
 		rawValue: string,
 		_settings: EiscpActionSettings,
 		pressOn: boolean,
 	): void {
 		const num = parseInt(rawValue, 16);
-		const percent = Math.round(((Number.isNaN(num) ? 0 : num) / 80) * 100);
+		const mvl = COMMAND_REGISTRY[cfg.command];
+		const max = mvl?.actionType === "stepper" ? mvl.maxValue : 80;
+		const percent = Math.round(((Number.isNaN(num) ? 0 : num) / max) * 100);
 		fireAndLog(
 			action.setFeedback({
 				value: Number.isNaN(num) ? rawValue : String(num),

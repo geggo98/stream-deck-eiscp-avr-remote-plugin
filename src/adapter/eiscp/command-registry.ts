@@ -30,6 +30,8 @@ export interface ToggleCommandDef extends CommandDefBase {
 /** Numeric command adjusted via UP/DOWN or absolute hex values. */
 export interface StepperCommandDef extends CommandDefBase {
 	actionType: "stepper";
+	/** Upper bound of the value range, for progress-bar UIs. */
+	maxValue: number;
 }
 
 /** Enumerated command whose values name discrete options. */
@@ -87,6 +89,7 @@ export const COMMAND_REGISTRY: Record<string, CommandDef> = {
 		],
 		hasQuery: true,
 		hasUpDown: true,
+		maxValue: 80,
 	},
 	SLI: {
 		code: "SLI",
@@ -356,6 +359,7 @@ export const COMMAND_REGISTRY: Record<string, CommandDef> = {
 		],
 		hasQuery: true,
 		hasUpDown: true,
+		maxValue: 24,
 	},
 	ADY: {
 		code: "ADY",
@@ -430,6 +434,7 @@ export const COMMAND_REGISTRY: Record<string, CommandDef> = {
 		],
 		hasQuery: true,
 		hasUpDown: true,
+		maxValue: 40,
 	},
 	NTC: {
 		code: "NTC",
@@ -534,6 +539,7 @@ export const COMMAND_REGISTRY: Record<string, CommandDef> = {
 		],
 		hasQuery: true,
 		hasUpDown: true,
+		maxValue: 80,
 	},
 	SLZ: {
 		code: "SLZ",

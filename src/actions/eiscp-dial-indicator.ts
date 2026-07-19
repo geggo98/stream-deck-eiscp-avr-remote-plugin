@@ -31,7 +31,10 @@ export class EiscpDialIndicatorAction extends DialActionBase<DialIndicatorSettin
 	}
 
 	private getMaxValue(command: string): number {
-		return command === "MVL" ? 80 : 24;
+		const cmd = COMMAND_REGISTRY[command];
+		// The registry carries the curated range per stepper; anything else
+		// shown on a bar gets the conservative small-level default.
+		return cmd?.actionType === "stepper" ? cmd.maxValue : 24;
 	}
 
 	protected getDialConfig(settings: DialIndicatorSettings): DialConfig | undefined {
