@@ -31,6 +31,12 @@ export class ConnectionManager {
 
 	/** How long a disconnected client (and its now-stale cache) stays pooled. */
 	private static readonly EVICT_AFTER_MS = 10 * 60 * 1000;
+	/** Injectable for tests; production uses the default. */
+	private readonly evictAfterMs: number;
+
+	constructor(evictAfterMs: number = ConnectionManager.EVICT_AFTER_MS) {
+		this.evictAfterMs = evictAfterMs;
+	}
 
 	static getInstance(): ConnectionManager {
 		if (!ConnectionManager.instance) {
@@ -58,6 +64,12 @@ export class ConnectionManager {
 		this.connecting.set(host, attempt);
 		try {
 			return await attempt;
+		} catch (err) {
+			// A client whose connect failed never emits "disconnected" (the
+			// close handler is only attached after a successful connect), so
+			// without this it would sit in the pool forever.
+			this.scheduleEviction(host);
+			throw err;
 		} finally {
 			this.connecting.delete(host);
 		}
@@ -144,13 +156,22 @@ export class ConnectionManager {
 		this.cancelEviction(host);
 		const timer = setTimeout(() => {
 			this.evictionTimers.delete(host);
+			// A reconnect may be in flight right now (isConnected() is false
+			// while CONNECTING): evicting would orphan a client that then
+			// completes its connect outside the pool — duplicate dispatch and
+			// a leaked TCP session. Re-arm instead; a failed attempt
+			// re-schedules eviction itself, a successful one cancels it.
+			if (this.connecting.has(host)) {
+				this.scheduleEviction(host);
+				return;
+			}
 			const client = this.clients.get(host);
 			if (client && !client.isConnected()) {
-				logger.info(`Evicting disconnected client for ${host} (stale for ${ConnectionManager.EVICT_AFTER_MS} ms)`);
+				logger.info(`Evicting disconnected client for ${host} (stale for ${this.evictAfterMs} ms)`);
 				this.clients.delete(host);
 				this.stateCache.delete(host);
 			}
-		}, ConnectionManager.EVICT_AFTER_MS);
+		}, this.evictAfterMs);
 		timer.unref?.();
 		this.evictionTimers.set(host, timer);
 	}

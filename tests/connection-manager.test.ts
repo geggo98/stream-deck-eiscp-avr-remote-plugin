@@ -192,6 +192,83 @@ describe("ConnectionManager", () => {
 		});
 	});
 
+	describe("pool eviction", () => {
+		const pooled = (mgr: ConnectionManager, host: string) =>
+			(mgr as unknown as { clients: Map<string, unknown> }).clients.has(host);
+		const cached = (mgr: ConnectionManager, host: string) =>
+			(mgr as unknown as { stateCache: Map<string, unknown> }).stateCache.has(host);
+
+		it("evicts a client that stays disconnected, along with its cache", async () => {
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager(50);
+			const host = "127.0.0.1";
+			try {
+				const client = await mgr.ensureConnected(host, mock.port);
+				await mock.waitForClient();
+				mock.broadcast("PWR", "00");
+				await until(() => mgr.getCachedValue(host, "PWR") === "00");
+				client.disconnect();
+				await until(() => !pooled(mgr, host) && !cached(mgr, host));
+			} finally {
+				await mock.close();
+			}
+		});
+
+		it("a reconnect before the deadline cancels eviction", async () => {
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager(80);
+			const host = "127.0.0.1";
+			try {
+				const client = await mgr.ensureConnected(host, mock.port);
+				client.disconnect();
+				await until(() => !client.isConnected());
+				await mgr.ensureConnected(host, mock.port);
+				await sleep(160); // let a stale timer fire, if any survived
+				assert.ok(pooled(mgr, host), "reconnected client must stay pooled");
+				client.disconnect();
+			} finally {
+				await mock.close();
+			}
+		});
+
+		it("evicts a client whose connect never succeeded", async () => {
+			// A failed connect never emits "disconnected" (the close handler is
+			// only attached after a successful connect), so eviction must be
+			// scheduled by the failed attempt itself.
+			const mgr = new ConnectionManager(50);
+			const deadPort = await (async () => {
+				const m = await startMockReceiver();
+				const p = m.port;
+				await m.close();
+				return p;
+			})();
+			await assert.rejects(mgr.ensureConnected("127.0.0.1", deadPort));
+			assert.ok(pooled(mgr, "127.0.0.1"), "still pooled right after the failure");
+			await until(() => !pooled(mgr, "127.0.0.1") && !cached(mgr, "127.0.0.1"));
+		});
+
+		it("does not evict while a reconnect is in flight", async () => {
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager(40);
+			const host = "127.0.0.1";
+			try {
+				const client = await mgr.ensureConnected(host, mock.port);
+				client.disconnect();
+				await until(() => !client.isConnected());
+				// Simulate an in-flight reconnect spanning the eviction deadline.
+				const internals = mgr as unknown as { connecting: Map<string, Promise<unknown>> };
+				internals.connecting.set(host, Promise.resolve());
+				await sleep(120); // several timer periods
+				assert.ok(pooled(mgr, host), "client must not be evicted mid-connect");
+				internals.connecting.delete(host);
+				// Once the attempt is gone, the re-armed timer may evict again.
+				await until(() => !pooled(mgr, host));
+			} finally {
+				await mock.close();
+			}
+		});
+	});
+
 	describe("connect deduplication", () => {
 		it("parallel ensureConnected calls share a single connection", async () => {
 			const { server, port, connections } = await startCountingServer();
