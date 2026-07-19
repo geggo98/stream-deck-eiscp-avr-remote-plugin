@@ -418,19 +418,19 @@ Mit Mock-Server und kurzem `commandTimeoutMs` (~50 ms):
 
 ### Schritt 16: ConnectionManager-Verhaltenstests
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 Der bestehende Test ist nahezu vakuos (Singleton-Identität + „unsubscribe
 wirft nicht"). Mit Mock-Server:
-- [ ] Eingehende Message aktualisiert `getCachedValue`.
-- [ ] Callbacks feuern nur für passenden Host+Command.
-- [ ] Unsubscribe stoppt die Zustellung wirklich.
-- [ ] Werfender Subscriber unterbricht den Dispatch nicht (Fix aus Schritt 3).
-- [ ] `ensureConnected` reconnectet einen getrennten Client.
+- [x] Eingehende Message aktualisiert `getCachedValue`.
+- [x] Callbacks feuern nur für passenden Host+Command.
+- [x] Unsubscribe stoppt die Zustellung wirklich.
+- [x] Werfender Subscriber unterbricht den Dispatch nicht (Fix aus Schritt 3).
+- [x] `ensureConnected` reconnectet einen getrennten Client.
 
 ### Schritt 17: Volume-Cap-Tests (sicherheitsrelevant)
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 Der Cap existiert, damit eine fehlkonfigurierte Taste keine Lautsprecher
 sprengt — heute nur mit echter Hardware getestet. Bytes-on-the-wire gegen
@@ -438,7 +438,7 @@ Mock-Server asserten:
 - [x] `setVolume(200)` mit `cap: 50` sendet `MVL32`, niemals `MVLC8`.
 - [x] `setVolume(-1)` clampt auf `00` (Fix aus Schritt 12).
 - [x] `volumeUp` am Cap bleibt am Cap.
-- [ ] Hardcodierte Ranges entschärfen: `VolumeDialAction.updateFeedback`
+- [x] Hardcodierte Ranges entschärfen: `VolumeDialAction.updateFeedback`
       (`dedicated/index.ts:288-303`, `/80`) und `eiscp-dial-indicator.ts:33-35`
       (MVL→80, sonst 24) → Range in `CommandDef` ziehen.
 

@@ -7,6 +7,18 @@ import { describe, it } from "node:test";
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import { ConnectionManager } from "../src/adapter/eiscp/connection-manager.ts";
 import { createTransport } from "../src/adapter/eiscp/transport.ts";
+import { startMockReceiver } from "./helpers/mock-receiver.ts";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll until the predicate holds or the timeout elapses. */
+async function until(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+	const start = Date.now();
+	while (!predicate() && Date.now() - start < timeoutMs) {
+		await sleep(10);
+	}
+	assert.ok(predicate(), "condition not reached in time");
+}
 
 /** Start a TCP server on an ephemeral port and count incoming connections. */
 async function startCountingServer(): Promise<{ server: Server; port: number; connections: () => number }> {
@@ -85,6 +97,98 @@ describe("ConnectionManager", () => {
 			).handleMessage("throwing-host", { command: "PWR", parameter: "01" });
 
 			assert.deepEqual(received, ["01"]);
+		});
+	});
+
+	describe("behaviour against the mock receiver", () => {
+		it("an incoming message updates the cache and notifies only matching subscribers", async () => {
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager();
+			const host = "127.0.0.1";
+			const matching: string[] = [];
+			const wrongCommand: string[] = [];
+			const wrongHost: string[] = [];
+			mgr.onCommandUpdate(host, "MVL", (v) => matching.push(v));
+			mgr.onCommandUpdate(host, "PWR", (v) => wrongCommand.push(v));
+			mgr.onCommandUpdate("10.9.9.9", "MVL", (v) => wrongHost.push(v));
+			try {
+				const client = await mgr.ensureConnected(host, mock.port);
+				await mock.waitForClient();
+				mock.broadcast("MVL", "1A");
+				await until(() => matching.length > 0);
+				assert.deepEqual(matching, ["1A"]);
+				assert.deepEqual(wrongCommand, []);
+				assert.deepEqual(wrongHost, []);
+				assert.equal(mgr.getCachedValue(host, "MVL"), "1A");
+				client.disconnect();
+			} finally {
+				await mock.close();
+			}
+		});
+
+		it("unsubscribe really stops delivery", async () => {
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager();
+			const host = "127.0.0.1";
+			const seen: string[] = [];
+			const unsub = mgr.onCommandUpdate(host, "MVL", (v) => seen.push(v));
+			try {
+				const client = await mgr.ensureConnected(host, mock.port);
+				await mock.waitForClient();
+				mock.broadcast("MVL", "01");
+				await until(() => seen.length === 1);
+				unsub();
+				mock.broadcast("MVL", "02");
+				// The second value must still land in the cache (proving the
+				// message arrived) without reaching the unsubscribed callback.
+				await until(() => mgr.getCachedValue(host, "MVL") === "02");
+				assert.deepEqual(seen, ["01"]);
+				client.disconnect();
+			} finally {
+				await mock.close();
+			}
+		});
+
+		it("a throwing subscriber does not stop delivery to later subscribers (end to end)", async () => {
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager();
+			const host = "127.0.0.1";
+			const seen: string[] = [];
+			mgr.onCommandUpdate(host, "PWR", () => {
+				throw new Error("render failed");
+			});
+			mgr.onCommandUpdate(host, "PWR", (v) => seen.push(v));
+			try {
+				const client = await mgr.ensureConnected(host, mock.port);
+				await mock.waitForClient();
+				mock.broadcast("PWR", "01");
+				await until(() => seen.length > 0);
+				assert.deepEqual(seen, ["01"]);
+				client.disconnect();
+			} finally {
+				await mock.close();
+			}
+		});
+
+		it("ensureConnected reconnects a disconnected client", async () => {
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager();
+			const host = "127.0.0.1";
+			try {
+				const first = await mgr.ensureConnected(host, mock.port);
+				await mock.waitForClient();
+				first.disconnect();
+				await until(() => !first.isConnected());
+
+				const second = await mgr.ensureConnected(host, mock.port);
+				assert.strictEqual(second, first, "the pooled client is reused");
+				assert.ok(second.isConnected(), "and reconnected");
+				// The revived connection actually works end to end.
+				assert.equal(await mgr.queryCommand(host, "PWR"), "00");
+				second.disconnect();
+			} finally {
+				await mock.close();
+			}
 		});
 	});
 
