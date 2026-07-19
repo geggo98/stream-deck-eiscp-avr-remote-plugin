@@ -4,17 +4,20 @@
 
 import { COMMAND_REGISTRY, getValueName } from "../adapter/eiscp/command-registry.ts";
 
+/** JSON-compatible value (mirrors the SDK's JsonValue; undefined is allowed). */
+type JsonValue = string | number | boolean | null | undefined | JsonValue[] | { [key: string]: JsonValue };
+
 export interface EiscpActionSettings {
 	deviceIp?: string;
 	customIp?: string;
 	command?: string;
 	/** Configurable dial press action key (see resolveDialPress / ui/dial-*.html). */
 	pressAction?: string;
-	[key: string]: any;
+	// JsonValue (not any) keeps SDK compatibility while forcing every access
+	// to an undeclared key through a real type check — the get*Config hooks
+	// are the parse/validate boundary for the untyped PI JSON.
+	[key: string]: JsonValue;
 }
-
-/** JSON-compatible value (mirrors the SDK's JsonValue; undefined is allowed). */
-type JsonValue = string | number | boolean | null | undefined | JsonValue[] | { [key: string]: JsonValue };
 
 /** Learned option names, persisted in global settings: host -> command -> code -> name. */
 export type SerializedNames = { [host: string]: { [command: string]: { [code: string]: string } } };

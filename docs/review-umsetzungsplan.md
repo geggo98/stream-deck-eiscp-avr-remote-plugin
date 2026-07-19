@@ -236,7 +236,7 @@ Betroffen u. a.: `eiscp-action-base.ts` (118-123, 157, 169, …),
 
 ### Schritt 8: Das `any`-Loch in den Action-Settings schließen
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** `EiscpActionSettings` hat `[key: string]: any`
 (`src/actions/eiscp-base.ts:13`). Die vier deklarierten Felder
@@ -246,12 +246,13 @@ Settings aller 25+ Action-Klassen — ist `any`; Tippfehler wie
 `settings.upParm` kompilieren stillschweigend.
 
 **Umsetzung:**
-- [ ] Index-Signatur auf `[key: string]: JsonValue` ändern (`JsonValue`
+- [x] Index-Signatur auf `[key: string]: JsonValue` ändern (`JsonValue`
       existiert bereits in derselben Datei) — hält die SDK-Kompatibilität.
-- [ ] Die dadurch aufgedeckten Compile-Fehler beheben; die bestehenden
+- [x] Die dadurch aufgedeckten Compile-Fehler beheben; die bestehenden
       `getToggleConfig`/`getKeyConfig`/`getDialConfig`-Hooks als
       Parse-/Validierungsgrenze für das ungeprüfte PI-JSON behandeln
-      („parse, don't validate").
+      („parse, don't validate"). (Keine Fehler aufgedeckt — alle abgeleiteten
+      Settings deklarieren ihre Felder bereits explizit.)
 
 ### Schritt 9: Event-Maps an die Emitter binden
 
