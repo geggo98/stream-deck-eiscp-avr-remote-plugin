@@ -241,6 +241,12 @@ const DEFAULT_VOLUME_CONFIG: Required<VolumeConfig> = {
 	steps: 80,
 };
 
+/** A query waiting for its response; both paths clear the query's timeout. */
+interface PendingQuery {
+	settle: (value: string) => void;
+	fail: (err: Error) => void;
+}
+
 /**
  * eISCP Client
  *
@@ -254,7 +260,7 @@ export class EiscpClient extends EventEmitter {
 	private commandTimeoutMs: number;
 	private logger: AdapterLogger;
 	private state: ReceiverState;
-	private pendingQueries: Map<string, Array<(value: string) => void>> = new Map();
+	private pendingQueries: Map<string, PendingQuery[]> = new Map();
 
 	constructor(options: EiscpClientOptions) {
 		super();
@@ -377,8 +383,24 @@ export class EiscpClient extends EventEmitter {
 	private setupTransportHandlers(): void {
 		this.transport.on("data", (packet) => this.handlePacket(packet));
 		this.transport.on("connect", () => this.emit("connected"));
-		this.transport.on("close", () => this.emit("disconnected"));
+		this.transport.on("close", () => {
+			this.emit("disconnected");
+			// Fail fast: a closed connection can never answer, so waiting for
+			// the full command timeout only delays the error.
+			const { host, port } = this.transport.getConnectionInfo();
+			this.failPendingQueries(new Error(`Connection to ${host}:${port} closed while awaiting a response`));
+		});
 		this.transport.on("error", (err) => this.emitError(err, "transport error"));
+	}
+
+	/** Reject every pending query at once (connection is gone). */
+	private failPendingQueries(reason: Error): void {
+		if (this.pendingQueries.size === 0) return;
+		const pending = Array.from(this.pendingQueries.values()).flat();
+		this.pendingQueries.clear();
+		for (const entry of pending) {
+			entry.fail(reason);
+		}
 	}
 
 	/**
@@ -413,10 +435,10 @@ export class EiscpClient extends EventEmitter {
 		const pendingKey = `${message.command}`;
 		const callbacks = this.pendingQueries.get(pendingKey);
 		if (callbacks) {
-			for (const cb of callbacks) {
-				cb(message.parameter);
-			}
 			this.pendingQueries.delete(pendingKey);
+			for (const cb of callbacks) {
+				cb.settle(message.parameter);
+			}
 		}
 
 		switch (message.command) {
@@ -634,37 +656,50 @@ export class EiscpClient extends EventEmitter {
 		return new Promise((resolve, reject) => {
 			// Listen for response
 			const key = command;
-			const callbacks = this.pendingQueries.get(key) ?? [];
-			const callback = (value: string) => {
-				clearTimeout(timeout);
-				resolve(value);
+			const entries = this.pendingQueries.get(key) ?? [];
+			const entry: PendingQuery = {
+				settle: (value) => {
+					clearTimeout(timeout);
+					resolve(value);
+				},
+				fail: (err) => {
+					clearTimeout(timeout);
+					reject(err);
+				},
 			};
 
-			const abort = (err: unknown) => {
-				clearTimeout(timeout);
+			const removeEntry = () => {
 				const existing = this.pendingQueries.get(key);
 				if (existing) {
-					const idx = existing.indexOf(callback);
+					const idx = existing.indexOf(entry);
 					if (idx >= 0) existing.splice(idx, 1);
 					if (existing.length === 0) {
 						this.pendingQueries.delete(key);
 					}
 				}
-				reject(err);
 			};
 
 			// Set up timeout
 			const timeout = setTimeout(() => {
-				abort(new Error(`Command ${command} ${parameter} timed out`));
+				removeEntry();
+				const { host, port } = this.transport.getConnectionInfo();
+				reject(
+					new Error(
+						`Command ${command} ${parameter} to ${host}:${port} timed out after ${this.commandTimeoutMs} ms`,
+					),
+				);
 			}, this.commandTimeoutMs);
 
-			callbacks.push(callback);
-			this.pendingQueries.set(key, callbacks);
+			entries.push(entry);
+			this.pendingQueries.set(key, entries);
 
 			// Send command. The VSX-S520D answers the framed eISCP packet on
 			// its own; an additional naked ISCP string (a historic "double
 			// send") is ignored by the receiver and was removed.
-			this.transport.send(encoded.bytes).catch(abort);
+			this.transport.send(encoded.bytes).catch((err: unknown) => {
+				removeEntry();
+				entry.fail(err instanceof Error ? err : new Error(String(err)));
+			});
 		});
 	}
 

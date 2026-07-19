@@ -208,7 +208,7 @@ Betroffen u. a.: `eiscp-action-base.ts` (118-123, 157, 169, …),
 
 ### Schritt 7: Kleinere Robustheitsfixes
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 - [x] **name-store Persist-Retry** (`src/actions/dedicated/name-store.ts:183-192`):
       schlägt `persist()` fehl, wird nur `dirty = true` gesetzt, aber kein
@@ -223,11 +223,11 @@ Betroffen u. a.: `eiscp-action-base.ts` (118-123, 157, 169, …),
       antwortet das Plugin nicht (z. B. Neustart), hängt der Status ewig auf
       „Starting discovery…". Nach ~10 s ohne `discover`-Event: Meldung
       „No response from plugin", Button wiederherstellen.
-- [ ] **Query-Timeout-Kontext + Fail-fast** (`src/adapter/eiscp/client.ts:627-637`):
+- [x] **Query-Timeout-Kontext + Fail-fast** (`src/adapter/eiscp/client.ts:627-637`):
       `host:port` in die Timeout-Meldung; bei Transport-`close` alle
       `pendingQueries` sofort mit „connection lost" rejecten statt den vollen
       Timeout abzuwarten.
-- [ ] **Verschluckte Garbage-Bytes loggen** (`transport.ts:201-207`):
+- [x] **Verschluckte Garbage-Bytes loggen** (`transport.ts:201-207`):
       beim Verwerfen des Empfangspuffers Breadcrumb mit Hex-Preview loggen.
 
 ---

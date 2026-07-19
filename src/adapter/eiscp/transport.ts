@@ -13,8 +13,11 @@
 
 import { connect, Socket, type TcpNetConnectOpts } from "node:net";
 import { EventEmitter } from "node:events";
+import { scopedLogger } from "../logging.ts";
 import type { EiscpPacket } from "./protocol.ts";
 import { decodeMultiplePackets } from "./protocol.ts";
+
+const logger = scopedLogger("EiscpTransport");
 
 /**
  * Connection state
@@ -222,11 +225,21 @@ export class EiscpTransport extends EventEmitter {
 					// Attempt to parse raw ISCP message without eISCP header.
 					const startIdx = this.receiveBuffer.indexOf(0x21); // '!'
 					if (startIdx === -1) {
+						// Breadcrumb for protocol debugging — otherwise dropped
+						// bytes are indistinguishable from "nothing received".
+						logger.warn(
+							`${this.options.host}: discarding ${this.receiveBuffer.length} unparseable bytes: ` +
+								this.receiveBuffer.subarray(0, 32).toString("hex"),
+						);
 						this.receiveBuffer = Buffer.alloc(0);
 						break;
 					}
 
 					if (startIdx > 0) {
+						logger.debug(
+							`${this.options.host}: skipping ${startIdx} bytes before ISCP start: ` +
+								this.receiveBuffer.subarray(0, Math.min(startIdx, 32)).toString("hex"),
+						);
 						this.receiveBuffer = this.receiveBuffer.subarray(startIdx);
 					}
 
