@@ -332,7 +332,7 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
 
 ### Schritt 12: API-Hygiene (ConnectionManager, Snapshots, Volume-Grenzen)
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 - [x] **`port`-Parameter ehrlich machen** (`connection-manager.ts:37, 83, 90`):
       wird bei existierendem Client ignoriert — entweder Pool nach
@@ -357,9 +357,11 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
       (`setVolume(-1)` schickt heute `"-1"` aufs Kabel).
 - [x] **`getState()`-Aliasing** (`client.ts:293-295`): liefert das live
       interne Objekt als shallow `Readonly` — Kopie zurückgeben.
-- [ ] **Namenskollisionen** (`eiscp/discover.ts:110/120` vs.
+- [x] **Namenskollisionen** (`eiscp/discover.ts:110/120` vs.
       `dnssd/controller.ts:35/376`): `DiscoveryResult`/`StreamingDiscoveryOptions`
-      existieren doppelt mit verschiedenen Shapes; ein Paar umbenennen.
+      existieren doppelt mit verschiedenen Shapes; ein Paar umbenennen. →
+      eISCP-Seite heißt jetzt `EiscpDiscovery{Options,Result,Error}` /
+      `EiscpStreamingDiscoveryOptions`.
 
 ---
 

@@ -94,7 +94,7 @@ export interface DiscoveryCapture {
 /**
  * Options for eISCP discovery
  */
-export interface DiscoveryOptions {
+export interface EiscpDiscoveryOptions {
 	/** Timeout in milliseconds (default: 5000) */
 	timeout?: number;
 	/** Specific local address to bind to (default: all interfaces) */
@@ -112,7 +112,7 @@ export interface DiscoveryOptions {
  * EHOSTUNREACH) looks exactly like "no devices in the LAN" unless these are
  * surfaced — the macOS local-network permission being the prime suspect.
  */
-export interface DiscoveryError {
+export interface EiscpDiscoveryError {
 	/** Local interface address the failing socket was bound to (or tried to bind to) */
 	interfaceAddress: string;
 	/** Error message */
@@ -124,25 +124,25 @@ export interface DiscoveryError {
 /**
  * Streaming discovery options with callbacks
  */
-export interface StreamingDiscoveryOptions extends DiscoveryOptions {
+export interface EiscpStreamingDiscoveryOptions extends EiscpDiscoveryOptions {
 	/** Callback when a device is discovered */
 	onDevice?: (device: DiscoveredReceiver) => void;
 	/** Callback for raw capture data (if capture: true) */
 	onCapture?: (capture: DiscoveryCapture) => void;
 	/** Callback when a socket error occurs (bind, send, or async socket error) */
-	onError?: (error: DiscoveryError) => void;
+	onError?: (error: EiscpDiscoveryError) => void;
 }
 
 /**
  * Result of a streaming discovery operation
  */
-export interface DiscoveryResult {
+export interface EiscpDiscoveryResult {
 	/** All discovered devices */
 	devices: DiscoveredReceiver[];
 	/** Captured data (if capture: true) */
 	captures: DiscoveryCapture[];
 	/** Socket errors encountered; non-empty + no devices ⇒ discovery was likely blocked */
-	errors: DiscoveryError[];
+	errors: EiscpDiscoveryError[];
 }
 
 /**
@@ -335,8 +335,8 @@ export function getBroadcastInterfaces(): Array<{
  * @returns Discovery result with all devices and captures
  */
 export async function discoverEiscpDevicesStreaming(
-	options: StreamingDiscoveryOptions = {},
-): Promise<DiscoveryResult> {
+	options: EiscpStreamingDiscoveryOptions = {},
+): Promise<EiscpDiscoveryResult> {
 	const {
 		timeout = DEFAULT_DISCOVERY_TIMEOUT,
 		bindAddress,
@@ -350,11 +350,11 @@ export async function discoverEiscpDevicesStreaming(
 
 	const devices = new Map<string, DiscoveredReceiver>();
 	const captures: DiscoveryCapture[] = [];
-	const errors: DiscoveryError[] = [];
+	const errors: EiscpDiscoveryError[] = [];
 	const sockets: dgram.Socket[] = [];
 
 	const recordError = (interfaceAddress: string, err: Error) => {
-		const error: DiscoveryError = {
+		const error: EiscpDiscoveryError = {
 			interfaceAddress,
 			message: err.message,
 			code: (err as NodeJS.ErrnoException).code,
@@ -490,7 +490,7 @@ export async function discoverEiscpDevicesStreaming(
  * @param options - Discovery options
  * @returns Array of discovered receivers
  */
-export async function discoverEiscpDevices(options: DiscoveryOptions = {}): Promise<DiscoveredReceiver[]> {
+export async function discoverEiscpDevices(options: EiscpDiscoveryOptions = {}): Promise<DiscoveredReceiver[]> {
 	const result = await discoverEiscpDevicesStreaming(options);
 	return result.devices;
 }

@@ -50,6 +50,12 @@ const EISCP_PORT = 60128;
 export type DeviceSource = "airplay" | "eiscp-broadcast" | "eiscp-scan";
 
 /**
+ * Identity of a tracked device: one numeric id per physical device, used
+ * consistently across updates, results, and errors (no stringified copies).
+ */
+export type DeviceId = number;
+
+/**
  * Discovered device (before eISCP connection verification)
  */
 export interface DiscoveredDevice {
@@ -68,7 +74,7 @@ export interface DiscoveredDevice {
  */
 export interface TrackedDevice {
 	/** Numeric device ID (simple counter) */
-	deviceId: number;
+	deviceId: DeviceId;
 	/** All IP addresses associated with this device */
 	ips: string[];
 	/** Discovery sources that found this device */
@@ -94,7 +100,7 @@ export type DeviceUpdateType =
  */
 export interface DeviceUpdate {
 	/** Numeric device ID */
-	deviceId: number;
+	deviceId: DeviceId;
 	/** Type of update */
 	type: DeviceUpdateType;
 	/** What changed (specific fields that were added/updated) */
@@ -138,7 +144,7 @@ export interface DeviceMetadata {
  */
 export interface EiscpConnectResult {
 	/** Device ID */
-	deviceId: string;
+	deviceId: DeviceId;
 	/** Discovery source */
 	source: DeviceSource;
 	/** IP that successfully connected via eISCP */
@@ -153,7 +159,7 @@ export interface EiscpConnectResult {
  * Error during eISCP connection attempt
  */
 export interface EiscpConnectError {
-	deviceId: string;
+	deviceId: DeviceId;
 	ip: string;
 	source: DeviceSource;
 	error: { message: string; code?: string };
@@ -192,6 +198,27 @@ export interface ScanProgress {
 	percent: number;
 	found: number;
 	currentIp?: string;
+}
+
+/**
+ * The source a device is primarily attributed to (first one that found it).
+ */
+function primarySource(tracked: TrackedDevice | undefined): DeviceSource {
+	return Array.from(tracked?.sources ?? [])[0] ?? "eiscp-scan";
+}
+
+/**
+ * Deep-enough copy of a tracked device for emitting: later mutations of the
+ * live ips array, sets, or metadata must not change already-emitted events.
+ */
+function snapshotTracked(tracked: TrackedDevice): TrackedDevice {
+	return {
+		deviceId: tracked.deviceId,
+		ips: [...tracked.ips],
+		sources: new Set(tracked.sources),
+		originalIds: new Set(tracked.originalIds),
+		metadata: structuredClone(tracked.metadata),
+	};
 }
 
 /**
@@ -378,7 +405,7 @@ export async function discoverAllDevicesStreaming(
 					newIps: updateType === "ips-added" ? newIps : undefined,
 					source,
 				},
-				currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
+				currentState: snapshotTracked(tracked),
 			});
 		}
 	}
@@ -427,7 +454,7 @@ export async function discoverAllDevicesStreaming(
 				changes: {
 					source: device.source,
 				},
-				currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
+				currentState: snapshotTracked(tracked),
 			});
 		} else {
 			// Update existing device
@@ -466,15 +493,15 @@ export async function discoverAllDevicesStreaming(
 			// No IPs, report failure
 			const errorObj = { message: "No IPs found for device" };
 			failedDevices.push({
-				deviceId: numericDeviceId.toString(),
+				deviceId: numericDeviceId,
 				ip: "unknown",
-				source: Array.from(tracked?.sources ?? [])[0] ?? "eiscp-scan",
+				source: primarySource(tracked),
 				error: errorObj,
 			});
 			options.onError?.({
-				deviceId: numericDeviceId.toString(),
+				deviceId: numericDeviceId,
 				ip: "unknown",
-				source: Array.from(tracked?.sources ?? [])[0] ?? "eiscp-scan",
+				source: primarySource(tracked),
 				error: errorObj,
 			});
 			return null;
@@ -513,17 +540,17 @@ export async function discoverAllDevicesStreaming(
 		const ipv4Ips = tracked.ips.filter((ip) => !ip.includes(":"));
 		for (const ip of ipv4Ips) {
 			failedDevices.push({
-				deviceId: numericDeviceId.toString(),
+				deviceId: numericDeviceId,
 				ip,
-				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
+				source: primarySource(tracked),
 				error: ipErrors.get(ip) ?? fallbackError,
 			});
 		}
 		if (ipv4Ips.length > 0) {
 			options.onError?.({
-				deviceId: numericDeviceId.toString(),
+				deviceId: numericDeviceId,
 				ip: ipv4Ips[0]!,
-				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
+				source: primarySource(tracked),
 				error: ipErrors.get(ipv4Ips[0]!) ?? fallbackError,
 			});
 		}
@@ -587,16 +614,16 @@ export async function discoverAllDevicesStreaming(
 				deviceId: numericDeviceId,
 				type: "eiscp-connected",
 				changes: {
-					source: Array.from(tracked.sources)[0],
+					source: primarySource(tracked),
 				},
-				currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
+				currentState: snapshotTracked(tracked),
 			});
 
 			return {
 				ok: true,
 				result: {
-					deviceId: numericDeviceId.toString(),
-					source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
+					deviceId: numericDeviceId,
+					source: primarySource(tracked),
 					connectedIp: ip,
 					deviceInfo: state,
 					metadata: tracked.metadata,

@@ -112,9 +112,9 @@ export {
 	receiverToJson,
 	type DiscoveredReceiver,
 	type DiscoveryCapture,
-	type DiscoveryOptions,
-	type StreamingDiscoveryOptions,
-	type DiscoveryResult,
+	type EiscpDiscoveryOptions,
+	type EiscpStreamingDiscoveryOptions,
+	type EiscpDiscoveryResult,
 } from "./discover.ts";
 
 // Network Scanner (TCP port scanning)

@@ -327,7 +327,7 @@ async function main(): Promise<void> {
 
 	if (result.failedDevices.length > 0 && !options.json) {
 		console.log("\n❌ Failed Devices:");
-		const failedByDevice = new Map<string, string[]>();
+		const failedByDevice = new Map<number, string[]>();
 		for (const error of result.failedDevices) {
 			const errors = failedByDevice.get(error.deviceId) ?? [];
 			errors.push(error.ip);
