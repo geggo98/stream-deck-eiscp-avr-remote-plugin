@@ -31,6 +31,7 @@ import { handleDeviceListMessage } from "./pi-devices.ts";
 import {
 	type EiscpActionSettings,
 	fireAndLog,
+	nextToggleValue,
 	resolveDeviceIp,
 	formatCommandValue,
 	generateColoredBg,
@@ -184,8 +185,7 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 				if (current === undefined) {
 					current = await mgr.queryCommand(host, cfg.command);
 				}
-				const isOn = current === cfg.onValue;
-				await mgr.sendCommand(host, cfg.command, isOn ? cfg.offValue : cfg.onValue);
+				await mgr.sendCommand(host, cfg.command, nextToggleValue(current, cfg));
 			}
 			await ev.action.showOk();
 		} catch (err) {

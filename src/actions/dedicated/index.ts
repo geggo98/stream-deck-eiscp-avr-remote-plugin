@@ -18,9 +18,10 @@ import { COMMAND_REGISTRY } from "../../adapter/eiscp/command-registry.ts";
 import {
 	type EiscpActionSettings,
 	fireAndLog,
-	parseTone,
+	presetLabel,
 	resolveDeviceIp,
 	resolveDialPress,
+	toneFeedback,
 	UNCONFIGURED_TITLE,
 } from "../eiscp-base.ts";
 import {
@@ -445,16 +446,13 @@ abstract class ToneDialAction extends DialActionBase<EiscpActionSettings> {
 		_settings: EiscpActionSettings,
 		pressOn: boolean,
 	): void {
-		const tone = parseTone(rawValue);
-		const signed = tone ? tone[this.component] : undefined;
-		const percent = signed === undefined ? 0 : Math.round(((signed + 10) / 20) * 100);
-		const display = signed === undefined ? "—" : signed > 0 ? `+${signed}` : String(signed);
+		const { percent, display } = toneFeedback(rawValue, this.component);
 		fireAndLog(
 			action.setFeedback({
 				title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
 				value: display,
 				indicator: {
-					value: Math.max(0, Math.min(percent, 100)),
+					value: percent,
 					bar_fill_c: pressOn ? "#9E9E9E" : "#4CAF50",
 				},
 			}),
@@ -509,9 +507,8 @@ export class PresetDialAction extends DialActionBase<EiscpActionSettings> {
 		_settings: EiscpActionSettings,
 		_pressOn: boolean,
 	): void {
-		const num = parseInt(rawValue, 16);
 		fireAndLog(
-			action.setFeedback({ title: "Preset", value: Number.isNaN(num) ? rawValue : `P${num}` }),
+			action.setFeedback({ title: "Preset", value: presetLabel(rawValue) }),
 			this.logger,
 			"setFeedback",
 		);

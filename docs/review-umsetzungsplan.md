@@ -444,7 +444,7 @@ Mock-Server asserten:
 
 ### Schritt 18: `unified-discovery.test.ts` ersetzen (Test-Theater)
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** 774 Zeilen, die `discoverAllDevicesStreaming` importieren, aber
 nie aufrufen — alle 15 Tests prüfen ihre eigene lokale Simulation; die
@@ -452,38 +452,40 @@ nie aufrufen — alle 15 Tests prüfen ihre eigene lokale Simulation; die
 blieben grün, wenn man die Logik aus `unified-controller.ts` löschte.
 
 **Umsetzung:**
-- [ ] Tracker-/Merge-Logik (um `getOrCreateTrackedDevice`,
+- [x] Tracker-/Merge-Logik (um `getOrCreateTrackedDevice`,
       `unified-controller.ts:265+`) in eine testbare Klasse extrahieren.
-- [ ] Echte Tests dagegen schreiben (Merge airplay+eiscp, IP-Dedupe,
+- [x] Echte Tests dagegen schreiben (Merge airplay+eiscp, IP-Dedupe,
       Snapshot-Immutability aus Schritt 12).
-- [ ] Die Simulations-Tests und den toten Mock löschen.
+- [x] Die Simulations-Tests und den toten Mock löschen.
 
 ### Schritt 19: PI-Geräteliste testen (`src/actions/pi-devices.ts`)
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 Hier gab es laut CLAUDE.md schon einen echten Bug (leeres Dropdown). Die
 dokumentierten Invarianten testen:
-- [ ] `buildItems` exportieren; Discover-Funktion injizierbar machen
+- [x] `buildItems` exportieren; Discover-Funktion injizierbar machen
       (oder `mock.module`).
-- [ ] Default-IP immer enthalten; „Custom IP…" immer letzter Eintrag.
-- [ ] Dedupe nach Host; Gruppenlabels „Discovered"/„Pre-configured"
+- [x] Default-IP immer enthalten; „Custom IP…" immer letzter Eintrag.
+      (Semantik seit dem „Nicht konfiguriert"-Feature: konfigurierte IP
+      statt Entwickler-Default.)
+- [x] Dedupe nach Host; Gruppenlabels „Discovered"/„Pre-configured"
       (+ Fehlerlabel aus Schritt 4).
-- [ ] Cache-TTL respektiert; `isRefresh` umgeht den Cache.
-- [ ] Discovery-Fehler → Fallback auf gecachte Geräte, nie leere Liste.
+- [x] Cache-TTL respektiert; `isRefresh` umgeht den Cache.
+- [x] Discovery-Fehler → Fallback auf gecachte Geräte, nie leere Liste.
 
 ### Schritt 20 (optional): Weitere Unit-Tests für pure Logik
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
-- [ ] `ToggleActionBase.onKeyDown`-Soft-Flip (Inversion = „Power-Taste
+- [x] `ToggleActionBase.onKeyDown`-Soft-Flip (Inversion = „Power-Taste
       schaltet ein, wenn schon an").
-- [ ] `resolveDeviceIp`/`resolveParam`-Präzedenz (`eiscp-base.ts:39-58`).
-- [ ] `formatCommandValue` (Registry-Treffer, Stepper-Hex→Dezimal, Passthrough).
-- [ ] Tone-Feedback-Mapping (`dedicated/index.ts:406-425`,
+- [x] `resolveDeviceIp`/`resolveParam`-Präzedenz (`eiscp-base.ts:39-58`).
+- [x] `formatCommandValue` (Registry-Treffer, Stepper-Hex→Dezimal, Passthrough).
+- [x] Tone-Feedback-Mapping (`dedicated/index.ts:406-425`,
       −10..+10 → 0..100 %) und Preset-Feedback
       (`dedicated/index.ts:466-475`, `P<num>`).
-- [ ] `runSweep`-Zustandsmaschine (Wrap-around, „UP advanced nicht"-Bail,
+- [x] `runSweep`-Zustandsmaschine (Wrap-around, „UP advanced nicht"-Bail,
       60-Schritte-Cap, Restore im `finally`) — erfordert, den Manager
       injizierbar zu machen (`{send, query, getCached}`).
 

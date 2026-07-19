@@ -136,6 +136,35 @@ export function parseTone(raw: string): { bass: number; treble: number } | undef
 }
 
 /**
+ * Touch-strip feedback for one component of a tone readout: the −10..+10 value
+ * mapped to a 0..100 % bar plus its display text ("+n"/"-n"/"0", "—" when the
+ * raw value isn't a tone readout). Used by the bass/treble dials.
+ */
+export function toneFeedback(raw: string, component: "bass" | "treble"): { percent: number; display: string } {
+	const tone = parseTone(raw);
+	const signed = tone ? tone[component] : undefined;
+	const percent = signed === undefined ? 0 : Math.max(0, Math.min(Math.round(((signed + 10) / 20) * 100), 100));
+	const display = signed === undefined ? "—" : signed > 0 ? `+${signed}` : String(signed);
+	return { percent, display };
+}
+
+/** Tuner-preset display label: hex preset number -> "P<n>", unparseable raw stays as-is. */
+export function presetLabel(raw: string): string {
+	const num = parseInt(raw, 16);
+	return Number.isNaN(num) ? raw : `P${num}`;
+}
+
+/**
+ * Soft-flip inversion for a two-state command without a hardware TG toggle:
+ * if the current value reads "on", send the off value; anything else (off,
+ * unknown, transitional) turns it on. The "query on cold cache" step stays in
+ * the action — this only decides which value to send.
+ */
+export function nextToggleValue(current: string, cfg: { onValue: string; offValue: string }): string {
+	return current === cfg.onValue ? cfg.offValue : cfg.onValue;
+}
+
+/**
  * Press-button actions a configurable dial can run on push (chosen in the PI).
  * The receiver may not implement every one — e.g. DIR (Direct) is a no-op on some
  * Pioneer units — so "mute" is the safe default. Mirrored by ui/dial-*.html.
