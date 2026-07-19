@@ -12,9 +12,9 @@
  *
  * @example
  * ```ts
- * import { discoverEiscpDevicesStreaming } from './adapter/discovery/unified-controller.js';
+ * import { discoverAllDevicesStreaming } from './adapter/discovery/unified-controller.js';
  *
- * await discoverEiscpDevicesStreaming({
+ * await discoverAllDevicesStreaming({
  *   concurrency: 4,
  *   onDiscovery: (device) => console.log(`Found: ${device.id}`),
  *   onConnect: (result) => console.log(`Connected: ${result.connectedIp}`),

@@ -6,7 +6,7 @@
  *
  * Features:
  * - Power, volume, mute, input, and listening mode control
- * - Volume cap and step configuration
+ * - Volume cap configuration
  * - State tracking with change events
  * - Automatic state synchronization via notifications
  */
@@ -42,7 +42,7 @@ import { getValueName } from "./command-registry.ts";
  */
 export interface ReceiverState {
 	power: boolean;
-	volume: number; // 0-100 (scaled) or 0-maxVolume (raw)
+	volume: number; // Raw volume level (0-max), never scaled
 	muted: boolean;
 	input: string; // Input source name
 	listeningMode: string; // Listening mode name
@@ -58,7 +58,7 @@ export interface ReceiverState {
 export interface VolumeConfig {
 	max: number; // Maximum volume level (hardware-specific, e.g., 80 or 100)
 	cap?: number; // Optional software cap (0-max)
-	steps: number; // Number of discrete steps (for UI sliders)
+	steps: number; // Currently unused: volumeUp/volumeDown always move by 1 raw unit
 }
 
 /**
@@ -227,7 +227,7 @@ export interface EiscpClientEvents {
 export interface EiscpClientOptions extends EiscpTransportOptions {
 	volume?: Partial<VolumeConfig>;
 	autoQuery?: boolean; // Automatically query state on connect
-	debugLog?: boolean; // Log all packets
+	debugLog?: boolean; // Emit "rawPacket" events for sent/received packets (does not log by itself)
 	commandTimeoutMs?: number; // Timeout for command responses
 	logger?: AdapterLogger; // Fallback reporting when no "error" listener is attached
 }
@@ -265,15 +265,14 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	constructor(options: EiscpClientOptions) {
 		super();
 
-		// Initialize transport
 		this.transport = new EiscpTransport(options);
 		this.autoQuery = options.autoQuery ?? true;
 		this.debugLog = options.debugLog ?? false;
 		this.commandTimeoutMs = options.commandTimeoutMs ?? 5000;
 		this.logger = options.logger ?? console;
 
-		// Initialize volume config. The cap exists so a misconfigured key can
-		// never blast the speakers — enforce cap <= max instead of trusting it.
+		// The volume cap exists so a misconfigured key can never blast the
+		// speakers — enforce cap <= max instead of trusting it.
 		const volumeOptions = options.volume ?? {};
 		const max = volumeOptions.max ?? DEFAULT_VOLUME_CONFIG.max;
 		this.volumeConfig = {
@@ -282,7 +281,6 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 			steps: volumeOptions.steps ?? DEFAULT_VOLUME_CONFIG.steps,
 		};
 
-		// Initialize state
 		this.state = {
 			power: false,
 			volume: 0,
@@ -575,7 +573,8 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 						.toString("ascii")
 						.trim();
 				} catch {
-					// Keep as undefined if hex decoding fails
+					// Defensive only: Buffer.from(..., "hex") never throws
+					// (invalid input yields a truncated/empty buffer).
 				}
 				return {
 					type: "displayField",
@@ -809,7 +808,7 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	}
 
 	/**
-	 * Volume up by one step
+	 * Volume up by one raw unit (the `steps` config is not applied)
 	 */
 	async volumeUp(): Promise<void> {
 		const newLevel = Math.min(this.state.volume + 1, this.volumeConfig.cap);
@@ -817,7 +816,7 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	}
 
 	/**
-	 * Volume down by one step
+	 * Volume down by one raw unit (the `steps` config is not applied)
 	 */
 	async volumeDown(): Promise<void> {
 		const newLevel = Math.max(this.state.volume - 1, 0);

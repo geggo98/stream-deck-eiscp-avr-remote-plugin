@@ -71,7 +71,8 @@ export async function runSweep(
  * Handle the Property Inspector "Auto-Discover" button for a learned-name action
  * (key OR dial): run the sweep for `command`, learning each option's name, and
  * stream progress back to the visible PI. Shared by the input/mode key cyclers
- * and the input/mode dials — both controllers expose getSettings/showOk/showAlert.
+ * and the input/mode dials — both controllers expose getSettings/showAlert
+ * (showOk exists only on keys).
  */
 export async function handleDiscoverMessage(
 	ev: SendToPluginEvent<JsonValue, EiscpActionSettings>,

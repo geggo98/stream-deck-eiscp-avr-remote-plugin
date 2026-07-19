@@ -61,8 +61,10 @@ export async function browseAirplayDevices(
 		throw new Error("dns-sd is only available on macOS");
 	}
 
-	// dns-sd -B _airplay._tcp local. [timeout_seconds]
-	// The timeout argument on browse command is in seconds
+	// dns-sd -B _airplay._tcp local.
+	// dns-sd -B has no timeout parameter; the trailing seconds argument below
+	// is ignored by dns-sd. The actual timeout is enforced in executeDnsSd
+	// (setTimeout + SIGTERM) — dns-sd -B runs until killed.
 	const timeoutSeconds = Math.ceil((options.timeout ?? 5000) / 1000);
 
 	const args = ["-B", "_airplay._tcp", "local.", String(timeoutSeconds)];

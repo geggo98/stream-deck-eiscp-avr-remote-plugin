@@ -16,7 +16,7 @@
  *
  * const devices = await discoverEiscpDevices({ timeout: 5000 });
  * for (const device of devices) {
- *   console.log(`Found ${device.modelName} at ${device.host}:${device.port}`);
+ *   console.log(`Found ${device.modelName} at ${device.host}:${device.iscpPort}`);
  * }
  * ```
  */
@@ -57,7 +57,7 @@ export type DiscoveryUnitType = (typeof DiscoveryUnitType)[keyof typeof Discover
 export interface DiscoveredReceiver {
 	/** Hostname or IP address */
 	host: string;
-	/** eISCP port (usually 60128) */
+	/** UDP source port of the discovery response (not the eISCP port; see iscpPort) */
 	port: number;
 	/** Model name (e.g., "VSX-S520D", "TX-NR609") */
 	modelName: string;
@@ -83,7 +83,7 @@ export interface DiscoveryCapture {
 	interfaceAddress: string;
 	/** Broadcast address */
 	broadcastAddress: string;
-	/** Sent discovery packet (hex string) */
+	/** Sent discovery packet (hex string); only the first query packet is recorded */
 	sentPacket: string;
 	/** Received raw bytes (hex string) */
 	receivedBytes: string;
@@ -148,7 +148,9 @@ export interface EiscpDiscoveryResult {
 /**
  * Parse the ECN response from a receiver
  *
- * ECN response format: !1ECN<model>/<port>/<area>/<identifier>
+ * ECN response format: !1ECN<model>/<port>/<area><identifier> (3 segments,
+ * identifier appended to the 2-char area code) or
+ * !1ECN<model>/<port>/<area>/<identifier> (4 segments); both are handled.
  *
  * Example: !1ECNTX-NR609/60128/DX or !1ECNVSX-S520D/60128/DX0123456789AB
  *
@@ -308,9 +310,9 @@ export function getBroadcastInterfaces(): Array<{
 		for (const info of infos) {
 			// Only IPv4 interfaces with broadcast capability
 			if (info.family === "IPv4" && !info.internal) {
-				// Use provided broadcast or calculate it from netmask
-				// Note: 'broadcast' exists at runtime but not in TypeScript types
-				const broadcast = (info as { broadcast?: string }).broadcast || calculateBroadcastAddress(info.address, info.netmask);
+				// Node does not expose a broadcast address on interface entries,
+				// so derive it from the address and netmask.
+				const broadcast = calculateBroadcastAddress(info.address, info.netmask);
 
 				results.push({
 					address: info.address,
@@ -400,7 +402,8 @@ export async function discoverEiscpDevicesStreaming(
 						const receiver = parseDiscoveryResponse(msg, rinfo.address, rinfo.port);
 
 						if (receiver) {
-							// Use identifier as key to avoid duplicates
+							// Dedupe on identifier + host: the same device answering on
+							// several interfaces intentionally yields one entry per host.
 							const key = `${receiver.identifier}-${receiver.host}`;
 
 							if (!devices.has(key)) {

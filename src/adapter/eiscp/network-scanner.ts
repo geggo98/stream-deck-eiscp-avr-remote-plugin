@@ -1,12 +1,13 @@
 /**
  * eISCP Network Scanner
  *
- * Scans private IP ranges for eISCP devices using TCP port checking.
+ * Scans local /24 subnets for eISCP devices using TCP port checking.
  * Only checks if the eISCP port (60128) is open, not if the device
  * actually speaks eISCP protocol.
  *
  * Features:
- * - Scans only /24 subnets within private IP ranges
+ * - Scans /24 subnets; "private" is judged by the first octet only
+ *   (10.x, 172.x, 192.x), which is broader than the RFC 1918 ranges
  * - Only scans subnets that the local machine is part of
  * - Parallel connection checking with configurable concurrency limit
  * - No external dependencies (uses Node.js built-in net module)
@@ -259,7 +260,7 @@ export function generateIpsForSubnet(subnet: Subnet): string[] {
 	const ips: string[] = [];
 	const { network } = subnet;
 
-	// Generate all IPs from network.0.1 to network.0.254
+	// Generate all host IPs, <network>.1 through <network>.254
 	for (let i = 1; i < 255; i++) {
 		ips.push(`${network}.${i}`);
 	}

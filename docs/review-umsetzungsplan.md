@@ -495,47 +495,48 @@ dokumentierten Invarianten testen:
 
 ### Schritt 21: Faktisch falsche Kommentare korrigieren
 
-- [ ] umgesetzt
+- [x] umgesetzt (alle Punkte gegen den aktuellen Stand geprüft; einige waren
+  durch die Refactorings bereits erledigt)
 
 Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
 `docs/eiscp-commands.yaml` geprüft):
-- [ ] `transport.ts:302`: `createTransport` behauptet „auto-reconnect" —
+- [x] `transport.ts:302`: `createTransport` behauptet „auto-reconnect" —
       existiert nicht. → „no auto-reconnect; callers must reconnect on close".
-- [ ] `unified-controller.ts:15`: Modul-`@example` importiert
+- [x] `unified-controller.ts:15`: Modul-`@example` importiert
       `discoverEiscpDevicesStreaming`, das dieses Modul nicht exportiert →
       auf `discoverAllDevicesStreaming` umstellen (die Options-/Callback-
       Shape des Beispiels ist bereits gültig, nur der Funktionsname ist
       falsch).
-- [ ] `discover.ts:291`: „'broadcast' exists at runtime" ist falsch (Node
+- [x] `discover.ts:291`: „'broadcast' exists at runtime" ist falsch (Node
       liefert kein `broadcast`-Property); toten `(info as ...).broadcast`-Zweig
       entfernen, `calculateBroadcastAddress` läuft immer.
-- [ ] `protocol.ts:27, 143`: `rawMessage` enthält den Terminator (Stripping
+- [x] `protocol.ts:27, 143`: `rawMessage` enthält den Terminator (Stripping
       passiert erst in `parseIscpMessage`) — Doku korrigieren.
-- [ ] `dedicated/discovery.ts:122` vs. `:145`: Widerspruch zu
+- [x] `dedicated/discovery.ts:122` vs. `:145`: Widerspruch zu
       `showOk`/`showAlert` auflösen — korrekt ist: `showAlert` gibt es auf
       Keys und Dials, `showOk` ist Keypad-only.
-- [ ] `dnssd/caller.ts:62-64`: `dns-sd -B` hat keinen Timeout-Parameter;
+- [x] `dnssd/caller.ts:62-64`: `dns-sd -B` hat keinen Timeout-Parameter;
       der echte Timeout ist `setTimeout` + `SIGTERM` in `executeDnsSd`.
-- [ ] `dnssd/parser.ts:79-83`: JSDoc-Beispielformat parst mit dem Regex nicht
+- [x] `dnssd/parser.ts:79-83`: JSDoc-Beispielformat parst mit dem Regex nicht
       (Flags-Spalte, `HH:MM:SS.mmm`); echtes `dns-sd`-Ausgabebeispiel einsetzen.
       `:125-126`: „ms since epoch / string as identifier" → tatsächlich ms
       seit Mitternacht. `:348, 354`: IPv4/IPv6-Flag-Heuristik als Heuristik
       kennzeichnen.
-- [ ] `client.ts:47`: `volume` ist immer roh (0–max), nie skaliert —
+- [x] `client.ts:47`: `volume` ist immer roh (0–max), nie skaliert —
       „0-100 (scaled) or" streichen. `:229`: `debugLog` loggt nicht, sondern
       gated `rawPacket`-Events. `:63, 757-770`: `steps` ist ungenutzt,
       `volumeUp/Down` gehen ±1 Rohwert — re-dokumentieren oder implementieren.
       `:537` + `eiscp-base.ts:78-80`: `Buffer.from(str, "hex")` wirft nie —
       toten Fehlerpfad/Kommentar bereinigen.
-- [ ] `network-scanner.ts:4-10`: Header verspricht „nur private Ranges", Code
+- [x] `network-scanner.ts:4-10`: Header verspricht „nur private Ranges", Code
       klassifiziert nach erstem Oktett (ganz 172/8 bzw. 192/8) — entweder
       `isPrivateIp()` (existiert in der Datei!) wirklich nutzen oder den
       Header abschwächen. `:262`: „network.0.1"-Formulierung begradigen.
-- [ ] `discover.ts:57` (`port` = UDP-Quellport, nicht eISCP-Port), `:83`
+- [x] `discover.ts:57` (`port` = UDP-Quellport, nicht eISCP-Port), `:83`
       (nur erstes Discovery-Paket wird aufgezeichnet), `:130-132`
       (Format-Zeile vs. Beispiele: 3 oder 4 Segmente, Code kann beides),
       `:361` (Key ist `identifier-host`, Mehrfach-Interfaces absichtlich).
-- [ ] `scripts/discover-eiscp-broadcast.ts:9` und
+- [x] `scripts/discover-eiscp-broadcast.ts:9` und
       `scripts/discover-eiscp-ip-scan.ts:9`: Usage-Zeilen nennen alte
       Dateinamen. `scripts/generate-manifest.ts:5`: „~16 dedicated actions"
       → Zahl entfernen (es sind 21).
@@ -566,12 +567,12 @@ Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
 
 ### Schritt 23: Kommentar-Rauschen entfernen
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
-- [ ] `protocol.ts:122, 220-221` („Parse header", „Strip terminators …" über
+- [x] `protocol.ts:122, 220-221` („Parse header", „Strip terminators …" über
       der gleichnamigen Funktion).
-- [ ] `client.ts:259, 265, 273` („Initialize …"-Konstruktor-Narration).
-- [ ] `dnssd/parser.ts:231`: ungenutzte `nextChar`-Variable + redundante
+- [x] `client.ts:259, 265, 273` („Initialize …"-Konstruktor-Narration).
+- [x] `dnssd/parser.ts:231`: ungenutzte `nextChar`-Variable + redundante
       Escape-Narration (Strategie ist in 222-226 schon erklärt).
 
 ---

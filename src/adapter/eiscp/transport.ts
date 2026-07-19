@@ -350,7 +350,10 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 }
 
 /**
- * Create a transport instance with auto-reconnect
+ * Create a transport instance
+ *
+ * No auto-reconnect: when the connection closes, callers must reconnect
+ * themselves (e.g. on next use).
  *
  * @param options - Transport options
  * @returns Transport instance

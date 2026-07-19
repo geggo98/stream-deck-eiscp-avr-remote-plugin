@@ -6,7 +6,7 @@
  * using UDP broadcast discovery. It can run in different modes for testing and fixture generation.
  *
  * Usage:
- *   tsx scripts/discover-eiscp.ts [options]
+ *   tsx scripts/discover-eiscp-broadcast.ts [options]
  *
  * Options:
  *   --timeout <ms>       Discovery timeout in milliseconds (default: 5000)

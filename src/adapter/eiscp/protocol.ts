@@ -24,7 +24,7 @@ export interface EiscpPacket {
 	dataSize: number;
 	version: Buffer;
 	message: string;
-	rawMessage: Buffer; // Raw ISCP message bytes (without terminator)
+	rawMessage: Buffer; // Raw ISCP message bytes, including the terminator (stripped later by parseIscpMessage)
 }
 
 /**
@@ -119,7 +119,6 @@ export function decodePacket(buffer: Buffer): EiscpPacket {
 		);
 	}
 
-	// Parse header
 	const header = buffer.subarray(0, 4).toString("ascii");
 	if (header !== PacketHeader.MAGIC) {
 		throw new Error(`Invalid packet header: ${header} (expected ${PacketHeader.MAGIC})`);
@@ -140,7 +139,7 @@ export function decodePacket(buffer: Buffer): EiscpPacket {
 		);
 	}
 
-	// Extract message (excluding terminator for parsing)
+	// Extract message; the terminator stays in place and is stripped by parseIscpMessage
 	const rawMessage = buffer.subarray(PacketHeader.HEADER_SIZE, PacketHeader.HEADER_SIZE + dataSize);
 	const message = rawMessage.toString("ascii");
 
@@ -217,7 +216,6 @@ export function parseQueryResponse(packet: EiscpPacket): string {
  * @returns true if message is a query
  */
 export function isQuery(message: string): boolean {
-	// Strip terminators before checking
 	const trimmed = stripTerminators(message);
 	return trimmed.endsWith("QSTN");
 }

@@ -99,6 +99,8 @@ export function decodeDisplayText(hex: string): string {
 	try {
 		return Buffer.from(hex, "hex").toString("ascii").trim();
 	} catch {
+		// Defensive only: Buffer.from(..., "hex") never throws
+		// (invalid input yields a truncated/empty buffer).
 		return "";
 	}
 }

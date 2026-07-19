@@ -6,7 +6,7 @@
  * It only checks if port 60128 is open, not if the device actually speaks eISCP.
  *
  * Usage:
- *   tsx scripts/scan-eiscp-network.ts [options]
+ *   tsx scripts/discover-eiscp-ip-scan.ts [options]
  *
  * Options:
  *   --port <port>        Port to check (default: 60128)

@@ -76,10 +76,10 @@ export class ParseError extends Error {
 /**
  * Parses the output of `dns-sd -B _airplay._tcp`
  *
- * Input format:
+ * Input format (see tests/fixtures/browse-result.json for a real capture):
  * ```
- * TIMESTAMP   A/R  IF  Domain  Service Type  Instance Name
- * 1234567890  Add   3   local.  _airplay._tcp  Living Room TV
+ * Timestamp     A/R    Flags  if Domain               Service Type         Instance Name
+ * 14:14:38.646  Add        3  14 local.               _airplay._tcp.       Living Room TV
  * ```
  *
  * @param output - The stdout from dns-sd browse command
@@ -127,8 +127,8 @@ export function parseBrowseOutput(output: string): BrowseResult[] {
 		const serviceType = match[6]!;
 		const instanceName = match[7]!;
 
-		// Convert timestamp to milliseconds since epoch (simplified - just use the string as identifier)
-		// For a real implementation, you'd parse the date/time from context
+		// Convert the HH:MM:SS.mmm timestamp to milliseconds since midnight
+		// (dns-sd prints no date on data lines, so this is not an epoch value)
 		const timeMatch = timestamp.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
 		let timeValue = 0;
 		if (timeMatch) {
@@ -240,11 +240,8 @@ export function parseLookupOutput(output: string): LookupResult {
 		let current = "";
 		for (let j = 0; j < line.length; j++) {
 			const char = line[j]!;
-			const nextChar = line[j + 1];
 
-			// Check if this is a space that's not escaped (not preceded by backslash)
 			if (char === " " && line[j - 1] !== "\\") {
-				// This is a delimiter between pairs
 				if (current.trim()) {
 					pairs.push(current.trim());
 				}
@@ -360,7 +357,7 @@ export function parseGetAddrOutput(output: string): AddressResult[] {
 
 		// Table format: Parse data rows after header
 		// Data line: "14:15:36.907  Add  40000002      14  hostname.local.  192.168.1.100  120"
-		// Flags ending in 2 indicate IPv4, 3 indicate IPv6
+		// Heuristic from observed output: flags ending in 2 indicate IPv4, 3 IPv6
 		const tableMatch = trimmed.match(
 			/^\d{2}:\d{2}:\d{2}\.\d+\s+(Add|Rmv)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s+(\d+)$/,
 		);
@@ -369,7 +366,7 @@ export function parseGetAddrOutput(output: string): AddressResult[] {
 			const flags = tableMatch[2]!;
 			const host = tableMatch[4]!;
 			const address = tableMatch[5]!;
-			// Last hex digit of flags: 2 = IPv4, 3 = IPv6
+			// Heuristic: last hex digit of flags: 2 = IPv4, 3 = IPv6
 			const lastFlag = flags.slice(-1);
 			const addressType = lastFlag === "2" ? "ipv4" : "ipv6";
 

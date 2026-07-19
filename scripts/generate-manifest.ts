@@ -2,7 +2,7 @@
 /**
  * Generate the manifest's `Actions` array from the action catalog.
  *
- * Keeps the 4 generic actions and the ~16 dedicated actions in sync with
+ * Keeps the generic actions and the dedicated actions in sync with
  * src/actions/dedicated/catalog.ts (UUID, icon paths, States, encoder layout)
  * so the @action decorators, the bundled icons and the manifest can never drift.
  * All other manifest fields are preserved verbatim.
