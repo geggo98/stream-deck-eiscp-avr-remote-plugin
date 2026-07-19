@@ -124,6 +124,10 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 		}
 		if (this.showTitle) {
 			fireAndLog(action.setTitle(formatCommandValue(cfg.command, rawValue)), this.logger, "setTitle");
+		} else {
+			// Title-less toggles (Power/Mute) may carry an error title from a
+			// degraded state; restore the user's configured title.
+			fireAndLog(action.setTitle(), this.logger, "setTitle");
 		}
 	}
 
@@ -141,7 +145,9 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 		const host = resolveDeviceIp(ev.payload.settings);
 		if (!host) {
 			this.logger.warn("onWillAppear: no device IP configured");
-			if (this.showTitle) await action.setTitle(UNCONFIGURED_TITLE);
+			// Unconditional: title-less toggles (Power/Mute) would otherwise
+			// look fully functional with no IP configured at all.
+			await action.setTitle(UNCONFIGURED_TITLE);
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -156,8 +162,9 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			this.render(action, cfg, value);
 		} catch (err) {
 			this.logger.error(`onWillAppear: query ${cfg.command} on ${host} failed: ${err}`);
-			// Degrade visibly instead of showing a stale/empty key.
-			if (this.showTitle) await action.setTitle("?");
+			// Degrade visibly instead of showing a stale/empty key; render()
+			// restores the configured title on the next successful update.
+			await action.setTitle("?");
 		}
 	}
 
@@ -217,15 +224,18 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			if (ev.action.isKey()) await ev.action.setTitle("?");
 			return;
 		}
-		if (!this.showsState || !ev.action.isKey()) return;
+		if (!ev.action.isKey()) return;
 		const action = ev.action;
 		this.clearSubs(action.id); // drop stale subs on a repeated onWillAppear
 		const host = resolveDeviceIp(ev.payload.settings);
 		if (!host) {
+			// Even state-less keys (transport, tone steppers) must reveal a
+			// missing IP; they would otherwise look functional until pressed.
 			this.logger.warn("onWillAppear: no device IP configured");
 			await action.setTitle(UNCONFIGURED_TITLE);
 			return;
 		}
+		if (!this.showsState) return;
 		const mgr = ConnectionManager.getInstance();
 
 		this.trackSub(

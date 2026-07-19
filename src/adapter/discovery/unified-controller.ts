@@ -397,6 +397,12 @@ export async function discoverAllDevicesStreaming(
 		const airplayPromise = discoverAirplayDevicesStreaming({
 			timeout,
 			continueOnError: true,
+			// continueOnError collects per-device/browse failures into the
+			// RESULT (no rejection), so without this callback they would
+			// vanish — the .catch below only sees unexpected rejections.
+			onError: (error) => {
+				console.error(`AirPlay discovery error (${error.stage}${error.instanceName ? ` ${error.instanceName}` : ""}): ${error.error}`);
+			},
 			onDevice: (airplayDevice: AirPlayDevice) => {
 				const allIps = [...airplayDevice.ipv4Addresses, ...airplayDevice.ipv6Addresses];
 				const device: DiscoveredDevice = {

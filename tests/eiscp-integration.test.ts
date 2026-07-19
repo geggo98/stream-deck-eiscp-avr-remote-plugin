@@ -362,19 +362,20 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 
 			client.on("stateChanged", handler);
 
-			// Make a change that should trigger an event
+			// Make a change that should trigger an event, then wait for the
+			// receiver's lagging state broadcast to arrive.
 			await client.toggleMute();
-
-			// Give it a moment for the event to fire
-			await new Promise((resolve) => setTimeout(resolve, 100));
+			await eventually(
+				async () => changes,
+				(n) => n >= 1,
+			);
 
 			client.off("stateChanged", handler);
-
-			// Should have received at least one state change
-			assert.ok(changes >= 0);
+			assert.ok(changes >= 1, `expected at least one stateChanged event, got ${changes}`);
 
 			// Restore mute state
 			await client.toggleMute();
+			await eventually(() => client.queryMute(), (m) => typeof m === "boolean");
 
 			console.log(`  State change events received: ${changes}`);
 		});

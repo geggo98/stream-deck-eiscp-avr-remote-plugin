@@ -217,7 +217,12 @@ export interface EiscpClientEvents {
 	disconnected: [];
 	stateChanged: [state: Partial<ReceiverState>];
 	error: [error: Error];
-	rawPacket: [direction: "sent" | "received", packet: EncodedPacket | EiscpPacket];
+	rawPacket: [
+		direction: "sent" | "received",
+		// Sent: the encoded frame. Received: the decoded eISCP packet, or the
+		// headerless raw-ISCP line some receivers emit.
+		packet: EncodedPacket | EiscpPacket | Extract<InboundFrame, { kind: "raw-iscp" }>,
+	];
 	message: [message: DecodedMessage];
 }
 
@@ -416,8 +421,10 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	 * Handle an incoming frame (framed eISCP packet or headerless raw ISCP line)
 	 */
 	private handleFrame(frame: InboundFrame): void {
-		if (this.debugLog && frame.kind === "eiscp") {
-			this.emit("rawPacket", "received", frame.packet);
+		if (this.debugLog) {
+			// Raw-ISCP lines are debug-relevant traffic too (the CLI's dump
+			// mode exists precisely to see them).
+			this.emit("rawPacket", "received", frame.kind === "eiscp" ? frame.packet : frame);
 		}
 
 		try {

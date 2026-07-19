@@ -167,7 +167,9 @@ Press-State-Query-Fehler werden nur auf `debug` geloggt
 **Umsetzung:**
 - [x] `transport.send`: Write-Callback auswerten; Fehler mit Host+Befehl
       loggen/emittieren; ConnectionManager markiert den Client als tot und
-      reconnectet proaktiv.
+      reconnectet proaktiv. → Umgesetzt als lazy-Reconnect: der fehlgeschlagene
+      Write zerstört den Socket, der nächste `ensureConnected` verbindet neu
+      (kein proaktiver Reconnect-Loop — bewusste Abweichung).
 - [x] Toggle bei leerem Cache: erst Query versuchen, sonst `showAlert()` statt
       Soft-Flip mit `showOk()`.
 - [x] `onWillAppear`-Query-Fehler: sichtbar degradierter Zustand auf dem Key
@@ -579,11 +581,13 @@ Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
 
 ## Offene Punkte / vorab klären
 
-- [ ] **Doppel-Send bei Queries** (`client.ts:644-647`): mit `sendRaw: true`
+- [x] **Doppel-Send bei Queries** (`client.ts:644-647`): mit `sendRaw: true`
       wird das geframte Paket **und** danach der nackte ISCP-String gesendet.
       Absichtlicher VSX-S520D-Workaround oder Versehen? Gegen den echten
       Receiver testen (`npm run eiscp -- state`), dann entweder Kommentar mit
-      Begründung oder zweiten Write entfernen.
+      Begründung oder zweiten Write entfernen. → **Geklärt und entfernt**
+      (siehe Schritt 5: Live-Probe 2026-07-19, Fixture
+      `tests/fixtures/vsx-s520d-framed-vs-naked-query.jsonl`).
 - [x] **Hardcodierte Default-IP `10.2.0.32`** (`eiscp-base.ts:48-58`): jeder
       Nutzer ohne Settings sendet an die Entwickler-LAN-IP. Für die
       Veröffentlichung: „nicht konfiguriert" als eigener Zustand? →

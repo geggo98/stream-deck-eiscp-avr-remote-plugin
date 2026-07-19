@@ -87,8 +87,38 @@ describe("EiscpTransport lifecycle", () => {
 		const attempt = transport.connect();
 		transport.disconnect();
 
-		await assert.rejects(attempt);
+		// Deadline guard: if the abort logic regresses, the attempt never
+		// settles and this test would otherwise hang the whole suite
+		// (node --test runs without a per-test timeout here).
+		const deadline = new Promise((_, reject) => {
+			const t = setTimeout(() => reject(new Error("test deadline: connect promise never settled")), 5000);
+			t.unref?.();
+		});
+		await assert.rejects(Promise.race([attempt, deadline]), /Disconnected while connecting|ECONN|EHOST|ENET/);
 		assert.equal(transport.getState(), ConnectionState.DISCONNECTED);
+	});
+
+	it("connect timeout rejects, destroys the socket, and leaves a consistent state", async () => {
+		// TEST-NET-3 never answers, so the socket 'timeout' event fires after
+		// connectTimeout (exercising onTimeout). If the local network
+		// fast-fails instead, the same onError path runs — either way the
+		// attempt must reject quickly and clean up.
+		const transport = createTransport({ host: "203.0.113.1", port: 60128, connectTimeout: 150 });
+		const errors: Error[] = [];
+		transport.on("error", (err: Error) => errors.push(err));
+
+		await assert.rejects(transport.connect(), /timeout|EHOST|ENET|ECONN/i);
+		assert.equal(transport.getState(), ConnectionState.DISCONNECTED);
+		assert.equal(transport.isConnected(), false);
+		assert.equal(
+			(transport as unknown as { socket: Socket | null }).socket,
+			null,
+			"socket must be destroyed and cleared",
+		);
+		assert.ok(errors.length >= 1, "failure should be emitted");
+
+		// A fresh attempt must be possible (no stuck connectPromise).
+		await assert.rejects(transport.connect(), /timeout|EHOST|ENET|ECONN/i);
 	});
 
 	it("reassembles frames split mid-header and mid-body", async () => {

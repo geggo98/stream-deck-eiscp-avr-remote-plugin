@@ -3,12 +3,15 @@
  *
  * The PI's Device IP `<sdpi-select datasource="getDevices">` asks the plugin for
  * the list of receivers; we answer with the devices found by eISCP broadcast
- * discovery (plus the known default and a "Custom IP…" entry) in the shape
- * sdpi-components expects: { event: "getDevices", items: [...] }.
+ * discovery (plus the globally configured IP, if any, and a "Custom IP…"
+ * entry) in the shape sdpi-components expects:
+ * { event: "getDevices", items: [...] }.
  *
- * sdpi-select only renders options present at first paint, so a static dropdown
- * built via innerHTML stays empty — the datasource round-trip is how options are
- * delivered (and refreshed, via the select's `hot-reload`).
+ * The datasource round-trip is used because sdpi-select only picks up
+ * <option>s from DOM mutations AFTER the component upgraded (see the
+ * sdpi-select notes in CLAUDE.md) — injecting a complete select with options
+ * via innerHTML leaves the dropdown empty, and the datasource sidesteps the
+ * whole question (plus enables `hot-reload` refreshes).
  *
  * This file only parses the PI event, wires the real discovery/settings/clock
  * into the pure logic in pi-device-list.ts, and sends the reply + log lines.

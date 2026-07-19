@@ -226,7 +226,8 @@ async function main(): Promise<void> {
 
 		client.on("rawPacket", (direction, packet) => {
 			const timestamp = new Date().toISOString();
-			// Sent packets are EncodedPacket, received ones EiscpPacket.
+			// Sent packets are EncodedPacket; received ones are EiscpPacket
+			// or a headerless raw-ISCP line.
 			if (direction === "sent" && "iscpMessage" in packet) {
 				console.log(`[${timestamp}] SENT: ${packet.iscpMessage}`);
 				if (options.raw) {
@@ -239,6 +240,8 @@ async function main(): Promise<void> {
 					console.log(`  Data size: ${packet.dataSize}`);
 					console.log(`  Version: ${packet.version.toString("hex")}`);
 				}
+			} else if ("kind" in packet && packet.kind === "raw-iscp") {
+				console.log(`[${timestamp}] RECV (headerless): ${packet.message}`);
 			}
 		});
 

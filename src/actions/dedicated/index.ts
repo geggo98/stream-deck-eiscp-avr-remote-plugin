@@ -153,7 +153,14 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 			await mgr.queryCommand(host, command);
 			refresh();
 		} catch (err) {
-			this.logger.error(`onWillAppear: query ${command} failed: ${err}`);
+			this.logger.error(`onWillAppear: query ${command} on ${host} failed: ${err}`);
+			// Degrade visibly like the other bases: render from the cache if
+			// one exists, otherwise show "?" instead of a stale title.
+			if (mgr.getCachedValue(host, command) !== undefined) {
+				refresh();
+			} else {
+				await action.setTitle("?");
+			}
 		}
 	}
 
@@ -283,11 +290,16 @@ export class TransportAction extends KeyActionBase<TransportSettings> {
 
 	override async onWillAppear(ev: WillAppearEvent<TransportSettings>): Promise<void> {
 		await super.onWillAppear(ev);
-		if (ev.action.isKey()) this.setTransportTitle(ev.action, ev.payload.settings);
+		// Keep the base's "No IP" title visible while unconfigured.
+		if (ev.action.isKey() && resolveDeviceIp(ev.payload.settings)) {
+			this.setTransportTitle(ev.action, ev.payload.settings);
+		}
 	}
 
 	override onDidReceiveSettings(ev: DidReceiveSettingsEvent<TransportSettings>): void {
-		if (ev.action.isKey()) this.setTransportTitle(ev.action, ev.payload.settings);
+		if (ev.action.isKey() && resolveDeviceIp(ev.payload.settings)) {
+			this.setTransportTitle(ev.action, ev.payload.settings);
+		}
 	}
 }
 
