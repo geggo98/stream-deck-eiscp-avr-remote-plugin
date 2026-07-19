@@ -147,7 +147,9 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			const value = await mgr.queryCommand(host, cfg.command);
 			this.render(action, cfg, value);
 		} catch (err) {
-			this.logger.error(`onWillAppear: query ${cfg.command} failed: ${err}`);
+			this.logger.error(`onWillAppear: query ${cfg.command} on ${host} failed: ${err}`);
+			// Degrade visibly instead of showing a stale/empty key.
+			if (this.showTitle) action.setTitle("?");
 		}
 	}
 
@@ -163,12 +165,19 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			if (cfg.toggleValue) {
 				await mgr.sendCommand(host, cfg.command, cfg.toggleValue);
 			} else {
-				const isOn = mgr.getCachedValue(host, cfg.command) === cfg.onValue;
+				// Soft flip needs the real current state. With a cold cache,
+				// blindly assuming "off" would send onValue and report success
+				// for a command that may not even be deliverable — query first.
+				let current = mgr.getCachedValue(host, cfg.command);
+				if (current === undefined) {
+					current = await mgr.queryCommand(host, cfg.command);
+				}
+				const isOn = current === cfg.onValue;
 				await mgr.sendCommand(host, cfg.command, isOn ? cfg.offValue : cfg.onValue);
 			}
 			ev.action.showOk();
 		} catch (err) {
-			this.logger.error(`onKeyDown: toggle ${cfg.command} failed: ${err}`);
+			this.logger.error(`onKeyDown: toggle ${cfg.command} on ${host} failed: ${err}`);
 			ev.action.showAlert();
 		}
 	}
@@ -325,14 +334,16 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			);
 			mgr.queryCommand(host, cfg.pressCommand)
 				.then((val) => this.pressState.set(actionId, val))
-				.catch((err) => this.logger.debug(`press query failed: ${err}`));
+				.catch((err) => this.logger.warn(`press query ${cfg.pressCommand} on ${host} failed: ${err}`));
 		}
 
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
 			rerender(value);
 		} catch (err) {
-			this.logger.error(`bind: query ${cfg.command} failed: ${err}`);
+			this.logger.error(`bind: query ${cfg.command} on ${host} failed: ${err}`);
+			// Degrade visibly; the next live update overwrites this.
+			action.setFeedback({ title: "?", value: "" });
 		}
 	}
 
@@ -354,7 +365,9 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 				await mgr.sendCommand(host, cfg.command, param);
 			}
 		} catch (err) {
-			this.logger.error(`onDialRotate: ${cfg.command} ${param} failed: ${err}`);
+			this.logger.error(`onDialRotate: ${cfg.command} ${param} on ${host} failed: ${err}`);
+			// showAlert works on dials too (only showOk is keypad-only).
+			ev.action.showAlert();
 		}
 	}
 
@@ -372,7 +385,8 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		try {
 			await mgr.sendCommand(host, pressCommand, pressParam);
 		} catch (err) {
-			this.logger.error(`onDialDown: ${pressCommand} ${pressParam} failed: ${err}`);
+			this.logger.error(`onDialDown: ${pressCommand} ${pressParam} on ${host} failed: ${err}`);
+			ev.action.showAlert();
 		}
 	}
 }

@@ -609,11 +609,14 @@ export class EiscpClient extends EventEmitter {
 
 	/**
 	 * Send a command and return the response
+	 *
+	 * Awaits the actual socket write, so a failed write (half-open
+	 * connection) rejects instead of pretending the command was delivered.
 	 */
 	private async sendCommand(
 		command: string,
 		parameter: string,
-		options: { expectResponse?: boolean; sendRaw?: boolean } = {},
+		options: { expectResponse?: boolean } = {},
 	): Promise<string> {
 		const encoded = encodePacket(command, parameter);
 
@@ -622,10 +625,9 @@ export class EiscpClient extends EventEmitter {
 		}
 
 		const expectResponse = options.expectResponse ?? true;
-		const sendRaw = options.sendRaw ?? false;
 
 		if (!expectResponse) {
-			this.transport.send(encoded.bytes);
+			await this.transport.send(encoded.bytes);
 			return "";
 		}
 
@@ -638,8 +640,8 @@ export class EiscpClient extends EventEmitter {
 				resolve(value);
 			};
 
-			// Set up timeout
-			const timeout = setTimeout(() => {
+			const abort = (err: unknown) => {
+				clearTimeout(timeout);
 				const existing = this.pendingQueries.get(key);
 				if (existing) {
 					const idx = existing.indexOf(callback);
@@ -648,25 +650,21 @@ export class EiscpClient extends EventEmitter {
 						this.pendingQueries.delete(key);
 					}
 				}
-				reject(new Error(`Command ${command} ${parameter} timed out`));
+				reject(err);
+			};
+
+			// Set up timeout
+			const timeout = setTimeout(() => {
+				abort(new Error(`Command ${command} ${parameter} timed out`));
 			}, this.commandTimeoutMs);
 
 			callbacks.push(callback);
 			this.pendingQueries.set(key, callbacks);
 
-			// Send command
-			try {
-				this.transport.send(encoded.bytes);
-				if (sendRaw) {
-					this.transport.sendString(encoded.iscpMessage);
-				}
-			} catch (err) {
-				clearTimeout(timeout);
-				// Remove callback
-				const idx = callbacks.indexOf(callback);
-				if (idx >= 0) callbacks.splice(idx, 1);
-				reject(err);
-			}
+			// Send command. The VSX-S520D answers the framed eISCP packet on
+			// its own; an additional naked ISCP string (a historic "double
+			// send") is ignored by the receiver and was removed.
+			this.transport.send(encoded.bytes).catch(abort);
 		});
 	}
 
@@ -700,7 +698,7 @@ export class EiscpClient extends EventEmitter {
 	 * Query a generic command and return the raw parameter value
 	 */
 	async query(command: string): Promise<string> {
-		return this.sendCommand(command, "QSTN", { sendRaw: true });
+		return this.sendCommand(command, "QSTN");
 	}
 
 	// ===== Power Control =====
@@ -709,7 +707,7 @@ export class EiscpClient extends EventEmitter {
 	 * Query power state
 	 */
 	async queryPower(): Promise<boolean> {
-		const response = await this.sendCommand(IscpCommand.POWER, "QSTN", { sendRaw: true });
+		const response = await this.sendCommand(IscpCommand.POWER, "QSTN");
 		return response === PowerState.ON;
 	}
 
@@ -741,7 +739,7 @@ export class EiscpClient extends EventEmitter {
 	 * Query volume level
 	 */
 	async queryVolume(): Promise<number> {
-		const response = await this.sendCommand(IscpCommand.VOLUME, "QSTN", { sendRaw: true });
+		const response = await this.sendCommand(IscpCommand.VOLUME, "QSTN");
 		return this.parseVolume(response);
 	}
 
@@ -790,7 +788,7 @@ export class EiscpClient extends EventEmitter {
 	 * Query mute state
 	 */
 	async queryMute(): Promise<boolean> {
-		const response = await this.sendCommand(IscpCommand.MUTE, "QSTN", { sendRaw: true });
+		const response = await this.sendCommand(IscpCommand.MUTE, "QSTN");
 		return response === MuteState.ON;
 	}
 
@@ -829,7 +827,7 @@ export class EiscpClient extends EventEmitter {
 	 * Query current input
 	 */
 	async queryInput(): Promise<string> {
-		const response = await this.sendCommand(IscpCommand.INPUT, "QSTN", { sendRaw: true });
+		const response = await this.sendCommand(IscpCommand.INPUT, "QSTN");
 		const input = getInputByHex(response);
 		return input?.name ?? response;
 	}
@@ -869,7 +867,7 @@ export class EiscpClient extends EventEmitter {
 	 * Query current listening mode
 	 */
 	async queryListeningMode(): Promise<string> {
-		const response = await this.sendCommand(IscpCommand.LISTENING_MODE, "QSTN", { sendRaw: true });
+		const response = await this.sendCommand(IscpCommand.LISTENING_MODE, "QSTN");
 		const mode = getListeningModeByHex(response);
 		return mode?.name ?? response;
 	}

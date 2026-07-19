@@ -1,0 +1,6 @@
+{"scenario":"A framed-only","dir":"tx","hex":"49534350000000100000000a0100000021315057525153544e0d","ascii":"ISCP\u0000\u0000\u0000\u0010\u0000\u0000\u0000\n\u0001\u0000\u0000\u0000!1PWRQSTN\r"}
+{"scenario":"A framed-only","dir":"rx","hex":"49534350000000100000000a01000000213150575230301a0d0a","ascii":"ISCP\u0000\u0000\u0000\u0010\u0000\u0000\u0000\n\u0001\u0000\u0000\u0000!1PWR00\u001a\r\n"}
+{"scenario":"B naked-only","dir":"tx","hex":"21315057525153544e0d","ascii":"!1PWRQSTN\r"}
+{"scenario":"C framed+naked","dir":"tx","hex":"49534350000000100000000a0100000021315057525153544e0d","ascii":"ISCP\u0000\u0000\u0000\u0010\u0000\u0000\u0000\n\u0001\u0000\u0000\u0000!1PWRQSTN\r"}
+{"scenario":"C framed+naked","dir":"tx","hex":"21315057525153544e0d","ascii":"!1PWRQSTN\r"}
+{"scenario":"C framed+naked","dir":"rx","hex":"49534350000000100000000a01000000213150575230301a0d0a","ascii":"ISCP\u0000\u0000\u0000\u0010\u0000\u0000\u0000\n\u0001\u0000\u0000\u0000!1PWR00\u001a\r\n"}

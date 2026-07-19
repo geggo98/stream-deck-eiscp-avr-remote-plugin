@@ -165,23 +165,28 @@ Press-State-Query-Fehler werden nur auf `debug` geloggt
 (`eiscp-action-base.ts:326-328`).
 
 **Umsetzung:**
-- [ ] `transport.send`: Write-Callback auswerten; Fehler mit Host+Befehl
+- [x] `transport.send`: Write-Callback auswerten; Fehler mit Host+Befehl
       loggen/emittieren; ConnectionManager markiert den Client als tot und
       reconnectet proaktiv.
-- [ ] Toggle bei leerem Cache: erst Query versuchen, sonst `showAlert()` statt
+- [x] Toggle bei leerem Cache: erst Query versuchen, sonst `showAlert()` statt
       Soft-Flip mit `showOk()`.
-- [ ] `onWillAppear`-Query-Fehler: sichtbar degradierter Zustand auf dem Key
+- [x] `onWillAppear`-Query-Fehler: sichtbar degradierter Zustand auf dem Key
       (z. B. Titel „?" / ausgegraut), nicht nur Log.
-- [ ] Dial-Fehler sichtbar machen: `ev.action.showAlert()` funktioniert auch
+- [x] Dial-Fehler sichtbar machen: `ev.action.showAlert()` funktioniert auch
       auf Dials — im SDK liegt `showAlert` auf der Basisklasse `Action`,
       nur `showOk` ist Keypad-only (der gegenteilige Code-Kommentar in
       `dedicated/discovery.ts:145` ist falsch, siehe Schritt 21).
       Ergänzend optional: transientes `setFeedback({ title: "Error", ... })`
       auf dem Touch-Strip (wird beim nächsten Update überschrieben).
-- [ ] Press-State-Query-Fehler von `debug` auf `warn` heben, Host+Befehl in
+- [x] Press-State-Query-Fehler von `debug` auf `warn` heben, Host+Befehl in
       die Meldung.
-- [ ] Klären (siehe „Offene Punkte"): Doppel-Send in `client.ts:644-647`
-      (Frame + nochmal nackter ISCP-String) — Workaround oder Bug?
+- [x] Klären (siehe „Offene Punkte"): Doppel-Send in `client.ts:644-647`
+      (Frame + nochmal nackter ISCP-String) — Workaround oder Bug? →
+      **Geklärt am echten VSX-S520D (2026-07-19, Fixture
+      `tests/fixtures/vsx-s520d-framed-vs-naked-query.jsonl`):** das geframte
+      Paket allein wird beantwortet, der nackte ISCP-String allein wird
+      ignoriert, beides zusammen ergibt genau eine Antwort. Der zweite Write
+      war wirkungslos und wurde entfernt.
 
 ### Schritt 6: Floating Promises absichern
 

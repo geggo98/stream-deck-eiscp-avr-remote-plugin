@@ -285,25 +285,40 @@ export class EiscpTransport extends EventEmitter {
 	/**
 	 * Send raw bytes to the receiver
 	 *
+	 * Resolves once the bytes were handed to the kernel; rejects when the
+	 * write fails (e.g. a half-open connection to a receiver in standby), in
+	 * which case the socket is torn down so the next use reconnects.
+	 *
 	 * @param data - Buffer to send
-	 * @throws Error if not connected
 	 */
-	send(data: Buffer): void {
-		if (!this.isConnected()) {
-			throw new Error("Not connected to receiver");
+	send(data: Buffer): Promise<void> {
+		if (!this.isConnected() || !this.socket) {
+			return Promise.reject(new Error(`Not connected to ${this.options.host}:${this.options.port}`));
 		}
 
-		this.socket?.write(data as Uint8Array<ArrayBufferLike>);
+		const socket = this.socket;
+		return new Promise((resolve, reject) => {
+			socket.write(data as Uint8Array<ArrayBufferLike>, (err) => {
+				if (err) {
+					// Mark the connection dead; callers reconnect on next use.
+					socket.destroy();
+					reject(
+						new Error(`Write to ${this.options.host}:${this.options.port} failed: ${err.message}`),
+					);
+				} else {
+					resolve();
+				}
+			});
+		});
 	}
 
 	/**
 	 * Send a string (encoded as ASCII)
 	 *
 	 * @param str - String to send
-	 * @throws Error if not connected
 	 */
-	sendString(str: string): void {
-		this.send(Buffer.from(str, "ascii"));
+	sendString(str: string): Promise<void> {
+		return this.send(Buffer.from(str, "ascii"));
 	}
 
 	/**
