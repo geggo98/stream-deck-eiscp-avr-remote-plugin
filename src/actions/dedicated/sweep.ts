@@ -64,6 +64,7 @@ export async function runSweep(
 	if (command === "SLI") deps.setSliSweeping(host, true);
 
 	log.info(`sweep ${command} starting from ${start}`);
+	let sweepFailed = false;
 	try {
 		for (let i = 0; i < CAP; i++) {
 			await deps.send(host, command, "UP");
@@ -101,14 +102,23 @@ export async function runSweep(
 			movedAway = true;
 			prev = current;
 		}
+	} catch (err) {
+		sweepFailed = true;
+		throw err;
 	} finally {
 		if (command === "SLI") deps.setSliSweeping(host, false);
-		// A failing restore must not mask the sweep's original error.
 		try {
 			await deps.send(host, command, start); // restore original
 			log.info(`sweep ${command} done (${count} steps), restored ${start}`);
 		} catch (err) {
 			log.error(`sweep ${command}: failed to restore ${start}: ${err}`);
+			// A failing restore must not mask the sweep's own error — but
+			// after a SUCCESSFUL sweep it must not be swallowed either: the
+			// receiver was left on the wrong option and the user would see
+			// "Done" + a green checkmark.
+			if (!sweepFailed) {
+				throw new Error(`Sweep finished (${count} steps) but restoring ${start} failed: ${err}`);
+			}
 		}
 	}
 	return { count };

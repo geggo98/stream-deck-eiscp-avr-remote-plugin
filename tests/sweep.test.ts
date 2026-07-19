@@ -120,6 +120,13 @@ describe("runSweep", () => {
 		assert.equal(rx.sent[rx.sent.length - 1], "LMD:A", "restore was attempted");
 	});
 
+	it("a failing restore after a SUCCESSFUL sweep rejects instead of reporting success", async () => {
+		// Otherwise the PI would show "Done" + a green checkmark while the
+		// receiver is left on the wrong option.
+		const rx = fakeReceiver("A", ring(["A", "B", "C"]), { failRestore: true });
+		await assert.rejects(runSweep("h", "LMD", undefined, rx.deps), /restoring A failed.*restore-fail/);
+	});
+
 	it("SLI: suppresses passive pairing during the sweep and learns names from FLD queries", async () => {
 		const rx = fakeReceiver("10", ring(["10", "11", "12"]), { fld: "4344202020203134" });
 		const { count } = await runSweep("h", "SLI", undefined, rx.deps);
