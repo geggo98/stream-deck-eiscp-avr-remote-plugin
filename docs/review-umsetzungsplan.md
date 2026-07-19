@@ -542,21 +542,21 @@ Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
 
 ### Schritt 22: CLAUDE.md aktualisieren
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
-- [ ] **sdpi-select-Regel präzisieren** — die pauschale Aussage („nachträglich
-      injizierte Options erscheinen nie") widerspricht dem eigenen Code:
-      `buildParamSelect` baut Options per `valuechange` + 250-ms-`setTimeout`
-      neu (`eiscp-button.html:45-47`) und funktioniert. Erst empirisch klären
-      (CDP gegen live PI), welches Pattern wirklich kaputt war
-      (vermutlich: Injektion *vor* Component-Upgrade ok, danach nur via
-      Datasource?), dann die Regel mit der echten Nuance formulieren.
-- [ ] Versionsangabe „v0.1.0.0" entfernen (rottet immer) oder auf
+- [x] **sdpi-select-Regel präzisieren** — empirisch geklärt (Browser-Test
+      gegen sdpi-components v4, 2026-07-19): Die Komponente übernimmt Options
+      nur aus DOM-Mutationen NACH dem Component-Upgrade. Statisches Markup
+      funktioniert wegen Head-Load (Parser streamt Options nach dem Upgrade);
+      nachträgliches appendChild/innerHTML funktioniert; Options, die beim
+      Upgrade schon Kinder sind (der historische innerHTML-Bug), erscheinen
+      nie. Regel in CLAUDE.md entsprechend ersetzt.
+- [x] Versionsangabe „v0.1.0.0" entfernen (rottet immer) oder auf
       `package.json` als Quelle verweisen.
-- [ ] Action-Pattern-Beispiel: Handler nehmen **ein** Event-Argument
+- [x] Action-Pattern-Beispiel: Handler nehmen **ein** Event-Argument
       (`onKeyDown(ev)`), nicht `(ev, context)`; alles erbt von
       `SingletonAction`.
-- [ ] CDP-Hinweis: „eISCP Settings" gilt nur für `dedicated.html` und
+- [x] CDP-Hinweis: „eISCP Settings" gilt nur für `dedicated.html` und
       `discover.html`. Tatsächliche Titel je PI-HTML: „eISCP Button
       Settings" (`eiscp-button.html`), „eISCP Dial Settings"
       (`eiscp-dial.html`, `dial-press.html`, `dial-discover.html`),

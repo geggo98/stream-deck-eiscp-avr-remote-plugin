@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Stream Deck plugin ("eISCP AV Receiver Remote Control") for remote controlling AV receivers that speak the ISCP (Integra Serial Control Protocol) over Ethernet (eISCP). Compatible with many Pioneer, Onkyo and Integra network receivers; this is an independent project, not affiliated with or endorsed by those manufacturers. Currently in early development (v0.1.0.0).
+Stream Deck plugin ("eISCP AV Receiver Remote Control") for remote controlling AV receivers that speak the ISCP (Integra Serial Control Protocol) over Ethernet (eISCP). Compatible with many Pioneer, Onkyo and Integra network receivers; this is an independent project, not affiliated with or endorsed by those manufacturers. The version lives in `package.json` (the manifest version is derived from it).
 
 ## Development Commands
 
@@ -47,17 +47,21 @@ Stream Deck App → Plugin (Node.js) → Action Classes → Settings/Events
 
 ### Action Pattern
 
-Actions use TypeScript decorators and extend SDK base classes:
+Actions use TypeScript decorators and extend `SingletonAction` (via the shared
+bases in `src/actions/eiscp-action-base.ts`). Handlers take a single event
+argument:
 
 ```typescript
-@action({ UUID: "de.schwetschke.sd.eiscp-avr-remote.action-name" })
+@action({ UUID: uuidFor("action-name") })
 class MyAction extends SingletonAction<Settings> {
-  onWillAppear(ev, context): void { ... }
-  onKeyDown(ev, context): void { ... }
+  override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> { ... }
+  override async onKeyDown(ev: KeyDownEvent<Settings>): Promise<void> { ... }
 }
 ```
 
-**Critical:** Action UUIDs must match between TypeScript decorators and `manifest.json`.
+**Critical:** Action UUIDs must match between TypeScript decorators and
+`manifest.json`. For dedicated actions both come from `catalog.ts` (`uuidFor`
+only accepts known catalog ids, so typos fail to compile).
 
 ### Build System
 
@@ -73,24 +77,59 @@ class MyAction extends SingletonAction<Settings> {
 - **Debug mode:** Enabled in manifest
 - **Build output ignored:** `*.sdPlugin/bin` is gitignored, plugin source is tracked
 - **Logging:** Currently set to "trace" level in `plugin.ts`
+- **No default device IP:** `resolveDeviceIp` returns `undefined` when neither
+  the action settings nor the global settings carry an IP; actions then show
+  "No IP" / alert and send nothing. There is deliberately no baked-in fallback.
+- **Adapter layer must not import `@elgato/streamdeck`:** importing the SDK
+  rotates its log files as a module side effect, which races between parallel
+  test processes. `src/adapter/**` logs via `src/adapter/logging.ts`
+  (`scopedLogger`); the plugin entry point injects the SDK logger. The same
+  rule applies to test files: keep them free of transitive SDK imports (the
+  SDK-free extractions `pi-device-list.ts`, `sweep.ts`, `device-tracker.ts`
+  exist for exactly this).
+- **Typecheck surface:** `npm run typecheck` uses `tsconfig.typecheck.json`
+  (src + tests + scripts); the build's `tsconfig.json` covers src only.
+
+## Testing without hardware
+
+`tests/helpers/mock-receiver.ts` is a fixture-driven TCP double of the
+VSX-S520D (answers from `tests/fixtures/command-responses.json`, captured from
+the real unit via `npm run capture:responses`; ignores SPA/SPB/DIR like the
+real device; echoes sets with UP/DOWN/TG semantics). Transport, client, and
+ConnectionManager behaviour tests run against it — prefer it over ad-hoc
+`net.createServer` mocks.
 
 ## Property Inspector (PI) notes
 
 PIs are static HTML in `*.sdPlugin/ui/` using SDPI Components v4
 (`sdpi-components.dev`); shared helpers live in `ui/eiscp-pi.js`.
 
-- **`sdpi-select` renders only the `<option>`s present at first paint.** Options
-  injected via `innerHTML`, or `appendChild`-ed after the element renders, sit in
-  the DOM but never appear (the dropdown looks empty — this caused a real bug).
-  Inline `<option>`s in *static* HTML markup are fine. For anything dynamic, use
-  the sdpi-components **`datasource`** round-trip instead of hand-built options.
+- **`sdpi-select` only picks up `<option>`s from DOM mutations that happen
+  AFTER the component upgraded** (verified empirically against sdpi-components
+  v4, 2026-07-19). Consequences:
+  - Static markup options work — but only because `sdpi-components.js` loads
+    in the `<head>`, so the parser streams the options in after the element
+    upgraded. Keep that load order.
+  - `appendChild`/`innerHTML` on an *already-upgraded* select works too (this
+    is why `buildParamSelect` in `ui/eiscp-pi.js` works).
+  - Options that are already children at upgrade time are NEVER rendered.
+    That was the real "empty dropdown" bug: injecting a complete
+    `<sdpi-select>…<option>…</sdpi-select>` via `innerHTML` upgrades the
+    element with its options pre-existing — the dropdown stays empty. The
+    same applies to options kept across a rebuild (e.g. `data-keep` options
+    present since before the upgrade stay invisible).
+  - For dynamic lists the **`datasource`** round-trip remains the robust path
+    (the component renders its own items); the Device IP dropdown uses it.
 - The **Device IP** dropdown is a datasource:
   `<sdpi-select setting="deviceIp" datasource="getDevices" hot-reload>`. The plugin
-  answers via `handleDeviceListMessage` (`src/actions/pi-devices.ts`), which runs
-  eISCP discovery and replies `{ event: "getDevices", items: [...] }` (items are
-  grouped `{label, children:[{label,value}]}` or flat `{label,value}`). It always
-  includes the default IP + a "Custom IP…" entry, so the dropdown is never empty
-  even when discovery is blocked (e.g. the macOS local-network firewall).
+  answers via `handleDeviceListMessage` (`src/actions/pi-devices.ts`, pure logic
+  in `pi-device-list.ts`), which runs eISCP discovery and replies
+  `{ event: "getDevices", items: [...] }` (items are grouped
+  `{label, children:[{label,value}]}` or flat `{label,value}`). It always
+  includes the globally configured IP (if any) + a "Custom IP…" entry, and a
+  blocked discovery (e.g. the macOS local-network firewall) is labelled
+  "Discovery failed — check Local Network permission" instead of pretending
+  the LAN is empty.
 - The handler is served from the shared `EiscpActionBase.onSendToPlugin`, so every
   action's PI gets it. Actions that override `onSendToPlugin` (the learned-name
   cyclers/dials, for Auto-Discover) **must call `super.onSendToPlugin`**.
@@ -109,9 +148,13 @@ PIs are static HTML in `*.sdPlugin/ui/` using SDPI Components v4
 ## Testing the live Property Inspector (CDP)
 
 Stream Deck in debug mode exposes Chrome DevTools Protocol at
-`http://127.0.0.1:23654`; `…/json/list` lists the open PI webview (title
-"eISCP Settings"). Attach a CDP browser (e.g. the `web-browser` skill,
-`connect 23654`) to inspect and drive the live PI. Caveats:
+`http://127.0.0.1:23654`; `…/json/list` lists the open PI webview. Attach a
+CDP browser (e.g. the `web-browser` skill, `connect 23654`) to inspect and
+drive the live PI. The webview title depends on the PI HTML:
+"eISCP Settings" (`dedicated.html`, `discover.html`), "eISCP Button Settings"
+(`eiscp-button.html`), "eISCP Dial Settings" (`eiscp-dial.html`,
+`dial-press.html`, `dial-discover.html`), "eISCP Dial Indicator Settings",
+"eISCP Toggle Settings", "Transport Settings" (`transport.html`). Caveats:
 
 - The PI webview exists **only while its action is selected**; a plugin restart
   closes it.
@@ -121,9 +164,18 @@ Stream Deck in debug mode exposes Chrome DevTools Protocol at
 
 ## Live test receiver
 
-A real Pioneer **VSX-S520D** is on the LAN at `10.2.0.32` (the default in
-`resolveDeviceIp`). Verify wire behaviour with the maintained CLI
-(`npm run eiscp -- state` / `mute toggle` / `mode STEREO`), not ad-hoc
-`createClient` scripts that `send()` then `query()` — those race and give false
-negatives. Snapshot/restore values when testing. Note: this unit **ignores the
-`DIR` (Direct) command** (`DIR QSTN` times out); use `LMD` listening modes instead.
+A real Pioneer **VSX-S520D** is on the LAN at `10.2.0.32` (also the dev CLI's
+default host; the plugin itself has no default IP). Verify wire behaviour with
+the maintained CLI (`npm run eiscp -- state` / `mute toggle` / `mode STEREO`),
+not ad-hoc `createClient` scripts that `send()` then `query()` — those race and
+give false negatives (state events lag a set by ~1.5 s; poll instead). The
+hardware suite (`EISCP_TEST_HOST=10.2.0.32 npm run test:eiscp:integration`)
+snapshots the receiver state, powers it on when needed, and restores
+everything afterwards. Device quirks worth knowing:
+
+- Ignores `DIR` (Direct) and `SPA`/`SPB` — queries to them time out; use
+  `LMD` listening modes instead.
+- Keeps only **one eISCP connection**: a second connect makes it drop the
+  first. Never hold two connections in tests.
+- Selecting the TUNER input (`SLI 26`) makes it report the active band
+  (FM = `24` / AM = `25`), never `26` itself.
