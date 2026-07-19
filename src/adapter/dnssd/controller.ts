@@ -51,8 +51,26 @@ export interface DiscoveryResultWithErrors {
  */
 export interface DiscoveryError {
   readonly instanceName: string;
-  readonly stage: "lookup" | "getaddr";
+  readonly stage: "browse" | "lookup" | "getaddr";
   readonly error: string;
+}
+
+/**
+ * Throws when a dns-sd result indicates the command itself failed (spawn
+ * error, or a non-zero exit that was not our own SIGTERM timeout). dns-sd
+ * browse/lookup/getaddr normally run until killed, so `timedOut` is the
+ * expected way for them to end.
+ */
+function assertDnsSdSucceeded(result: DnsSdResult, what: string): void {
+  if (result.spawnError) {
+    throw new Error(`${what}: failed to run dns-sd: ${result.spawnError}`);
+  }
+  if (!result.timedOut && result.exitCode !== null && result.exitCode !== 0) {
+    throw new Error(`${what}: dns-sd exited with ${result.exitCode}: ${result.stderr || "(no stderr)"}`);
+  }
+  if (result.stderr && !result.stdout) {
+    throw new Error(`${what}: ${result.stderr}`);
+  }
 }
 
 /**
@@ -101,10 +119,7 @@ export async function discoverAirplayDevices(
 
   // Step 1: Browse for devices
   const browseResult = await browseAirplayDevices(dnsOptions);
-
-  if (browseResult.stderr && !browseResult.stdout) {
-    throw new Error(`Browse failed: ${browseResult.stderr}`);
-  }
+  assertDnsSdSucceeded(browseResult, "Browse");
 
   const browseResults = parseBrowseOutput(browseResult.stdout);
 
@@ -432,11 +447,13 @@ export async function discoverAirplayDevicesStreaming(
 	async function lookupAndResolveDevice(instanceName: string): Promise<void> {
 		try {
 			const lookupResult = await lookupDevice(instanceName, dnsOptions);
+			assertDnsSdSucceeded(lookupResult, `Lookup ${instanceName}`);
 			const parsed = parseLookupOutput(lookupResult.stdout);
 			lookups.set(instanceName, { raw: lookupResult.stdout, parsed });
 
 			// Get addresses
 			const addrResult = await getHostAddresses(parsed.hostname, dnsOptions);
+			assertDnsSdSucceeded(addrResult, `GetAddr ${parsed.hostname}`);
 			const addrParsed = parseGetAddrOutput(addrResult.stdout);
 			addresses.set(instanceName, { raw: addrResult.stdout, parsed: addrParsed });
 
@@ -506,6 +523,24 @@ export async function discoverAirplayDevicesStreaming(
 			browseOutput += line + "\n";
 		},
 	});
+
+	// Surface a failed browse (dns-sd missing, bad exit) instead of treating
+	// it like an empty network.
+	try {
+		assertDnsSdSucceeded(browseResult, "Browse");
+	} catch (e) {
+		const error: DiscoveryError = {
+			instanceName: "",
+			stage: "browse",
+			error: e instanceof Error ? e.message : String(e),
+		};
+		errors.push(error);
+		onError?.(error);
+		onEvent?.({ type: "error", error });
+		if (!continueOnError) {
+			throw e;
+		}
+	}
 
 	// Final browse output
 	browseOutput = browseResult.stdout;

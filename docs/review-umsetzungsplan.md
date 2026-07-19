@@ -110,7 +110,7 @@ einen evtl. vorhandenen alten Socket, ohne ihn zu destroyen.
 
 ### Schritt 4: Discovery-Fehler beobachtbar machen
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** Die Broadcast-Discovery (`src/adapter/eiscp/discover.ts:352-402`)
 verschluckt nach dem Bind sämtliche Socket-Fehler: der `error`-Handler kann
@@ -133,15 +133,15 @@ eISCP connection" (`unified-controller.ts:501`, Reporting 504-519).
 - [x] `src/actions/pi-devices.ts:69-77`: wenn der Catch-/Fallback-Pfad feuert,
       Gruppen-Label ehrlich benennen (z. B. „Discovery fehlgeschlagen —
       Local-Network-Berechtigung prüfen") statt „Pre-configured".
-- [ ] `dnssd/caller.ts`: `child.on("error")` nicht als Erfolg resolven
+- [x] `dnssd/caller.ts`: `child.on("error")` nicht als Erfolg resolven
       (Fehler kennzeichnen); Streaming-Variante in `controller.ts` soll
       `stderr`/`exitCode`/`timedOut` prüfen — die Felder trägt `DnsSdResult`
       bereits (`caller.ts:15-21`). Hinweis: die nicht-streamende Variante
       prüft heute auch nur `stderr && !stdout` (`controller.ts:105-107`),
       also beide Varianten härten.
-- [ ] `unified-controller.ts:631`: vorher `isDnsSdAvailable()` prüfen;
+- [x] `unified-controller.ts:631`: vorher `isDnsSdAvailable()` prüfen;
       unerwartete Fehler loggen statt pauschal schlucken.
-- [ ] `unified-controller.ts:595-604` und `checkDeviceViaEiscp`
+- [x] `unified-controller.ts:595-604` und `checkDeviceViaEiscp`
       (`unified-controller.ts:501-519`): pro IP den echten Fehler
       (message + `code`) erfassen und statt der generischen Meldung in
       `EiscpConnectError` durchreichen.

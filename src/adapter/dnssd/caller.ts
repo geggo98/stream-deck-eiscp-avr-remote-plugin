@@ -18,6 +18,8 @@ export interface DnsSdResult {
 	readonly exitCode: number | null;
 	readonly signal: NodeJS.Signals | null;
 	readonly timedOut: boolean;
+	/** Set when the dns-sd process could not be spawned at all */
+	readonly spawnError?: string;
 }
 
 /**
@@ -209,7 +211,8 @@ async function executeDnsSd(
 			});
 		});
 
-		// Handle spawn errors
+		// Handle spawn errors. Resolve (executeDnsSd never rejects), but mark
+		// the result so callers can tell "dns-sd missing" from "no devices".
 		child.on("error", (error) => {
 			if (timeoutHandle !== undefined) {
 				clearTimeout(timeoutHandle);
@@ -221,6 +224,7 @@ async function executeDnsSd(
 				exitCode: null,
 				signal: null,
 				timedOut: false,
+				spawnError: error.message,
 			});
 		});
 	});

@@ -27,6 +27,7 @@ import {
 	discoverAirplayDevicesStreaming,
 	type AirPlayDevice,
 } from "../dnssd/controller.ts";
+import { isDnsSdAvailable } from "../dnssd/caller.ts";
 import {
 	discoverEiscpDevicesStreaming,
 	type DiscoveredReceiver,
@@ -479,7 +480,10 @@ export async function discoverAllDevicesStreaming(
 			return null;
 		}
 
-		// Try each IP sequentially until one works
+		// Try each IP sequentially until one works, keeping the real reason
+		// each one failed (a firewall EHOSTUNREACH must not be reported as the
+		// generic "all IPs failed").
+		const ipErrors = new Map<string, { message: string; code?: string }>();
 		for (const ip of tracked.ips) {
 			// Skip IPv6 addresses for eISCP (most receivers don't support it)
 			if (ip.includes(":")) {
@@ -493,18 +497,18 @@ export async function discoverAllDevicesStreaming(
 
 			await acquireConnection();
 			try {
-				const result = await checkEiscpAtIp(numericDeviceId, ip);
-				if (result) {
-					releaseConnection();
-					return result;
+				const outcome = await checkEiscpAtIp(numericDeviceId, ip);
+				if (outcome.ok) {
+					return outcome.result;
 				}
+				ipErrors.set(ip, outcome.error);
 			} finally {
 				releaseConnection();
 			}
 		}
 
 		// All IPs failed
-		const errorObj = { message: `All ${tracked.ips.length} IPs failed eISCP connection` };
+		const fallbackError = { message: `All ${tracked.ips.length} IPs failed eISCP connection` };
 		// Only report IPv4 addresses as failed (skip IPv6)
 		const ipv4Ips = tracked.ips.filter((ip) => !ip.includes(":"));
 		for (const ip of ipv4Ips) {
@@ -512,7 +516,7 @@ export async function discoverAllDevicesStreaming(
 				deviceId: numericDeviceId.toString(),
 				ip,
 				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
-				error: errorObj,
+				error: ipErrors.get(ip) ?? fallbackError,
 			});
 		}
 		if (ipv4Ips.length > 0) {
@@ -520,22 +524,25 @@ export async function discoverAllDevicesStreaming(
 				deviceId: numericDeviceId.toString(),
 				ip: ipv4Ips[0]!,
 				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
-				error: errorObj,
+				error: ipErrors.get(ipv4Ips[0]!) ?? fallbackError,
 			});
 		}
 		return null;
 	}
 
 	/**
-	 * Check eISCP connection at a specific IP
+	 * Check eISCP connection at a specific IP; on failure the real error is
+	 * returned so callers can report it instead of a generic message.
 	 */
 	async function checkEiscpAtIp(
 		numericDeviceId: number,
 		ip: string,
-	): Promise<EiscpConnectResult | null> {
+	): Promise<
+		{ ok: true; result: EiscpConnectResult } | { ok: false; error: { message: string; code?: string } }
+	> {
 		const tracked = trackedDevices.get(numericDeviceId);
 		if (!tracked) {
-			return null;
+			return { ok: false, error: { message: "Device is no longer tracked" } };
 		}
 
 		const client = createClient({
@@ -586,15 +593,21 @@ export async function discoverAllDevicesStreaming(
 			});
 
 			return {
-				deviceId: numericDeviceId.toString(),
-				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
-				connectedIp: ip,
-				deviceInfo: state,
-				metadata: tracked.metadata,
+				ok: true,
+				result: {
+					deviceId: numericDeviceId.toString(),
+					source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
+					connectedIp: ip,
+					deviceInfo: state,
+					metadata: tracked.metadata,
+				},
 			};
 		} catch (error) {
-			// Connection failed, return null
-			return null;
+			const err = error instanceof Error ? error : new Error(String(error));
+			return {
+				ok: false,
+				error: { message: err.message, code: (err as NodeJS.ErrnoException).code },
+			};
 		} finally {
 			client.disconnect();
 			client.off("error", onClientError);
@@ -604,30 +617,35 @@ export async function discoverAllDevicesStreaming(
 	// Run all discovery methods in parallel
 	const discoveryPromises: Promise<unknown>[] = [];
 
-	// 1. AirPlay discovery (macOS only) - discovers IPs to try eISCP on
-	const airplayPromise = discoverAirplayDevicesStreaming({
-		timeout,
-		continueOnError: true,
-		onDevice: (airplayDevice: AirPlayDevice) => {
-			const allIps = [...airplayDevice.ipv4Addresses, ...airplayDevice.ipv6Addresses];
-			const device: DiscoveredDevice = {
-				id: `airplay-${airplayDevice.hostname}`,
-				ips: allIps,
-				source: "airplay",
-				metadata: {
-					airplay: {
-						instanceName: airplayDevice.instanceName,
-						hostname: airplayDevice.hostname,
-						txtRecords: new Map(airplayDevice.txtRecords),
+	// 1. AirPlay discovery (macOS only) - discovers IPs to try eISCP on.
+	// Gate on platform support instead of swallowing every rejection: an
+	// unexpected failure on macOS should be visible, not look like "no devices".
+	if (isDnsSdAvailable()) {
+		const airplayPromise = discoverAirplayDevicesStreaming({
+			timeout,
+			continueOnError: true,
+			onDevice: (airplayDevice: AirPlayDevice) => {
+				const allIps = [...airplayDevice.ipv4Addresses, ...airplayDevice.ipv6Addresses];
+				const device: DiscoveredDevice = {
+					id: `airplay-${airplayDevice.hostname}`,
+					ips: allIps,
+					source: "airplay",
+					metadata: {
+						airplay: {
+							instanceName: airplayDevice.instanceName,
+							hostname: airplayDevice.hostname,
+							txtRecords: new Map(airplayDevice.txtRecords),
+						},
 					},
-				},
-			};
-			addDiscoveredDevice(device);
-		},
-		// Ignore errors
-	}).catch(() => {}); // Silently ignore if not on macOS
+				};
+				addDiscoveredDevice(device);
+			},
+		}).catch((err: unknown) => {
+			console.error(`AirPlay discovery failed unexpectedly: ${err}`);
+		});
 
-	discoveryPromises.push(airplayPromise);
+		discoveryPromises.push(airplayPromise);
+	}
 
 	// 2. eISCP broadcast discovery
 	const eiscpPromise = discoverEiscpDevicesStreaming({
