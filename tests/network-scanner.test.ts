@@ -223,8 +223,12 @@ describe("network-scanner", () => {
 
 	describe("checkPort", () => {
 		it("should return false for timeout", async () => {
-			// Check a non-routable IP that should timeout
-			const result = await checkPort("10.255.255.1", 60128, 100);
+			// TEST-NET-3 (RFC 5737) is reserved for documentation and never
+			// routed, so the SYN goes nowhere and the check must time out.
+			// (10.255.255.1 was used before — but that IS routable inside a
+			// 10/8 LAN and could accidentally connect. A truly local silent
+			// listener is not possible with node:net, which always accepts.)
+			const result = await checkPort("203.0.113.1", 60128, 100);
 			assert.equal(result, false);
 		});
 

@@ -369,17 +369,17 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
 
 ### Schritt 13: Sofort-Fixes in der Testsuite (Einzeiler)
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 - [x] `tests/dnssd-integration.test.ts:119-133`: `getDevice` wird nie
       importiert — der `assert.rejects`-Callback wirft `ReferenceError`, der
       Test ist vakuos. Import ergänzen (`src/adapter/dnssd/controller.ts:328`).
       (Erledigt im Zuge der Typecheck-Erweiterung auf tests/ + scripts/.)
-- [ ] `tests/eiscp-integration.test.ts:242`: `require()` in ESM-Datei →
+- [x] `tests/eiscp-integration.test.ts:242`: `require()` in ESM-Datei →
       bricht beim nächsten Lauf mit `EISCP_TEST_HOST`. Auf das bereits
       importierte ESM-Modul umstellen. Zeile 32: tote zweite
       `ENABLE_TESTS`-Klausel entfernen.
-- [ ] `tests/network-scanner.test.ts:227`: Probe gegen `10.255.255.1`
+- [x] `tests/network-scanner.test.ts:227`: Probe gegen `10.255.255.1`
       (routbar im 10/8-LAN!) ersetzen. Achtung: ein ungebundener
       localhost-Port testet den Connection-Refused-Pfad (den Zeile 233
       schon abdeckt) — für den Timeout-Zweig einen absichtlich nicht

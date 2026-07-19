@@ -22,14 +22,18 @@ import {
 	encodePacket,
 	decodePacket,
 	parseIscpMessage,
+	InputSource,
+	ListeningMode,
 	type EiscpClient,
 	type EiscpTransport,
 } from "../src/adapter/eiscp/index.ts";
+import { getValueName } from "../src/adapter/eiscp/command-registry.ts";
 
-// Test configuration from environment
+// Test configuration from environment. Hardware tests only run when a
+// receiver host is explicitly provided.
 const TEST_HOST = process.env.EISCP_TEST_HOST ?? "10.2.0.32";
 const TEST_PORT = parseInt(process.env.EISCP_TEST_PORT ?? "60128", 10);
-const ENABLE_TESTS = process.env.EISCP_TEST_HOST !== undefined || TEST_HOST !== "10.2.0.32";
+const ENABLE_TESTS = process.env.EISCP_TEST_HOST !== undefined;
 
 // Skip tests if not explicitly enabled
 describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
@@ -46,6 +50,31 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 		},
 	};
 
+	// Snapshot of the receiver state before the run; everything (power,
+	// volume, input, mute, listening mode) is restored afterwards.
+	let savedState: ReturnType<EiscpClient["getState"]> | undefined;
+	const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+	/**
+	 * Poll a query until the predicate holds (or time runs out) and return the
+	 * last value. The receiver's state events lag a set command by ~1.5 s, so
+	 * querying immediately after a send races and yields the OLD value (the
+	 * false-negative pattern CLAUDE.md warns about).
+	 */
+	async function eventually<T>(
+		query: () => Promise<T>,
+		want: (value: T) => boolean,
+		timeoutMs = 4000,
+	): Promise<T> {
+		const start = Date.now();
+		let last = await query();
+		while (!want(last) && Date.now() - start < timeoutMs) {
+			await sleep(250);
+			last = await query();
+		}
+		return last;
+	}
+
 	before(async () => {
 		console.log(`\n=== eISCP Integration Tests ===`);
 		console.log(`Target: ${TEST_HOST}:${TEST_PORT}`);
@@ -55,17 +84,43 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 		// Create client
 		client = createClient(testConfig);
 
-		// Create separate transport for low-level tests
+		// Create separate transport for low-level tests. NOTE: the receiver
+		// keeps only one eISCP connection alive (a second connect makes it
+		// drop the first), so client and transport must never be connected
+		// at the same time — see the transport suite's before/after.
 		transport = createTransport({ host: TEST_HOST, port: TEST_PORT });
 
-		// Connect both
 		await client.connect();
-		await transport.connect();
-
 		console.log("Connected to receiver.");
+
+		savedState = client.getState();
+		console.log(`Saved state: power=${savedState.power} volume=${savedState.volume} input=${savedState.rawInput}`);
+
+		// The write tests need the receiver awake; in network standby it
+		// ignores set commands.
+		if (!savedState.power) {
+			console.log("Receiver is in standby — powering on for the test run.");
+			await client.powerOn();
+			await sleep(4000); // the unit needs a moment before it accepts commands
+			await client.refreshState();
+		}
 	});
 
 	after(async () => {
+		// Restore the receiver exactly as we found it.
+		if (savedState && client?.isConnected()) {
+			console.log("\nRestoring receiver state...");
+			try {
+				if (savedState.rawInput) await client.setInputByHex(savedState.rawInput);
+				await client.setVolume(savedState.volume);
+				await client.setMute(savedState.muted);
+				if (savedState.rawListeningMode) await client.setListeningModeByHex(savedState.rawListeningMode);
+				await sleep(1000);
+				if (!savedState.power) await client.powerOff();
+			} catch (err) {
+				console.error(`Failed to restore receiver state: ${err}`);
+			}
+		}
 		console.log("\nDisconnecting...");
 		client?.disconnect();
 		transport?.disconnect();
@@ -73,6 +128,16 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 	});
 
 	describe("transport layer", () => {
+		// One connection at a time (see the outer before note).
+		before(async () => {
+			client.disconnect();
+			await transport.connect();
+		});
+		after(async () => {
+			transport.disconnect();
+			await client.connect();
+		});
+
 		it("should connect to the receiver", async () => {
 			assert.equal(transport.isConnected(), true);
 			assert.equal(transport.getState(), "connected");
@@ -162,18 +227,19 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 			// Get current volume
 			const originalVolume = await client.queryVolume();
 
-			// Set to a safe low volume
+			// Set to a safe low volume (20% of the cap)
+			const expectedLevel = Math.round((20 / 100) * client.getVolumeConfig().cap);
 			await client.setVolumePercent(20);
-			const newVolume = await client.queryVolume();
-
-			// Should be close to 20% of max (allowing for rounding)
-			const expectedPercent = 20;
-			const actualPercent = (newVolume / client.getVolumeConfig().max) * 100;
-			assert.ok(Math.abs(actualPercent - expectedPercent) < 2);
+			const newVolume = await eventually(
+				() => client.queryVolume(),
+				(v) => v === expectedLevel,
+			);
+			assert.equal(newVolume, expectedLevel);
 
 			// Restore original volume
 			await client.setVolume(originalVolume);
-			console.log(`  Volume set to ${actualPercent.toFixed(1)}%, restored to ${originalVolume}`);
+			await eventually(() => client.queryVolume(), (v) => v === originalVolume);
+			console.log(`  Volume set to ${newVolume}, restored to ${originalVolume}`);
 		});
 
 		it("should volume up and down", async () => {
@@ -181,12 +247,15 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 
 			// Volume up
 			await client.volumeUp();
-			const upVolume = await client.queryVolume();
+			const upVolume = await eventually(
+				() => client.queryVolume(),
+				(v) => v === originalVolume + 1,
+			);
 			assert.equal(upVolume, originalVolume + 1);
 
 			// Volume down
 			await client.volumeDown();
-			const downVolume = await client.queryVolume();
+			const downVolume = await eventually(() => client.queryVolume(), (v) => v === originalVolume);
 			assert.equal(downVolume, originalVolume);
 
 			console.log(`  Volume up/down: ${originalVolume} -> ${upVolume} -> ${downVolume}`);
@@ -204,12 +273,12 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 			const originalMuted = await client.queryMute();
 
 			await client.toggleMute();
-			const toggledMuted = await client.queryMute();
+			const toggledMuted = await eventually(() => client.queryMute(), (m) => m === !originalMuted);
 			assert.equal(toggledMuted, !originalMuted);
 
 			// Toggle back
 			await client.toggleMute();
-			const restoredMuted = await client.queryMute();
+			const restoredMuted = await eventually(() => client.queryMute(), (m) => m === originalMuted);
 			assert.equal(restoredMuted, originalMuted);
 
 			console.log(`  Mute toggled: ${originalMuted} -> ${toggledMuted} -> ${restoredMuted}`);
@@ -226,22 +295,24 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 		it("should set input by name", async () => {
 			const originalInput = await client.queryInput();
 
-			// Try to set to TUNER (a common safe input)
+			// Selecting TUNER (26) makes the VSX-S520D switch to its tuner but
+			// REPORT the active band instead (FM = 24 / AM = 25) — verified
+			// against the live unit. Accept any of the three labels.
+			const acceptable = new Set(
+				[InputSource.TUNER.hex, InputSource.FM.hex, InputSource.AM.hex].map(
+					(hex) => getValueName("SLI", hex) ?? hex,
+				),
+			);
 			await client.setInput("TUNER");
-			const newInput = await client.queryInput();
-			assert.equal(newInput, "TUNER");
+			const newInput = await eventually(() => client.queryInput(), (v) => acceptable.has(v));
+			assert.ok(acceptable.has(newInput), `expected tuner/fm/am, got ${newInput}`);
 
-			// Restore original input (if different)
-			if (originalInput !== "TUNER") {
-				// Note: We can't restore by name since we need the enum key
-				// For now, leave it on TUNER
-				console.log(`  Input changed: ${originalInput} -> TUNER (left on TUNER)`);
-			}
+			// The suite's outer after() restores the original input.
+			console.log(`  Input changed: ${originalInput} -> ${newInput}`);
 		});
 
 		it("should list available inputs", () => {
 			// This test just verifies the enum is accessible
-			const { InputSource } = require("../src/adapter/eiscp/enums.ts");
 			assert.ok(Object.keys(InputSource).length > 0);
 			console.log(`  Available inputs: ${Object.keys(InputSource).length}`);
 		});
@@ -256,13 +327,15 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 
 		it("should set listening mode by name", async () => {
 			const originalMode = await client.queryListeningMode();
+			const stereoLabel = getValueName("LMD", ListeningMode.STEREO.hex);
+			assert.ok(stereoLabel, "registry should know the STEREO mode");
 
 			// Try to set to Stereo (a universal mode)
 			await client.setListeningMode("STEREO");
-			const newMode = await client.queryListeningMode();
-			assert.equal(newMode, "Stereo");
+			const newMode = await eventually(() => client.queryListeningMode(), (v) => v === stereoLabel);
+			assert.equal(newMode, stereoLabel);
 
-			console.log(`  Listening mode: ${originalMode} -> Stereo`);
+			console.log(`  Listening mode: ${originalMode} -> ${newMode}`);
 		});
 	});
 
@@ -321,18 +394,16 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 	});
 
 	describe("packet capture for fixtures", () => {
-		it("should capture raw packets for test fixtures", async () => {
+		it("should capture raw messages for test fixtures", async () => {
 			const packets: Array<{ direction: string; data: string }> = [];
 
-			// Listen to raw packets
-			const handler = (direction: string, packet: any) => {
-				packets.push({
-					direction,
-					data: direction === "sent" ? packet.iscpMessage : packet.message,
-				});
+			// rawPacket events are gated behind debugLog, so capture the raw
+			// ISCP strings from the always-on message events instead.
+			const handler = (message: { raw: string }) => {
+				packets.push({ direction: "received", data: message.raw });
 			};
 
-			client.on("rawPacket", handler);
+			client.on("message", handler);
 
 			// Perform some operations
 			await client.queryPower();
@@ -342,7 +413,7 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 			// Give time for responses
 			await new Promise((resolve) => setTimeout(resolve, 500));
 
-			client.off("rawPacket", handler);
+			client.off("message", handler);
 
 			// Should have captured sent and received packets
 			assert.ok(packets.length > 0);
