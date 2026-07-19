@@ -47,6 +47,8 @@ export interface MockReceiver {
 	 * resolves — broadcasting before that sends into the void.
 	 */
 	waitForClient(timeoutMs?: number): Promise<void>;
+	/** Resolve once at least `count` messages for `command` were received. */
+	waitForCommand(command: string, count?: number, timeoutMs?: number): Promise<void>;
 	/** Send a framed state broadcast to every connected client. */
 	broadcast(command: string, parameter: string): void;
 	/** Send raw bytes to every connected client (for reassembly tests). */
@@ -163,6 +165,16 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 				await new Promise((resolve) => setTimeout(resolve, 5));
 			}
 			if (sockets.size === 0) throw new Error("no client connected to the mock receiver");
+		},
+		async waitForCommand(command, count = 1, timeoutMs = 2000) {
+			const seen = () => received.filter((m) => m.command === command).length;
+			const start = Date.now();
+			while (seen() < count && Date.now() - start < timeoutMs) {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			if (seen() < count) {
+				throw new Error(`expected ${count}x ${command}, got ${seen()}`);
+			}
 		},
 		broadcast(command, parameter) {
 			for (const socket of sockets) {

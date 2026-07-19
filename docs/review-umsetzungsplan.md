@@ -403,18 +403,18 @@ Mock-Server-Pattern aus `tests/eiscp-listen.test.ts` wiederverwenden:
 
 ### Schritt 15: Client-Query-/Timeout-Tests
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 `sendCommand`/Query-Korrelation (`client.ts:598-656`) wird heute nur gegen
 echte Hardware **asserted** (via `autoQuery` läuft sie zwar auch in den
 Mock-Server-Tests mit, aber `refreshState`/`Promise.allSettled` verschluckt
 Fehler — eine Regression macht die Suite nur langsamer, nicht rot).
 Mit Mock-Server und kurzem `commandTimeoutMs` (~50 ms):
-- [ ] Query resolved mit geantwortetem Parameter.
-- [ ] Zwei parallele `query("MVL")` resolven beide.
-- [ ] Server schweigt → Reject nach Timeout, `pendingQueries` danach leer.
-- [ ] Unsolicited Message ohne pending Query wirft nicht.
-- [ ] (Nach Schritt 7) `close` rejected alle pending Queries sofort.
+- [x] Query resolved mit geantwortetem Parameter.
+- [x] Zwei parallele `query("MVL")` resolven beide.
+- [x] Server schweigt → Reject nach Timeout, `pendingQueries` danach leer.
+- [x] Unsolicited Message ohne pending Query wirft nicht.
+- [x] (Nach Schritt 7) `close` rejected alle pending Queries sofort.
 
 ### Schritt 16: ConnectionManager-Verhaltenstests
 
@@ -435,9 +435,9 @@ wirft nicht"). Mit Mock-Server:
 Der Cap existiert, damit eine fehlkonfigurierte Taste keine Lautsprecher
 sprengt — heute nur mit echter Hardware getestet. Bytes-on-the-wire gegen
 Mock-Server asserten:
-- [ ] `setVolume(200)` mit `cap: 50` sendet `MVL32`, niemals `MVLC8`.
-- [ ] `setVolume(-1)` clampt auf `00` (Fix aus Schritt 12).
-- [ ] `volumeUp` am Cap bleibt am Cap.
+- [x] `setVolume(200)` mit `cap: 50` sendet `MVL32`, niemals `MVLC8`.
+- [x] `setVolume(-1)` clampt auf `00` (Fix aus Schritt 12).
+- [x] `volumeUp` am Cap bleibt am Cap.
 - [ ] Hardcodierte Ranges entschärfen: `VolumeDialAction.updateFeedback`
       (`dedicated/index.ts:288-303`, `/80`) und `eiscp-dial-indicator.ts:33-35`
       (MVL→80, sonst 24) → Range in `CommandDef` ziehen.
