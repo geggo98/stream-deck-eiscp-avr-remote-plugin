@@ -58,6 +58,7 @@ export class EiscpTransport extends EventEmitter {
 	private socket: Socket | null = null;
 	private state: ConnectionState = ConnectionState.DISCONNECTED;
 	private connectPromise: Promise<void> | null = null;
+	private abortConnect: ((err: Error) => void) | null = null;
 	private options: Required<Omit<EiscpTransportOptions, "keepAliveInitialDelay">> & {
 		keepAliveInitialDelay?: number;
 	};
@@ -111,13 +112,22 @@ export class EiscpTransport extends EventEmitter {
 				timeout: this.options.connectTimeout,
 			};
 
+			// A previous socket may linger after a remote close; replace it cleanly.
+			this.socket?.destroy();
 			this.socket = new Socket();
+
+			// Backstop against late socket errors (e.g. the macOS local-network
+			// firewall delivering EHOSTUNREACH after the connect attempt already
+			// failed): a Socket without an "error" listener throws
+			// ERR_UNHANDLED_ERROR and kills the plugin process.
+			this.socket.on("error", () => {});
 
 			const cleanup = () => {
 				this.socket?.off("connect", onConnect);
 				this.socket?.off("error", onError);
 				this.socket?.off("timeout", onTimeout);
 				this.connectPromise = null;
+				this.abortConnect = null;
 			};
 
 			const onConnect = () => {
@@ -136,18 +146,22 @@ export class EiscpTransport extends EventEmitter {
 
 			const onError = (err: Error) => {
 				cleanup();
+				// Destroy, or a late success would leak an open TCP connection
+				// while the state still says DISCONNECTED.
+				this.socket?.destroy();
+				this.socket = null;
 				this.state = ConnectionState.DISCONNECTED;
 				this.emit("error", err);
 				reject(err);
 			};
 
 			const onTimeout = () => {
-				cleanup();
-				this.state = ConnectionState.DISCONNECTED;
-				const err = new Error(`Connection timeout to ${this.options.host}:${this.options.port}`);
-				this.emit("error", err);
-				reject(err);
+				onError(new Error(`Connection timeout to ${this.options.host}:${this.options.port}`));
 			};
+
+			// Lets disconnect() fail a pending attempt instead of leaving the
+			// promise (and every future connect() joining it) hanging forever.
+			this.abortConnect = onError;
 
 			this.socket.once("connect", onConnect);
 			this.socket.once("error", onError);
@@ -162,6 +176,7 @@ export class EiscpTransport extends EventEmitter {
 	 * Disconnect from the receiver
 	 */
 	disconnect(): void {
+		this.abortConnect?.(new Error("Disconnected while connecting"));
 		if (this.socket) {
 			this.socket.destroy();
 			this.socket = null;

@@ -47,7 +47,7 @@ Gleiches Muster trifft Profilseiten, auf denen mehrere Actions gleichzeitig
 
 ### Schritt 2: Socket-Lifecycle im Transport härten
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** Nach Connect-Timeout/-Fehler (`src/adapter/eiscp/transport.ts:133-152`)
 wird der Socket nicht destroyed, aber alle Listener werden entfernt. Trifft
@@ -59,12 +59,12 @@ verspätet doch noch, leakt eine offene TCP-Verbindung, während der Zustand
 einen evtl. vorhandenen alten Socket, ohne ihn zu destroyen.
 
 **Umsetzung:**
-- [ ] In beiden Fehlerpfaden (`onError`, `onTimeout`) vor dem `reject`:
+- [x] In beiden Fehlerpfaden (`onError`, `onTimeout`) vor dem `reject`:
       `this.socket.destroy(); this.socket = null;`.
-- [ ] Am Anfang von `connect()` einen evtl. vorhandenen alten Socket destroyen.
-- [ ] Dauerhaften (oder geguardeten) `error`-Listener sicherstellen, damit
+- [x] Am Anfang von `connect()` einen evtl. vorhandenen alten Socket destroyen.
+- [x] Dauerhaften (oder geguardeten) `error`-Listener sicherstellen, damit
       späte Socket-Fehler nie ungehört bleiben.
-- [ ] Test: Mock-Szenario „Connect-Timeout, danach später Socket-Fehler" →
+- [x] Test: Mock-Szenario „Connect-Timeout, danach später Socket-Fehler" →
       kein Prozess-Crash, Zustand bleibt konsistent.
 
 ### Schritt 3: Fehler-Robustheit im Event-Pfad (Listener-Guards + Dispatch)
