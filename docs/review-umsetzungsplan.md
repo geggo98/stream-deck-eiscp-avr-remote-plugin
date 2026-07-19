@@ -274,7 +274,7 @@ Callback-Annotationen (z. B. `connection-manager.ts:56`) ungeprüft.
 
 ### Schritt 10: Kind-abhängige Strukturen als diskriminierte Unions
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** Drei Typen erlauben (bzw. konstruieren) illegale Zustände:
 1. `DedicatedSpec` (`src/actions/dedicated/catalog.ts:27-51`) ist ein
@@ -294,9 +294,9 @@ Callback-Annotationen (z. B. `connection-manager.ts:56`) ungeprüft.
       `const DEDICATED_SPECS = [...] as const satisfies readonly DedicatedSpec[]`,
       `type DedicatedId = ...["id"]`; `SPEC_BY_ID: Record<DedicatedId, ...>` —
       Tippfehler in `protected id = "..."` werden Compile-Fehler.
-- [ ] `CommandDef` im Generator (`scripts/generate-command-registry.ts`) über
+- [x] `CommandDef` im Generator (`scripts/generate-command-registry.ts`) über
       `actionType` diskriminieren — propagiert automatisch.
-- [ ] Inbound-Frame-Union im Transport:
+- [x] Inbound-Frame-Union im Transport:
       `{ kind: "eiscp"; ... } | { kind: "raw-iscp"; message: string }` statt
       fabriziertem `EiscpPacket`.
 

@@ -190,6 +190,8 @@ describe("command registry", () => {
 		it("all toggles should have onValue and offValue", () => {
 			const toggles = getCommandsByType("toggle");
 			for (const cmd of toggles) {
+				assert.equal(cmd.actionType, "toggle");
+				if (cmd.actionType !== "toggle") continue; // narrow the union
 				assert.ok(cmd.onValue, `${cmd.code} toggle should have onValue`);
 				assert.ok(cmd.offValue, `${cmd.code} toggle should have offValue`);
 			}

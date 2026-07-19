@@ -42,6 +42,15 @@ export interface EiscpTransportOptions {
 }
 
 /**
+ * A decoded inbound frame: a proper eISCP packet, or a headerless raw ISCP
+ * line (some receivers emit those). Modelled as a union instead of a
+ * fabricated EiscpPacket whose "RAW" header violated the type's invariants.
+ */
+export type InboundFrame =
+	| { kind: "eiscp"; packet: EiscpPacket }
+	| { kind: "raw-iscp"; message: string };
+
+/**
  * Events emitted by EiscpTransport (tuple map bound to the EventEmitter, so
  * event names and payloads are compile-checked at every on/emit site).
  */
@@ -49,7 +58,7 @@ export interface EiscpTransportEvents {
 	connect: [];
 	close: [hadError: boolean];
 	error: [error: Error];
-	data: [packet: EiscpPacket];
+	data: [frame: InboundFrame];
 	packet: [raw: Buffer];
 }
 
@@ -255,14 +264,7 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 					this.receiveBuffer = this.receiveBuffer.subarray(terminatorIdx + 1);
 
 					this.emit("packet", rawPacket);
-					this.emit("data", {
-						header: "RAW",
-						headerSize: 0,
-						dataSize: rawPacket.length,
-						version: Buffer.alloc(0),
-						message: rawPacket.toString("ascii"),
-						rawMessage: rawPacket,
-					});
+					this.emit("data", { kind: "raw-iscp", message: rawPacket.toString("ascii") });
 					continue;
 				}
 
@@ -285,7 +287,7 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 				try {
 					const packets = decodeMultiplePackets(packetBuffer);
 					for (const packet of packets) {
-						this.emit("data", packet);
+						this.emit("data", { kind: "eiscp", packet });
 					}
 				} catch (err) {
 					this.emit("error", err instanceof Error ? err : new Error(String(err)));

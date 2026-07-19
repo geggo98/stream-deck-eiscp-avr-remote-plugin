@@ -28,8 +28,11 @@ export class EiscpToggleAction extends ToggleActionBase<ToggleSettings> {
 		const command = settings.command;
 		if (!command) return undefined;
 		const cmd = COMMAND_REGISTRY[command];
-		const onValue = resolveParam(settings.onValue, settings.customOnValue) ?? cmd?.onValue ?? "01";
-		const offValue = resolveParam(settings.offValue, settings.customOffValue) ?? cmd?.offValue ?? "00";
-		return { command, onValue, offValue, toggleValue: cmd?.toggleValue };
+		// The user may point the generic toggle at any command; only real
+		// toggles carry wire values, everything else falls back to 01/00.
+		const toggleDef = cmd?.actionType === "toggle" ? cmd : undefined;
+		const onValue = resolveParam(settings.onValue, settings.customOnValue) ?? toggleDef?.onValue ?? "01";
+		const offValue = resolveParam(settings.offValue, settings.customOffValue) ?? toggleDef?.offValue ?? "00";
+		return { command, onValue, offValue, toggleValue: toggleDef?.toggleValue };
 	}
 }

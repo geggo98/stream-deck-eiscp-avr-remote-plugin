@@ -231,6 +231,11 @@ function generateRegistry(): CommandDef[] {
 			if (keys.includes("01") || keys.includes("'01'") || keys.includes("1")) def.onValue = "01";
 			if (keys.includes("00") || keys.includes("'00'") || keys.includes("0")) def.offValue = "00";
 			if (keys.includes("TG")) def.toggleValue = "TG";
+			// The emitted ToggleCommandDef requires both; fail generation
+			// instead of emitting a registry that will not compile.
+			if (def.onValue === undefined || def.offValue === undefined) {
+				throw new Error(`Toggle command ${code} lacks 01/00 values; cannot emit a ToggleCommandDef`);
+			}
 		}
 
 		registry.push(def);
@@ -253,19 +258,35 @@ function generateTypeScript(registry: CommandDef[]): string {
 	lines.push(`\tdescription: string;`);
 	lines.push(`}`);
 	lines.push(``);
-	lines.push(`export interface CommandDef {`);
+	lines.push(`interface CommandDefBase {`);
 	lines.push(`\tcode: string;`);
 	lines.push(`\tname: string;`);
 	lines.push(`\tdescription: string;`);
 	lines.push(`\tcategory: string;`);
-	lines.push(`\tactionType: CommandActionType;`);
 	lines.push(`\tvalues: CommandValueDef[];`);
 	lines.push(`\thasQuery: boolean;`);
 	lines.push(`\thasUpDown: boolean;`);
-	lines.push(`\tonValue?: string;`);
-	lines.push(`\toffValue?: string;`);
+	lines.push(`}`);
+	lines.push(``);
+	lines.push(`/** Two-state command; on/off wire values are always present. */`);
+	lines.push(`export interface ToggleCommandDef extends CommandDefBase {`);
+	lines.push(`\tactionType: "toggle";`);
+	lines.push(`\tonValue: string;`);
+	lines.push(`\toffValue: string;`);
 	lines.push(`\ttoggleValue?: string;`);
 	lines.push(`}`);
+	lines.push(``);
+	lines.push(`/** Numeric command adjusted via UP/DOWN or absolute hex values. */`);
+	lines.push(`export interface StepperCommandDef extends CommandDefBase {`);
+	lines.push(`\tactionType: "stepper";`);
+	lines.push(`}`);
+	lines.push(``);
+	lines.push(`/** Enumerated command whose values name discrete options. */`);
+	lines.push(`export interface SelectorCommandDef extends CommandDefBase {`);
+	lines.push(`\tactionType: "selector";`);
+	lines.push(`}`);
+	lines.push(``);
+	lines.push(`export type CommandDef = ToggleCommandDef | StepperCommandDef | SelectorCommandDef;`);
 	lines.push(``);
 	lines.push(`export const COMMAND_REGISTRY: Record<string, CommandDef> = {`);
 

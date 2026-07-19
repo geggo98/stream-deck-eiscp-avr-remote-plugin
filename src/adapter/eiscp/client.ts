@@ -13,7 +13,7 @@
 
 import { EventEmitter } from "node:events";
 import type { AdapterLogger } from "../logging.ts";
-import { EiscpTransport, ConnectionState, type EiscpTransportOptions } from "./transport.ts";
+import { EiscpTransport, ConnectionState, type EiscpTransportOptions, type InboundFrame } from "./transport.ts";
 import {
 	encodePacket,
 	createQuery,
@@ -382,7 +382,7 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	 * Setup transport event handlers
 	 */
 	private setupTransportHandlers(): void {
-		this.transport.on("data", (packet) => this.handlePacket(packet));
+		this.transport.on("data", (frame) => this.handleFrame(frame));
 		this.transport.on("connect", () => this.emit("connected"));
 		this.transport.on("close", () => {
 			this.emit("disconnected");
@@ -405,15 +405,15 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	}
 
 	/**
-	 * Handle incoming packet
+	 * Handle an incoming frame (framed eISCP packet or headerless raw ISCP line)
 	 */
-	private handlePacket(packet: EiscpPacket): void {
-		if (this.debugLog) {
-			this.emit("rawPacket", "received", packet);
+	private handleFrame(frame: InboundFrame): void {
+		if (this.debugLog && frame.kind === "eiscp") {
+			this.emit("rawPacket", "received", frame.packet);
 		}
 
 		try {
-			const message = parseIscpMessage(packet.message);
+			const message = parseIscpMessage(frame.kind === "eiscp" ? frame.packet.message : frame.message);
 			this.handleIscpMessage(message);
 		} catch (err) {
 			this.emitError(err instanceof Error ? err : new Error(String(err)), "failed to parse packet");

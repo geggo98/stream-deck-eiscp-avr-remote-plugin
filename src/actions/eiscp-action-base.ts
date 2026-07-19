@@ -287,7 +287,8 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		const raw = this.pressState.get(actionId);
 		if (!raw) return false;
 		const def = COMMAND_REGISTRY[pressCmd];
-		return raw === (cfg.pressOnValue ?? def?.onValue ?? "01");
+		const registryOn = def?.actionType === "toggle" ? def.onValue : undefined;
+		return raw === (cfg.pressOnValue ?? registryOn ?? "01");
 	}
 
 	/**

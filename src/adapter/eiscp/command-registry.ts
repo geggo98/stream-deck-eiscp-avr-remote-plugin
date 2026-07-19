@@ -9,19 +9,35 @@ export interface CommandValueDef {
 	description: string;
 }
 
-export interface CommandDef {
+interface CommandDefBase {
 	code: string;
 	name: string;
 	description: string;
 	category: string;
-	actionType: CommandActionType;
 	values: CommandValueDef[];
 	hasQuery: boolean;
 	hasUpDown: boolean;
-	onValue?: string;
-	offValue?: string;
+}
+
+/** Two-state command; on/off wire values are always present. */
+export interface ToggleCommandDef extends CommandDefBase {
+	actionType: "toggle";
+	onValue: string;
+	offValue: string;
 	toggleValue?: string;
 }
+
+/** Numeric command adjusted via UP/DOWN or absolute hex values. */
+export interface StepperCommandDef extends CommandDefBase {
+	actionType: "stepper";
+}
+
+/** Enumerated command whose values name discrete options. */
+export interface SelectorCommandDef extends CommandDefBase {
+	actionType: "selector";
+}
+
+export type CommandDef = ToggleCommandDef | StepperCommandDef | SelectorCommandDef;
 
 export const COMMAND_REGISTRY: Record<string, CommandDef> = {
 	PWR: {

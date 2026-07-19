@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEDICATED_SPECS, dedicatedPropertyInspector } from "../src/actions/dedicated/catalog.ts";
+import { DEDICATED_SPECS, dedicatedPropertyInspector, type IconSpec } from "../src/actions/dedicated/catalog.ts";
 import { COMMAND_REGISTRY } from "../src/adapter/eiscp/command-registry.ts";
 import { DIAL_PRESS_ACTIONS, parseTone, resolveDialPress } from "../src/actions/eiscp-base.ts";
 
@@ -43,10 +43,10 @@ describe("dial catalog", () => {
 
 	it("every dial press command/param is valid", () => {
 		for (const d of dials) {
-			if (!d.pressCommand) continue;
 			const cmd = COMMAND_REGISTRY[d.pressCommand];
 			assert.ok(cmd, `unknown press command ${d.pressCommand} for ${d.id}`);
-			const valid = d.pressParam && (paramsOf(d.pressCommand).has(d.pressParam) || d.pressParam === cmd.toggleValue);
+			const toggleValue = cmd.actionType === "toggle" ? cmd.toggleValue : undefined;
+			const valid = d.pressParam && (paramsOf(d.pressCommand).has(d.pressParam) || d.pressParam === toggleValue);
 			assert.ok(valid, `${d.id}: press param ${d.pressParam} not valid for ${d.pressCommand}`);
 		}
 	});
@@ -67,7 +67,8 @@ describe("dial catalog", () => {
 			seen.add(s.id);
 		}
 		for (const d of dials) {
-			for (const name of [d.icon.primary, d.icon.badge, d.icon.onPrimary].filter(Boolean) as string[]) {
+			const icon: IconSpec = d.icon;
+			for (const name of [icon.primary, icon.badge, icon.onPrimary].filter(Boolean) as string[]) {
 				assert.ok(existsSync(iconFile(name)), `missing Lucide icon "${name}" for ${d.id}`);
 			}
 		}
@@ -93,7 +94,8 @@ describe("resolveDialPress", () => {
 			const cmd = COMMAND_REGISTRY[press.command];
 			assert.ok(cmd, `unknown command ${press.command} for press "${key}"`);
 			const params = new Set(cmd.values.map((v) => v.param));
-			assert.ok(params.has(press.param) || press.param === cmd.toggleValue, `param ${press.param} invalid`);
+			const toggleValue = cmd.actionType === "toggle" ? cmd.toggleValue : undefined;
+			assert.ok(params.has(press.param) || press.param === toggleValue, `param ${press.param} invalid`);
 			// The "on" value must be a real value the command can report.
 			assert.ok(params.has(press.on), `on-value ${press.on} not a known ${press.command} value`);
 		}

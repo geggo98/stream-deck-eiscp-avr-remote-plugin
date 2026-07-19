@@ -18,7 +18,7 @@ import {
 	GENERIC_SPECS,
 	dedicatedPropertyInspector,
 	uuidFor,
-	type DedicatedSpec,
+	type DialSpec,
 	type GenericSpec,
 } from "../src/actions/dedicated/catalog.ts";
 
@@ -45,7 +45,7 @@ interface ManifestAction {
 	Encoder?: { layout: string; TriggerDescription: { Push: string; Rotate: string } };
 }
 
-function genericAction(spec: GenericSpec): ManifestAction {
+function genericAction(spec: (typeof GENERIC_SPECS)[number]): ManifestAction {
 	const img = `imgs/actions/${spec.id}/key`;
 	const states: ManifestState[] =
 		spec.states === 2
@@ -72,7 +72,7 @@ function genericAction(spec: GenericSpec): ManifestAction {
 	return a;
 }
 
-function dedicatedAction(spec: DedicatedSpec): ManifestAction {
+function dedicatedAction(spec: (typeof DEDICATED_SPECS)[number]): ManifestAction {
 	const base = `imgs/actions/${spec.id}`;
 	const states: ManifestState[] =
 		spec.states === 2
@@ -100,7 +100,7 @@ function dedicatedAction(spec: DedicatedSpec): ManifestAction {
 }
 
 /** Touch-strip Rotate/Push hints, derived from the spec so they match behaviour. */
-function dialTriggerDescription(spec: DedicatedSpec): { Push: string; Rotate: string } {
+function dialTriggerDescription(spec: DialSpec): { Push: string; Rotate: string } {
 	const push =
 		spec.pressCommand === "AMT"
 			? "Mute"

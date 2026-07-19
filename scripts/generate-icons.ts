@@ -73,15 +73,17 @@ for (const spec of DEDICATED_SPECS) {
 	const dir = resolve(ACTIONS_IMG_DIR, spec.id);
 	mkdirSync(dir, { recursive: true });
 
-	writeFileSync(resolve(dir, "icon.svg"), listIcon(spec.icon), "utf-8");
-	writeFileSync(resolve(dir, "key.svg"), keyImage(spec.icon, BG_DARK, false), "utf-8");
+	// Widen the as-const catalog literal so optional IconSpec fields are accessible.
+	const icon: IconSpec = spec.icon;
+	writeFileSync(resolve(dir, "icon.svg"), listIcon(icon), "utf-8");
+	writeFileSync(resolve(dir, "key.svg"), keyImage(icon, BG_DARK, false), "utf-8");
 	written += 2;
 
 	if (spec.states === 2) {
-		writeFileSync(resolve(dir, "key-on.svg"), keyImage(spec.icon, onStateColor(spec.command), true), "utf-8");
+		writeFileSync(resolve(dir, "key-on.svg"), keyImage(icon, onStateColor(spec.command), true), "utf-8");
 		written += 1;
 	}
-	console.log(`  ${spec.id}: ${spec.icon.primary}${spec.icon.badge ? " + " + spec.icon.badge : ""}`);
+	console.log(`  ${spec.id}: ${icon.primary}${icon.badge ? " + " + icon.badge : ""}`);
 }
 
 // Generic actions: single glyph, no badge, no on-state.

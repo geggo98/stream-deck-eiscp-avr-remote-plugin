@@ -87,14 +87,17 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 					reject(new Error("Timeout waiting for response"));
 				}, 5000);
 
-				transport.once("data", (data) => {
+				transport.once("data", (frame) => {
 					clearTimeout(timeout);
-					assert.equal(data.command, "PWR");
-					assert.equal(data.parameter.length, 2);
+					assert.equal(frame.kind, "eiscp");
+					const text = frame.kind === "eiscp" ? frame.packet.message : frame.message;
+					const message = parseIscpMessage(text);
+					assert.equal(message.command, "PWR");
+					assert.equal(message.parameter.length, 2);
 					resolve();
 				});
 
-				transport.send(packet.bytes);
+				transport.send(packet.bytes).catch(reject);
 			});
 		});
 	});
