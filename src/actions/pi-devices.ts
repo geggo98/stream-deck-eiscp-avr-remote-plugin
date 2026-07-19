@@ -1,5 +1,5 @@
 /**
- * Property Inspector "device list" data source.
+ * Property Inspector "device list" data source (SDK adapter).
  *
  * The PI's Device IP `<sdpi-select datasource="getDevices">` asks the plugin for
  * the list of receivers; we answer with the devices found by eISCP broadcast
@@ -9,59 +9,22 @@
  * sdpi-select only renders options present at first paint, so a static dropdown
  * built via innerHTML stays empty — the datasource round-trip is how options are
  * delivered (and refreshed, via the select's `hot-reload`).
+ *
+ * This file only parses the PI event, wires the real discovery/settings/clock
+ * into the pure logic in pi-device-list.ts, and sends the reply + log lines.
  */
 import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { discoverEiscpDevicesStreaming } from "../adapter/eiscp/discover.ts";
 import { fireAndLog, getCachedGlobalSettings, type EiscpActionSettings } from "./eiscp-base.ts";
+import { DISCOVERY_TIMEOUT_MS, resolveDeviceList, type DeviceCache } from "./pi-device-list.ts";
 
 const logger = streamDeck.logger.createScope("PiDevices");
 
 /** sdpi data-source event name used by the Device IP select. */
 export const DEVICE_DATASOURCE = "getDevices";
-const DISCOVERY_TIMEOUT_MS = 2500;
-/** Serve a recent result so switching between actions doesn't re-broadcast each time. */
-const CACHE_TTL_MS = 8000;
 
-interface Device {
-	host: string;
-	model: string;
-}
-let cache: { at: number; devices: Device[] } | undefined;
-
-/** Build the sdpi-components item list (grouped) from discovered devices. */
-function buildItems(devices: Device[], discoveryFailed = false): JsonValue {
-	const seen = new Set<string>();
-	const children: JsonValue[] = [];
-	for (const d of devices) {
-		if (seen.has(d.host)) continue;
-		seen.add(d.host);
-		children.push({ label: d.model ? `${d.model} (${d.host})` : d.host, value: d.host });
-	}
-	const discoveredCount = children.length;
-	// Offer the plugin-wide configured IP (if any) so the dropdown still works
-	// when discovery is blocked (e.g. the macOS local-network firewall).
-	const configured = getCachedGlobalSettings().deviceIp;
-	if (configured && !seen.has(configured)) {
-		children.push({ label: `Configured (${configured})`, value: configured });
-	}
-	if (children.length === 0) {
-		// Keep the group visible (it carries the failure label) but make the
-		// placeholder harmless: selecting it leaves the action unconfigured.
-		children.push({ label: "(none found)", value: "", disabled: true });
-	}
-	// Name the failure instead of pretending the fallback was configured on
-	// purpose — a blocked broadcast otherwise looks like "no devices in LAN".
-	const groupLabel = discoveryFailed
-		? "Discovery failed — check Local Network permission"
-		: discoveredCount > 0
-			? "Discovered"
-			: "Pre-configured";
-	return [
-		{ label: groupLabel, children },
-		{ label: "Custom IP…", value: "custom" },
-	];
-}
+let cache: DeviceCache | undefined;
 
 /**
  * Handle the Device IP data-source request from any action's PI. Returns true if
@@ -72,38 +35,33 @@ export async function handleDeviceListMessage<T extends EiscpActionSettings>(
 ): Promise<boolean> {
 	const payload = ev.payload as { event?: string; isRefresh?: boolean } | null;
 	if (!payload || typeof payload !== "object" || payload.event !== DEVICE_DATASOURCE) return false;
-	const reply = (devices: Device[], discoveryFailed = false) =>
-		fireAndLog(
-			streamDeck.ui.sendToPropertyInspector({
-				event: DEVICE_DATASOURCE,
-				items: buildItems(devices, discoveryFailed),
-			}),
-			logger,
-			"sendToPropertyInspector",
-		);
 
-	// Serve a fresh-enough cache unless the user explicitly asked to refresh.
-	if (!payload.isRefresh && cache && Date.now() - cache.at < CACHE_TTL_MS) {
-		reply(cache.devices);
-		return true;
+	const result = await resolveDeviceList({
+		isRefresh: Boolean(payload.isRefresh),
+		now: Date.now,
+		cache,
+		configuredIp: getCachedGlobalSettings().deviceIp,
+		discover: async () => {
+			const r = await discoverEiscpDevicesStreaming({ timeout: DISCOVERY_TIMEOUT_MS });
+			return {
+				devices: r.devices.map((d) => ({ host: d.host, model: d.modelName })),
+				errors: r.errors,
+			};
+		},
+	});
+	cache = result.cache;
+	if (result.blockedErrors) {
+		logger.warn(
+			`getDevices discovery blocked: ${result.blockedErrors.map((e) => `${e.interfaceAddress}: ${e.message}`).join("; ")}`,
+		);
 	}
-	try {
-		const result = await discoverEiscpDevicesStreaming({ timeout: DISCOVERY_TIMEOUT_MS });
-		const devices = result.devices.map((d) => ({ host: d.host, model: d.modelName }));
-		const blocked = devices.length === 0 && result.errors.length > 0;
-		if (blocked) {
-			logger.warn(
-				`getDevices discovery blocked: ${result.errors.map((e) => `${e.interfaceAddress}: ${e.message}`).join("; ")}`,
-			);
-			// Keep any previously discovered devices instead of caching emptiness.
-			reply(cache?.devices ?? [], true);
-			return true;
-		}
-		cache = { at: Date.now(), devices };
-		reply(devices);
-	} catch (err) {
-		logger.error(`getDevices discovery failed: ${err}`);
-		reply(cache?.devices ?? [], true);
+	if (result.error !== undefined) {
+		logger.error(`getDevices discovery failed: ${result.error}`);
 	}
+	fireAndLog(
+		streamDeck.ui.sendToPropertyInspector({ event: DEVICE_DATASOURCE, items: result.items }),
+		logger,
+		"sendToPropertyInspector",
+	);
 	return true;
 }
