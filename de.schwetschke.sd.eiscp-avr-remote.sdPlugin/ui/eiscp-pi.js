@@ -118,6 +118,24 @@
 			if (el) el.style.display = on ? "block" : "none";
 		};
 
+		// Watchdog: if the plugin never answers (e.g. it was just restarted),
+		// don't leave the status stuck on "Starting discovery…" forever.
+		const WATCHDOG_MS = 10000;
+		let watchdog = null;
+		const stopWatchdog = () => {
+			if (watchdog) {
+				clearTimeout(watchdog);
+				watchdog = null;
+			}
+		};
+		const armWatchdog = () => {
+			stopWatchdog();
+			watchdog = setTimeout(() => {
+				status.textContent = "No response from plugin — is it running?";
+				show(btn, true);
+			}, WATCHDOG_MS);
+		};
+
 		btn.addEventListener("click", () => show(warn, true));
 		c.querySelector("#discoverCancel").addEventListener("click", () => show(warn, false));
 		c.querySelector("#discoverConfirm").addEventListener("click", () => {
@@ -127,6 +145,7 @@
 			status.textContent = "Starting discovery…";
 			try {
 				SDPIComponents.streamDeckClient.send("sendToPlugin", { action: "discover" });
+				armWatchdog();
 			} catch (e) {
 				status.textContent = "Could not start: " + e;
 				show(btn, true);
@@ -138,11 +157,14 @@
 				const p = ev && ev.payload ? ev.payload : ev;
 				if (!p || p.event !== "discover") return;
 				if (p.phase === "progress") {
+					armWatchdog(); // sweep steps take seconds; re-arm on each event
 					status.textContent = "Discovering… " + p.done + ": " + (p.current || "");
 				} else if (p.phase === "done") {
+					stopWatchdog();
 					status.textContent = "Done — discovered " + (p.count || 0) + " names. Re-open the action to see them.";
 					show(btn, true);
 				} else if (p.phase === "error") {
+					stopWatchdog();
 					status.textContent = "Failed: " + (p.message || "unknown error");
 					show(btn, true);
 				}

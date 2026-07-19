@@ -210,15 +210,15 @@ Betroffen u. a.: `eiscp-action-base.ts` (118-123, 157, 169, …),
 
 - [ ] umgesetzt
 
-- [ ] **name-store Persist-Retry** (`src/actions/dedicated/name-store.ts:183-192`):
+- [x] **name-store Persist-Retry** (`src/actions/dedicated/name-store.ts:183-192`):
       schlägt `persist()` fehl, wird nur `dirty = true` gesetzt, aber kein
       neuer Timer geplant — gelernte Namen gehen beim nächsten Neustart
       verloren. Debounce-Timer mit Backoff neu aufziehen.
-- [ ] **`runSweep`-Restore darf Originalfehler nicht maskieren**
+- [x] **`runSweep`-Restore darf Originalfehler nicht maskieren**
       (`src/actions/dedicated/discovery.ts:110-115`): Restore im `finally` in
       eigenes `try/catch` wrappen, „failed to restore <start>" loggen und den
       **ursprünglichen** Fehler weiterwerfen.
-- [ ] **PI-Watchdog für Auto-Discover**
+- [x] **PI-Watchdog für Auto-Discover**
       (`de.schwetschke.sd.eiscp-avr-remote.sdPlugin/ui/eiscp-pi.js:123-134`):
       antwortet das Plugin nicht (z. B. Neustart), hängt der Status ewig auf
       „Starting discovery…". Nach ~10 s ohne `discover`-Event: Meldung

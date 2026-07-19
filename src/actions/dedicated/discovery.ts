@@ -109,8 +109,13 @@ export async function runSweep(
 		}
 	} finally {
 		if (command === "SLI") setSliSweeping(host, false);
-		await mgr.sendCommand(host, command, start); // restore original
-		logger.info(`sweep ${command} done (${count} steps), restored ${start}`);
+		// A failing restore must not mask the sweep's original error.
+		try {
+			await mgr.sendCommand(host, command, start); // restore original
+			logger.info(`sweep ${command} done (${count} steps), restored ${start}`);
+		} catch (err) {
+			logger.error(`sweep ${command}: failed to restore ${start}: ${err}`);
+		}
 	}
 	return { count };
 }

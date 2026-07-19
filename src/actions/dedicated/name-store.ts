@@ -178,15 +178,27 @@ function markDirty(): void {
 	dirty = true;
 	if (persistTimer) clearTimeout(persistTimer);
 	persistTimer = setTimeout(() => void persist(), PERSIST_DEBOUNCE_MS);
+	// Never keep the process alive just for persistence (scripts, tests).
+	persistTimer.unref?.();
 }
+
+let persistRetries = 0;
 
 async function persist(): Promise<void> {
 	if (!dirty) return;
 	dirty = false;
 	try {
 		await streamDeck.settings.setGlobalSettings({ ...getCachedGlobalSettings(), names: serialize() });
+		persistRetries = 0;
 	} catch (err) {
+		// Re-arm the timer with backoff; without it the learned names would sit
+		// dirty in memory and be lost on the next plugin restart.
 		dirty = true;
-		streamDeck.logger.error(`name-store: failed to persist names: ${err}`);
+		persistRetries++;
+		const delay = Math.min(PERSIST_DEBOUNCE_MS * 2 ** persistRetries, 60_000);
+		streamDeck.logger.error(`name-store: failed to persist names (retrying in ${delay} ms): ${err}`);
+		if (persistTimer) clearTimeout(persistTimer);
+		persistTimer = setTimeout(() => void persist(), delay);
+		persistTimer.unref?.();
 	}
 }
