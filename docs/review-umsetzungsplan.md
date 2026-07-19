@@ -593,12 +593,14 @@ Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
       lassen (bounded durch Host-Anzahl) oder Eviction einbauen? →
       **Eviction eingebaut** (Nutzer-Entscheidung): 10 min nach Disconnect
       werden Client + Stale-Cache entfernt; Reconnect bricht den Timer ab.
-- [ ] **dnssd auf CI unsichtbar**: `dnssd-integration.test.ts` ist
+- [x] **dnssd auf CI unsichtbar**: `dnssd-integration.test.ts` ist
       macOS-gegated (Zeilen 20/36), CI läuft nur ubuntu
       (`.github/workflows/ci.yml:19`) → von `caller.ts` läuft auf CI nur
       der triviale `isDnsSdAvailable`-Plattform-Check; die
       Spawn-/Streaming-Logik in `caller.ts`/`controller.ts` ist komplett
-      ungedeckt. Akzeptieren oder macOS-Runner/Injektion erwägen.
+      ungedeckt. Akzeptieren oder macOS-Runner/Injektion erwägen. →
+      **macOS-Runner ergänzt** (Nutzer-Entscheidung): schlanker
+      Node-only-Job `test-macos` (typecheck + npm test).
 - [x] **`noUncheckedIndexedAccess`** aktivieren? → Aktiviert (Nutzer-Entscheidung); Code ist teils schon so
       geschrieben (`parts[0]!`); würde alle `Record`-Lookups härten
       (u. a. `COMMAND_REGISTRY[command]`, `SPEC_BY_ID`).

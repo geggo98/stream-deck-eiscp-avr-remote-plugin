@@ -55,6 +55,28 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  test-macos:
+    # The dns-sd (AirPlay discovery) spawn/streaming logic only runs on
+    # macOS; without this job it never executes in CI at all. Plain Node
+    # instead of the devenv/Nix setup keeps the macOS minutes cheap — the
+    # full toolchain is exercised by the ubuntu job above.
+    name: Test on macOS (dns-sd coverage)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Test
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
   security:
     name: Vulnerability + license scan
     runs-on: ubuntu-latest
