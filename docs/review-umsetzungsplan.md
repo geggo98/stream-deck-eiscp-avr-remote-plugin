@@ -586,9 +586,11 @@ Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
       Actions zeigen „No IP"/Alert und senden nichts. Das PI-Dropdown bietet
       die global konfigurierte IP (falls vorhanden) statt der Entwickler-IP.
       Die Dev-CLI (`scripts/eiscp-cli.ts`) behält ihren eigenen Default.
-- [ ] **Client-Pool räumt nie auf** (`connection-manager.ts:25, 65-67`):
+- [x] **Client-Pool räumt nie auf** (`connection-manager.ts:25, 65-67`):
       getrennte Clients + Stale-Cache bleiben für immer im Pool. Bewusst so
-      lassen (bounded durch Host-Anzahl) oder Eviction einbauen?
+      lassen (bounded durch Host-Anzahl) oder Eviction einbauen? →
+      **Eviction eingebaut** (Nutzer-Entscheidung): 10 min nach Disconnect
+      werden Client + Stale-Cache entfernt; Reconnect bricht den Timer ab.
 - [ ] **dnssd auf CI unsichtbar**: `dnssd-integration.test.ts` ist
       macOS-gegated (Zeilen 20/36), CI läuft nur ubuntu
       (`.github/workflows/ci.yml:19`) → von `caller.ts` läuft auf CI nur

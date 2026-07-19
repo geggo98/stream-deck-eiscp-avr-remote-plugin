@@ -27,6 +27,10 @@ export class ConnectionManager {
 	private subscriptions: Subscription[] = [];
 	private messageObservers: MessageObserver[] = [];
 	private connecting: Map<string, Promise<EiscpClient>> = new Map();
+	private evictionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
+	/** How long a disconnected client (and its now-stale cache) stays pooled. */
+	private static readonly EVICT_AFTER_MS = 10 * 60 * 1000;
 
 	static getInstance(): ConnectionManager {
 		if (!ConnectionManager.instance) {
@@ -93,6 +97,11 @@ export class ConnectionManager {
 
 			client.on("disconnected", () => {
 				logger.warn(`Client disconnected from ${host}`);
+				this.scheduleEviction(host);
+			});
+
+			client.on("connected", () => {
+				this.cancelEviction(host);
 			});
 		} else {
 			logger.info(`Reconnecting existing client to ${host}:${port}`);
@@ -124,6 +133,34 @@ export class ConnectionManager {
 
 	getCachedValue(host: string, command: string): string | undefined {
 		return this.stateCache.get(host)?.get(command);
+	}
+
+	/**
+	 * Evict a client that stayed disconnected: the pool would otherwise keep
+	 * dead clients and their stale state cache forever. Subscriptions are
+	 * untouched — they belong to actions and re-apply on the next connect.
+	 */
+	private scheduleEviction(host: string): void {
+		this.cancelEviction(host);
+		const timer = setTimeout(() => {
+			this.evictionTimers.delete(host);
+			const client = this.clients.get(host);
+			if (client && !client.isConnected()) {
+				logger.info(`Evicting disconnected client for ${host} (stale for ${ConnectionManager.EVICT_AFTER_MS} ms)`);
+				this.clients.delete(host);
+				this.stateCache.delete(host);
+			}
+		}, ConnectionManager.EVICT_AFTER_MS);
+		timer.unref?.();
+		this.evictionTimers.set(host, timer);
+	}
+
+	private cancelEviction(host: string): void {
+		const timer = this.evictionTimers.get(host);
+		if (timer) {
+			clearTimeout(timer);
+			this.evictionTimers.delete(host);
+		}
 	}
 
 	onCommandUpdate(host: string, command: string, cb: CommandCallback): () => void {
