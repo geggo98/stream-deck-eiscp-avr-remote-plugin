@@ -7,7 +7,7 @@
 
 import { strict as assert } from "node:assert";
 import { describe, it, before, after } from "node:test";
-import { createServer } from "net";
+import { createServer, type Socket } from "net";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -33,23 +33,23 @@ const RAW_DUMP_PATH = resolve(__dirname, "fixtures/raw-dump.bin");
 const RAW_DATA = readFileSync(RAW_DUMP_PATH);
 
 // Test server state
-let testServer: ReturnType<typeof createServer>;
+let testServer: ReturnType<typeof createServer> | undefined;
 let testPort: number;
-let testSockets: Set<ReturnType<typeof testServer>> = new Set();
+const testSockets: Set<Socket> = new Set();
 
 describe("eISCP listen mode tests", () => {
-	let client: ReturnType<typeof createClient>;
+	let client: ReturnType<typeof createClient> | undefined;
 	const receivedMessages: DecodedMessage[] = [];
 
 	before(async () => {
 		// Start test server on a random port
-		testServer = createServer((socket) => {
+		const server = createServer((socket) => {
 			// Track socket for cleanup
-			testSockets.add(socket as never);
+			testSockets.add(socket);
 
 			// Remove from tracking when closed
 			socket.on("close", () => {
-				testSockets.delete(socket as never);
+				testSockets.delete(socket);
 			});
 
 			// Wait a bit for the client to be ready before sending data
@@ -64,9 +64,10 @@ describe("eISCP listen mode tests", () => {
 		});
 
 		// Listen on random port
+		testServer = server;
 		await new Promise<void>((resolve) => {
-			testServer.listen(0, () => {
-				testPort = (testServer.address() as { port: number }).port;
+			server.listen(0, () => {
+				testPort = (server.address() as { port: number }).port;
 				console.log(`Mock eISCP server listening on port ${testPort}`);
 				resolve();
 			});
@@ -85,9 +86,10 @@ describe("eISCP listen mode tests", () => {
 		}
 		testSockets.clear();
 
-		if (testServer) {
+		const server = testServer;
+		if (server) {
 			await new Promise<void>((resolve) => {
-				testServer.close(() => resolve());
+				server.close(() => resolve());
 			});
 			testServer = undefined;
 		}

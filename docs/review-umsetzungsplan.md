@@ -365,9 +365,10 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
 
 - [ ] umgesetzt
 
-- [ ] `tests/dnssd-integration.test.ts:119-133`: `getDevice` wird nie
+- [x] `tests/dnssd-integration.test.ts:119-133`: `getDevice` wird nie
       importiert — der `assert.rejects`-Callback wirft `ReferenceError`, der
       Test ist vakuos. Import ergänzen (`src/adapter/dnssd/controller.ts:328`).
+      (Erledigt im Zuge der Typecheck-Erweiterung auf tests/ + scripts/.)
 - [ ] `tests/eiscp-integration.test.ts:242`: `require()` in ESM-Datei →
       bricht beim nächsten Lauf mit `EISCP_TEST_HOST`. Auf das bereits
       importierte ESM-Modul umstellen. Zeile 32: tote zweite

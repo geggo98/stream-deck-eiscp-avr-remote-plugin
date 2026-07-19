@@ -12,6 +12,8 @@ import {
 	parseLookupOutput,
 	parseGetAddrOutput,
 	combineDeviceInfo,
+	type AddressResult,
+	type LookupResult,
 	type ParseError,
 } from "../src/adapter/dnssd/index.ts";
 
@@ -184,17 +186,8 @@ describe("parseGetAddrOutput", () => {
 
 describe("combineDeviceInfo", () => {
 	it("should combine lookup and address results", () => {
-		const fixture = loadFixture("lookup-result-pioneer") as {
-			parsed: {
-				instanceName: string;
-				hostname: string;
-				port: number;
-				txtRecords: { key: string; value: string }[];
-			};
-		};
-		const addrFixture = loadFixture("getaddr-result-pioneer") as {
-			parsed: { addressType: string; address: string }[];
-		};
+		const fixture = loadFixture("lookup-result-pioneer") as { parsed: LookupResult };
+		const addrFixture = loadFixture("getaddr-result-pioneer") as { parsed: AddressResult[] };
 
 		const device = combineDeviceInfo(fixture.parsed, addrFixture.parsed);
 

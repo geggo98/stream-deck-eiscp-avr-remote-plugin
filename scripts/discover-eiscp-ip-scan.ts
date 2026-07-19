@@ -244,7 +244,9 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`   Total IPs to scan: ${totalIps}`);
-	console.log(`   Estimated time: ~${Math.ceil(totalIps / options.concurrency * options.timeout / 1000)}s`);
+	console.log(
+		`   Estimated time: ~${Math.ceil(((totalIps / (options.concurrency ?? 128)) * (options.timeout ?? 200)) / 1000)}s`,
+	);
 
 	console.log("\nScanning...\n");
 

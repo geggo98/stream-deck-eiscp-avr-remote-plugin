@@ -320,7 +320,10 @@ async function main(): Promise<void> {
 
 			// Also save the sent packet
 			const sentBytes = Buffer.from(capture.sentPacket, "hex");
-			saveRawFixture(`eiscp-discovery-query-${capture.unitType === "p" ? "pioneer" : "onkyo"}`, sentBytes);
+			saveRawFixture(
+				`eiscp-discovery-query-${capture.receiver.unitType === "p" ? "pioneer" : "onkyo"}`,
+				sentBytes,
+			);
 		}
 	}
 

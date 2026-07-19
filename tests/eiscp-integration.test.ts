@@ -90,8 +90,7 @@ describe("eISCP integration tests", { skip: !ENABLE_TESTS }, () => {
 				transport.once("data", (frame) => {
 					clearTimeout(timeout);
 					assert.equal(frame.kind, "eiscp");
-					const text = frame.kind === "eiscp" ? frame.packet.message : frame.message;
-					const message = parseIscpMessage(text);
+					const message = parseIscpMessage(frame.packet.message);
 					assert.equal(message.command, "PWR");
 					assert.equal(message.parameter.length, 2);
 					resolve();

@@ -226,12 +226,13 @@ async function main(): Promise<void> {
 
 		client.on("rawPacket", (direction, packet) => {
 			const timestamp = new Date().toISOString();
-			if (direction === "sent") {
+			// Sent packets are EncodedPacket, received ones EiscpPacket.
+			if (direction === "sent" && "iscpMessage" in packet) {
 				console.log(`[${timestamp}] SENT: ${packet.iscpMessage}`);
 				if (options.raw) {
 					console.log(`  Raw: ${packet.bytes.toString("hex")}`);
 				}
-			} else {
+			} else if ("header" in packet) {
 				console.log(`[${timestamp}] RECV: ${packet.message}`);
 				if (options.raw) {
 					console.log(`  Header: ${packet.header}`);
@@ -405,7 +406,8 @@ async function executeCommand(
 				error("Input command requires an input name");
 			}
 			log(`Setting input to ${inputName}...`);
-			await client.setInput(inputName);
+			// setInput validates the name at runtime and throws on unknown keys.
+			await client.setInput(inputName as keyof typeof InputSource);
 			log(`Input set to ${inputName}.`);
 			break;
 		}
@@ -416,7 +418,8 @@ async function executeCommand(
 				error("Mode command requires a mode name");
 			}
 			log(`Setting listening mode to ${modeName}...`);
-			await client.setListeningMode(modeName);
+			// setListeningMode validates the name at runtime and throws on unknown keys.
+			await client.setListeningMode(modeName as keyof typeof ListeningMode);
 			log(`Listening mode set to ${modeName}.`);
 			break;
 		}

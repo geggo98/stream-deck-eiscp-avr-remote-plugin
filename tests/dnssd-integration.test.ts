@@ -15,6 +15,7 @@ import {
 	getHostAddresses,
 	discoverAirplayDevices,
 	discoverAirplayDevicesWithErrorReporting,
+	getDevice,
 } from "../src/adapter/dnssd/index.ts";
 
 const isMacOS = platform() === "darwin";

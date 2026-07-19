@@ -1,0 +1,7 @@
+{
+	// Typecheck surface for `npm run typecheck` and CI: everything, not just
+	// the plugin sources. The build keeps using tsconfig.json (src only) so
+	// rollup's inputs are unaffected.
+	"extends": "./tsconfig.json",
+	"include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
+}
