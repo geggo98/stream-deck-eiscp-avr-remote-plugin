@@ -5,10 +5,10 @@
  * command interface for the universal Stream Deck actions.
  */
 
-import { streamDeck } from "@elgato/streamdeck";
+import { scopedLogger } from "../logging.ts";
 import { EiscpClient, createClient, type DecodedMessage } from "./client.ts";
 
-const logger = streamDeck.logger.createScope("ConnectionManager");
+const logger = scopedLogger("ConnectionManager");
 
 type CommandCallback = (rawValue: string) => void;
 

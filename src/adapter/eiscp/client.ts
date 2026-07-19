@@ -12,6 +12,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import type { AdapterLogger } from "../logging.ts";
 import { EiscpTransport, ConnectionState, type EiscpTransportOptions } from "./transport.ts";
 import {
 	encodePacket,
@@ -221,18 +222,6 @@ export interface EiscpClientEvents {
 }
 
 /**
- * Minimal logger interface so the client works outside the Stream Deck
- * runtime (scripts, tests). Defaults to `console`; the plugin injects a
- * scoped `streamDeck.logger`.
- */
-export interface EiscpLogger {
-	debug(message: string): void;
-	info(message: string): void;
-	warn(message: string): void;
-	error(message: string): void;
-}
-
-/**
  * eISCP Client options
  */
 export interface EiscpClientOptions extends EiscpTransportOptions {
@@ -240,7 +229,7 @@ export interface EiscpClientOptions extends EiscpTransportOptions {
 	autoQuery?: boolean; // Automatically query state on connect
 	debugLog?: boolean; // Log all packets
 	commandTimeoutMs?: number; // Timeout for command responses
-	logger?: EiscpLogger; // Fallback reporting when no "error" listener is attached
+	logger?: AdapterLogger; // Fallback reporting when no "error" listener is attached
 }
 
 /**
@@ -263,7 +252,7 @@ export class EiscpClient extends EventEmitter {
 	private autoQuery: boolean;
 	private debugLog: boolean;
 	private commandTimeoutMs: number;
-	private logger: EiscpLogger;
+	private logger: AdapterLogger;
 	private state: ReceiverState;
 	private pendingQueries: Map<string, Array<(value: string) => void>> = new Map();
 

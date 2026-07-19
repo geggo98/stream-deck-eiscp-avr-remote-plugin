@@ -9,8 +9,13 @@ import { type GlobalSettings, setCachedGlobalSettings } from "./actions/eiscp-ba
 import * as nameStore from "./actions/dedicated/name-store";
 import { register as registerDiscovery } from "./actions/dedicated/discovery";
 import { ConnectionManager } from "./adapter/eiscp/connection-manager";
+import { setAdapterLogger } from "./adapter/logging";
 
 streamDeck.logger.setLevel("trace");
+
+// The adapter layer must not import the SDK (its log rotation is an import
+// side effect that races in parallel test processes); wire its logging here.
+setAdapterLogger(streamDeck.logger);
 
 // Generic, fully-configurable actions (advanced).
 streamDeck.actions.registerAction(new EiscpButtonAction());
