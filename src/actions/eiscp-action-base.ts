@@ -69,10 +69,16 @@ export interface DialConfig {
 	pressLabel?: string;
 }
 
+/** Debounce for settings-triggered re-binds (the PI's Custom IP textfield
+ * flushes partial values every ~200 ms while typing). */
+const REBIND_DEBOUNCE_MS = 400;
+
 /** Common plumbing: scoped logger + per-action subscription bookkeeping. */
 abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends SingletonAction<TSettings> {
 	protected readonly logger: ReturnType<typeof streamDeck.logger.createScope>;
 	private readonly subs = new Map<string, (() => void)[]>();
+	private readonly bindGenerations = new Map<string, number>();
+	private readonly rebindTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 	// Explicit scope string (class names are mangled by terser in release builds).
 	constructor(scope: string) {
@@ -91,8 +97,49 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 		this.subs.delete(actionId);
 	}
 
+	/**
+	 * Start a new bind generation for this action. A bind captures the
+	 * returned token and checks isCurrentBind() after every await: a stale
+	 * continuation (its query outlived a newer bind triggered by a settings
+	 * change) must not touch the key any more, or it would clobber the fresh
+	 * bind's title/state with results from the old configuration.
+	 */
+	protected nextBindGeneration(actionId: string): number {
+		const gen = (this.bindGenerations.get(actionId) ?? 0) + 1;
+		this.bindGenerations.set(actionId, gen);
+		return gen;
+	}
+
+	protected isCurrentBind(actionId: string, generation: number): boolean {
+		return this.bindGenerations.get(actionId) === generation;
+	}
+
+	/**
+	 * Debounced re-bind for settings changes: typing in the Custom IP field
+	 * persists partial values, and re-binding each one would open TCP
+	 * connections to unintended hosts. Only the last change within the
+	 * debounce window binds.
+	 */
+	protected scheduleRebind(actionId: string, run: () => Promise<void>): void {
+		const previous = this.rebindTimers.get(actionId);
+		if (previous) clearTimeout(previous);
+		const timer = setTimeout(() => {
+			this.rebindTimers.delete(actionId);
+			run().catch((err) => this.logger.error(`re-bind failed: ${err}`));
+		}, REBIND_DEBOUNCE_MS);
+		timer.unref?.();
+		this.rebindTimers.set(actionId, timer);
+	}
+
 	override async onWillDisappear(ev: WillDisappearEvent<TSettings>): Promise<void> {
 		this.clearSubs(ev.action.id);
+		// Invalidate pending binds and cancel a queued re-bind.
+		this.nextBindGeneration(ev.action.id);
+		const timer = this.rebindTimers.get(ev.action.id);
+		if (timer) {
+			clearTimeout(timer);
+			this.rebindTimers.delete(ev.action.id);
+		}
 	}
 
 	/**
@@ -143,7 +190,9 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 	 */
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TSettings>): Promise<void> {
 		if (!ev.action.isKey()) return;
-		await this.bindKey(ev.action, ev.payload.settings);
+		const action = ev.action;
+		const settings = ev.payload.settings;
+		this.scheduleRebind(action.id, () => this.bindKey(action, settings));
 	}
 
 	private async bindKey(action: KeyAction<TSettings>, settings: TSettings): Promise<void> {
@@ -152,6 +201,8 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			this.logger.warn("bindKey: no command configured, skipping");
 			return;
 		}
+		const generation = this.nextBindGeneration(action.id);
+		const fresh = () => this.isCurrentBind(action.id, generation);
 		// Stream Deck may re-fire onWillAppear without an intervening
 		// onWillDisappear (profile switch, reconnect); drop stale subs first.
 		this.clearSubs(action.id);
@@ -172,9 +223,11 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
+			if (!fresh()) return; // a newer bind owns the key now
 			this.render(action, cfg, value);
 		} catch (err) {
 			this.logger.error(`bindKey: query ${cfg.command} on ${host} failed: ${err}`);
+			if (!fresh()) return;
 			// Degrade visibly instead of showing a stale/empty key; render()
 			// restores the configured title on the next successful update.
 			await action.setTitle("?");
@@ -238,7 +291,9 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 	/** See ToggleActionBase.onDidReceiveSettings: clears stuck degraded titles. */
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TSettings>): Promise<void> {
 		if (!ev.action.isKey()) return;
-		await this.bindKey(ev.action, ev.payload.settings);
+		const action = ev.action;
+		const settings = ev.payload.settings;
+		this.scheduleRebind(action.id, () => this.bindKey(action, settings));
 	}
 
 	protected async bindKey(action: KeyAction<TSettings>, settings: TSettings): Promise<void> {
@@ -248,6 +303,8 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			await action.setTitle("?");
 			return;
 		}
+		const generation = this.nextBindGeneration(action.id);
+		const fresh = () => this.isCurrentBind(action.id, generation);
 		this.clearSubs(action.id); // drop stale subs on a repeated bind
 		const host = resolveDeviceIp(settings);
 		if (!host) {
@@ -270,9 +327,11 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		);
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
+			if (!fresh()) return; // a newer bind owns the key now
 			this.render(action, cfg, value);
 		} catch (err) {
 			this.logger.error(`bindKey: query ${cfg.command} failed: ${err}`);
+			if (!fresh()) return;
 			await action.setTitle(cfg.command);
 		}
 	}
@@ -345,9 +404,13 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 	 * Re-bind when settings change in the PI (e.g. the press action was switched):
 	 * the SDK does not re-fire onWillAppear, so re-subscribe to the (possibly new)
 	 * press command and re-render. onDialDown already reads fresh settings.
+	 * Debounced: the Custom IP textfield flushes partial values while typing.
 	 */
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TSettings>): Promise<void> {
-		if (ev.action.isDial()) await this.bind(ev.action, ev.payload.settings);
+		if (!ev.action.isDial()) return;
+		const action = ev.action;
+		const settings = ev.payload.settings;
+		this.scheduleRebind(action.id, () => this.bind(action, settings));
 	}
 
 	/** Wire up live subscriptions and render the initial value. Idempotent. */
@@ -357,8 +420,10 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			this.logger.warn("bind: no command configured, skipping");
 			return;
 		}
-		const host = resolveDeviceIp(settings);
 		const actionId = action.id;
+		const generation = this.nextBindGeneration(actionId);
+		const fresh = () => this.isCurrentBind(actionId, generation);
+		const host = resolveDeviceIp(settings);
 		// Drop stale subs/press-state on a repeated bind (no disappear).
 		this.clearSubs(actionId);
 		this.pressState.delete(actionId);
@@ -397,15 +462,21 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 				}),
 			);
 			mgr.queryCommand(host, cfg.pressCommand)
-				.then((val) => this.pressState.set(actionId, val))
+				.then((val) => {
+					// A stale continuation must not seed press state for a
+					// newer bind (possibly a different host/press command).
+					if (fresh()) this.pressState.set(actionId, val);
+				})
 				.catch((err) => this.logger.warn(`press query ${cfg.pressCommand} on ${host} failed: ${err}`));
 		}
 
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
+			if (!fresh()) return; // a newer bind owns the dial now
 			rerender(value);
 		} catch (err) {
 			this.logger.error(`bind: query ${cfg.command} on ${host} failed: ${err}`);
+			if (!fresh()) return;
 			// Degrade visibly; the next live update overwrites this.
 			await action.setFeedback({ title: "?", value: "" });
 		}

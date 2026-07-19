@@ -138,6 +138,8 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		action: KeyAction<EiscpActionSettings>,
 		settings: EiscpActionSettings,
 	): Promise<void> {
+		const generation = this.nextBindGeneration(action.id);
+		const fresh = () => this.isCurrentBind(action.id, generation);
 		this.clearSubs(action.id);
 		const host = resolveDeviceIp(settings);
 		if (!host) {
@@ -160,9 +162,11 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 
 		try {
 			await mgr.queryCommand(host, command);
+			if (!fresh()) return; // a newer bind owns the key now
 			refresh();
 		} catch (err) {
 			this.logger.error(`bindKey: query ${command} on ${host} failed: ${err}`);
+			if (!fresh()) return;
 			// Degrade visibly like the other bases: render from the cache if
 			// one exists, otherwise show "?" instead of a stale title.
 			if (mgr.getCachedValue(host, command) !== undefined) {
@@ -297,18 +301,16 @@ export class TransportAction extends KeyActionBase<TransportSettings> {
 		fireAndLog(action.setTitle(TRANSPORT_LABELS[key] ?? key), this.logger, "setTitle");
 	}
 
-	override async onWillAppear(ev: WillAppearEvent<TransportSettings>): Promise<void> {
-		await super.onWillAppear(ev);
-		// Keep the base's "No IP" title visible while unconfigured.
-		if (ev.action.isKey() && resolveDeviceIp(ev.payload.settings)) {
-			this.setTransportTitle(ev.action, ev.payload.settings);
-		}
-	}
-
-	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TransportSettings>): Promise<void> {
-		await super.onDidReceiveSettings(ev); // clears a stuck "No IP" title
-		if (ev.action.isKey() && resolveDeviceIp(ev.payload.settings)) {
-			this.setTransportTitle(ev.action, ev.payload.settings);
+	// Appear/settings both funnel through the base's (debounced) bindKey;
+	// overriding it keeps the transport label and the "No IP" state in one
+	// ordered place instead of racing a separately set title.
+	protected override async bindKey(
+		action: KeyAction<TransportSettings>,
+		settings: TransportSettings,
+	): Promise<void> {
+		await super.bindKey(action, settings);
+		if (resolveDeviceIp(settings)) {
+			this.setTransportTitle(action, settings);
 		}
 	}
 }
