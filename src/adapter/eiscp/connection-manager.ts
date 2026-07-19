@@ -61,6 +61,14 @@ export class ConnectionManager {
 
 	private async connectClient(host: string, port: number): Promise<EiscpClient> {
 		let client = this.clients.get(host);
+		// A port change is a reconfiguration: replace the pooled client
+		// instead of silently ignoring the requested port.
+		if (client && client.getConnectionInfo().port !== port) {
+			logger.info(`Port for ${host} changed to ${port}; replacing pooled client`);
+			client.disconnect();
+			this.clients.delete(host);
+			client = undefined;
+		}
 		if (!client) {
 			logger.info(`Creating new client for ${host}:${port}`);
 			client = createClient({
@@ -131,10 +139,14 @@ export class ConnectionManager {
 	/**
 	 * Observe every decoded message from every host (after the cache is updated).
 	 * Used by passive name discovery, which must see all traffic regardless of
-	 * which actions are subscribed.
+	 * which actions are subscribed. Returns an unsubscribe function.
 	 */
-	addMessageObserver(cb: MessageObserver): void {
+	addMessageObserver(cb: MessageObserver): () => void {
 		this.messageObservers.push(cb);
+		return () => {
+			const idx = this.messageObservers.indexOf(cb);
+			if (idx >= 0) this.messageObservers.splice(idx, 1);
+		};
 	}
 
 	private handleMessage(host: string, msg: DecodedMessage): void {

@@ -334,12 +334,13 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
 
 - [ ] umgesetzt
 
-- [ ] **`port`-Parameter ehrlich machen** (`connection-manager.ts:37, 83, 90`):
+- [x] **`port`-Parameter ehrlich machen** (`connection-manager.ts:37, 83, 90`):
       wird bei existierendem Client ignoriert — entweder Pool nach
-      `host:port` keyen oder Parameter entfernen.
-- [ ] **`addMessageObserver` ohne Gegenstück** (`connection-manager.ts:115`):
+      `host:port` keyen oder Parameter entfernen. → Port-Wechsel ersetzt den
+      gepoolten Client (Rekonfiguration), statt still ignoriert zu werden.
+- [x] **`addMessageObserver` ohne Gegenstück** (`connection-manager.ts:115`):
       `removeMessageObserver` ergänzen (oder Permanenz dokumentieren und
-      bewusst machen).
+      bewusst machen). → Gibt jetzt eine Unsubscribe-Funktion zurück.
 - [ ] **Snapshot-Aliasing im unified-controller**
       (`unified-controller.ts:344, 380, 429, 585`): emittierte
       `currentState`-Snapshots teilen das live `ips`-Array/`metadata`-Objekt —
@@ -351,10 +352,10 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
       „primary source"-Ableitung (`Array.from(tracked.sources)[0] ?? ...`,
       `unified-controller.ts:464, 470, 508, 516, 583, 590`) auf den Typ
       ziehen.
-- [ ] **`VolumeConfig` durchsetzen** (`client.ts:60-64, 307-311, 668-673`):
+- [x] **`VolumeConfig` durchsetzen** (`client.ts:60-64, 307-311, 668-673`):
       `cap ≤ max` validieren; `volumeToHex` auch nach unten clampen
       (`setVolume(-1)` schickt heute `"-1"` aufs Kabel).
-- [ ] **`getState()`-Aliasing** (`client.ts:293-295`): liefert das live
+- [x] **`getState()`-Aliasing** (`client.ts:293-295`): liefert das live
       interne Objekt als shallow `Readonly` — Kopie zurückgeben.
 - [ ] **Namenskollisionen** (`eiscp/discover.ts:110/120` vs.
       `dnssd/controller.ts:35/376`): `DiscoveryResult`/`StreamingDiscoveryOptions`

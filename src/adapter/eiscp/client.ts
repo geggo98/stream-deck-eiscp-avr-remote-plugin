@@ -272,11 +272,13 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 		this.commandTimeoutMs = options.commandTimeoutMs ?? 5000;
 		this.logger = options.logger ?? console;
 
-		// Initialize volume config
+		// Initialize volume config. The cap exists so a misconfigured key can
+		// never blast the speakers — enforce cap <= max instead of trusting it.
 		const volumeOptions = options.volume ?? {};
+		const max = volumeOptions.max ?? DEFAULT_VOLUME_CONFIG.max;
 		this.volumeConfig = {
-			max: volumeOptions.max ?? DEFAULT_VOLUME_CONFIG.max,
-			cap: volumeOptions.cap ?? volumeOptions.max ?? DEFAULT_VOLUME_CONFIG.cap,
+			max,
+			cap: Math.min(volumeOptions.cap ?? max, max),
 			steps: volumeOptions.steps ?? DEFAULT_VOLUME_CONFIG.steps,
 		};
 
@@ -298,10 +300,11 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	}
 
 	/**
-	 * Get current receiver state
+	 * Get a snapshot of the current receiver state
 	 */
 	getState(): Readonly<ReceiverState> {
-		return this.state;
+		// Copy, so callers never observe (or cause) later mutations.
+		return { ...this.state };
 	}
 
 	/**
@@ -312,12 +315,13 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	}
 
 	/**
-	 * Update volume configuration
+	 * Update volume configuration (cap is clamped to max)
 	 */
 	updateVolumeConfig(config: Partial<VolumeConfig>): void {
 		if (config.max !== undefined) this.volumeConfig.max = config.max;
 		if (config.cap !== undefined) this.volumeConfig.cap = config.cap;
 		if (config.steps !== undefined) this.volumeConfig.steps = config.steps;
+		this.volumeConfig.cap = Math.min(this.volumeConfig.cap, this.volumeConfig.max);
 	}
 
 	/**
@@ -342,6 +346,13 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	 */
 	isConnected(): boolean {
 		return this.transport.isConnected();
+	}
+
+	/**
+	 * Get the connection target and state
+	 */
+	getConnectionInfo(): { host: string; port: number; state: ConnectionState } {
+		return this.transport.getConnectionInfo();
 	}
 
 	/**
@@ -706,13 +717,13 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	}
 
 	/**
-	 * Convert volume to hex string
+	 * Convert volume to hex string, clamped into [0, cap]
 	 */
 	private volumeToHex(volume: number): string {
-		// Apply cap
-		const capped = Math.min(volume, this.volumeConfig.cap);
-		const hex = Math.round(capped).toString(16).toUpperCase().padStart(2, "0");
-		return hex;
+		// Clamp both ends: without the lower bound, setVolume(-1) would put
+		// a literal "-1" on the wire.
+		const clamped = Math.max(0, Math.min(Math.round(volume), this.volumeConfig.cap));
+		return clamped.toString(16).toUpperCase().padStart(2, "0");
 	}
 
 	// ===== Generic Command Interface =====
