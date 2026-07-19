@@ -387,7 +387,7 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
 
 ### Schritt 14: Transport-Reassembly-Tests (neu: `tests/eiscp-transport.test.ts`)
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 `processReceiveBuffer` (`transport.ts:196-263`) hat keine gezielten Tests —
 nur indirekte Happy-Path-Abdeckung über die Fixture-Replays
@@ -395,11 +395,11 @@ nur indirekte Happy-Path-Abdeckung über die Fixture-Replays
 `tests/eiscp-captured-data.test.ts:193-222`); die Edge-Cases sind ungedeckt,
 und eine Regression dort droppt State-Updates dauerhaft.
 Mock-Server-Pattern aus `tests/eiscp-listen.test.ts` wiederverwenden:
-- [ ] Paket mid-header und mid-body gesplittet; byte-by-byte.
-- [ ] Garbage-Bytes vor gültigem Paket (Resync via `!`-Scan).
-- [ ] Headerless-RAW-Fallback (`!1PWR01\r` ohne eISCP-Header).
-- [ ] Mehrere Pakete in einem `data`-Event.
-- [ ] Assertion auf die exakte Sequenz der emittierten Events.
+- [x] Paket mid-header und mid-body gesplittet; byte-by-byte.
+- [x] Garbage-Bytes vor gültigem Paket (Resync via `!`-Scan).
+- [x] Headerless-RAW-Fallback (`!1PWR01\r` ohne eISCP-Header).
+- [x] Mehrere Pakete in einem `data`-Event.
+- [x] Assertion auf die exakte Sequenz der emittierten Events.
 
 ### Schritt 15: Client-Query-/Timeout-Tests
 

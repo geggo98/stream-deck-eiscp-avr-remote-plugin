@@ -1,14 +1,31 @@
 /**
- * Unit tests for the eISCP transport socket lifecycle.
- *
- * The reassembly logic (processReceiveBuffer) is covered further down via a
- * local mock server; these tests focus on connect/error/disconnect handling.
+ * Unit tests for the eISCP transport: socket lifecycle and receive-buffer
+ * reassembly (split packets, garbage resync, headerless raw ISCP lines).
  */
 
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
-import { createTransport, ConnectionState } from "../src/adapter/eiscp/transport.ts";
+import { createTransport, ConnectionState, type InboundFrame } from "../src/adapter/eiscp/transport.ts";
+import { frameReply, startMockReceiver } from "./helpers/mock-receiver.ts";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wait until the collector holds at least n frames (or time out). */
+async function waitForFrames(frames: InboundFrame[], n: number, timeoutMs = 3000): Promise<void> {
+	const start = Date.now();
+	while (frames.length < n && Date.now() - start < timeoutMs) {
+		await sleep(20);
+	}
+	assert.ok(frames.length >= n, `expected ${n} frames, got ${frames.length}`);
+}
+
+/** Compact projection of a frame for exact-sequence assertions. */
+function project(frame: InboundFrame): string {
+	return frame.kind === "eiscp"
+		? `eiscp:${frame.packet.message.replace(/[\r\n\x1a]+$/, "")}`
+		: `raw:${frame.message.replace(/[\r\n\x1a]+$/, "")}`;
+}
 
 /** Bind a TCP server to an ephemeral port, tracking accepted sockets. */
 async function startServer(): Promise<{ server: Server; port: number; sockets: Socket[] }> {
@@ -72,6 +89,125 @@ describe("EiscpTransport lifecycle", () => {
 
 		await assert.rejects(attempt);
 		assert.equal(transport.getState(), ConnectionState.DISCONNECTED);
+	});
+
+	it("reassembles frames split mid-header and mid-body", async () => {
+		const mock = await startMockReceiver();
+		const transport = createTransport({ host: "127.0.0.1", port: mock.port });
+		transport.on("error", () => {});
+		const frames: InboundFrame[] = [];
+		transport.on("data", (frame) => frames.push(frame));
+		try {
+			await transport.connect();
+			await mock.waitForClient();
+			const full = frameReply("PWR", "01");
+			// Split inside the 16-byte header, then inside the body.
+			mock.broadcastRaw(full.subarray(0, 7));
+			await sleep(30);
+			mock.broadcastRaw(full.subarray(7, 20));
+			await sleep(30);
+			mock.broadcastRaw(full.subarray(20));
+			await waitForFrames(frames, 1);
+			assert.deepEqual(frames.map(project), ["eiscp:!1PWR01"]);
+		} finally {
+			transport.disconnect();
+			await mock.close();
+		}
+	});
+
+	it("reassembles a frame delivered byte by byte", async () => {
+		const mock = await startMockReceiver();
+		const transport = createTransport({ host: "127.0.0.1", port: mock.port });
+		transport.on("error", () => {});
+		const frames: InboundFrame[] = [];
+		transport.on("data", (frame) => frames.push(frame));
+		try {
+			await transport.connect();
+			await mock.waitForClient();
+			const full = frameReply("MVL", "0E");
+			for (const byte of full) {
+				mock.broadcastRaw(Buffer.from([byte]));
+				await sleep(2);
+			}
+			await waitForFrames(frames, 1);
+			assert.deepEqual(frames.map(project), ["eiscp:!1MVL0E"]);
+		} finally {
+			transport.disconnect();
+			await mock.close();
+		}
+	});
+
+	it("emits multiple packets arriving in one data event", async () => {
+		const mock = await startMockReceiver();
+		const transport = createTransport({ host: "127.0.0.1", port: mock.port });
+		transport.on("error", () => {});
+		const frames: InboundFrame[] = [];
+		transport.on("data", (frame) => frames.push(frame));
+		try {
+			await transport.connect();
+			await mock.waitForClient();
+			mock.broadcastRaw(
+				Buffer.concat([frameReply("PWR", "01"), frameReply("MVL", "0E"), frameReply("AMT", "00")]),
+			);
+			await waitForFrames(frames, 3);
+			assert.deepEqual(frames.map(project), ["eiscp:!1PWR01", "eiscp:!1MVL0E", "eiscp:!1AMT00"]);
+		} finally {
+			transport.disconnect();
+			await mock.close();
+		}
+	});
+
+	it("falls back to headerless raw ISCP lines", async () => {
+		const mock = await startMockReceiver();
+		const transport = createTransport({ host: "127.0.0.1", port: mock.port });
+		transport.on("error", () => {});
+		const frames: InboundFrame[] = [];
+		transport.on("data", (frame) => frames.push(frame));
+		try {
+			await transport.connect();
+			await mock.waitForClient();
+			// The parser only runs with >= 16 buffered bytes, so the second
+			// 8-byte line stays queued until more data arrives — that is the
+			// documented reassembly behaviour, asserted here.
+			mock.broadcastRaw(Buffer.from("!1PWR01\r!1MVL0E\r", "ascii"));
+			await waitForFrames(frames, 1);
+			assert.deepEqual(frames.map(project), ["raw:!1PWR01"]);
+
+			// More data flushes the queued line, then the new frame decodes.
+			mock.broadcastRaw(frameReply("AMT", "00"));
+			await waitForFrames(frames, 3);
+			assert.deepEqual(frames.map(project), ["raw:!1PWR01", "raw:!1MVL0E", "eiscp:!1AMT00"]);
+		} finally {
+			transport.disconnect();
+			await mock.close();
+		}
+	});
+
+	it("resyncs on garbage bytes before a raw ISCP line", async () => {
+		const mock = await startMockReceiver();
+		const transport = createTransport({ host: "127.0.0.1", port: mock.port });
+		transport.on("error", () => {});
+		const frames: InboundFrame[] = [];
+		transport.on("data", (frame) => frames.push(frame));
+		try {
+			await transport.connect();
+			await mock.waitForClient();
+			// Garbage prefix, then a valid raw line; the parser scans to '!'.
+			mock.broadcastRaw(Buffer.concat([Buffer.from("GARBAGEBYTES", "ascii"), Buffer.from("!1PWR01\r", "ascii")]));
+			await waitForFrames(frames, 1);
+			assert.deepEqual(frames.map(project), ["raw:!1PWR01"]);
+
+			// Pure garbage (no '!' at all, >= 16 bytes) is dropped silently
+			// and a following clean eISCP frame still decodes.
+			mock.broadcastRaw(Buffer.from("################", "ascii"));
+			await sleep(50);
+			mock.broadcastRaw(frameReply("AMT", "00"));
+			await waitForFrames(frames, 2);
+			assert.deepEqual(frames.map(project).at(-1), "eiscp:!1AMT00");
+		} finally {
+			transport.disconnect();
+			await mock.close();
+		}
 	});
 
 	it("can reconnect after a remote close", async () => {

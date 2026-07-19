@@ -41,6 +41,12 @@ export interface MockReceiver {
 	sockets: Set<Socket>;
 	/** Current state map (mutated by echoed sets). */
 	state: Record<string, string>;
+	/**
+	 * Resolve once at least one client connection is registered server-side.
+	 * The server sees the connection a tick after the client's connect()
+	 * resolves — broadcasting before that sends into the void.
+	 */
+	waitForClient(timeoutMs?: number): Promise<void>;
 	/** Send a framed state broadcast to every connected client. */
 	broadcast(command: string, parameter: string): void;
 	/** Send raw bytes to every connected client (for reassembly tests). */
@@ -151,6 +157,13 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		received,
 		sockets,
 		state,
+		async waitForClient(timeoutMs = 2000) {
+			const start = Date.now();
+			while (sockets.size === 0 && Date.now() - start < timeoutMs) {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			if (sockets.size === 0) throw new Error("no client connected to the mock receiver");
+		},
 		broadcast(command, parameter) {
 			for (const socket of sockets) {
 				if (!socket.destroyed) socket.write(frameReply(command, parameter));
