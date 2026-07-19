@@ -190,7 +190,7 @@ Press-State-Query-Fehler werden nur auf `debug` geloggt
 
 ### Schritt 6: Floating Promises absichern
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** SDK-Aufrufe (`setTitle`/`setState`/`setImage`/`setFeedback`/
 `showOk`/`showAlert`/`sendToPropertyInspector`) geben Promises zurück und
@@ -202,8 +202,8 @@ Betroffen u. a.: `eiscp-action-base.ts` (118-123, 157, 169, …),
 `dedicated/discovery.ts:137`.
 
 **Umsetzung:**
-- [ ] Kleinen Helper `fireAndLog(promise, logger, what)` einführen.
-- [ ] Alle `void`-/un-awaited SDK-Aufrufe systematisch darauf umstellen
+- [x] Kleinen Helper `fireAndLog(promise, logger, what)` einführen.
+- [x] Alle `void`-/un-awaited SDK-Aufrufe systematisch darauf umstellen
       (grep nach `void ev.action`, `void streamDeck`, nackten `setTitle(` etc.).
 
 ### Schritt 7: Kleinere Robustheitsfixes

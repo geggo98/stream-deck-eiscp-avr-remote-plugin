@@ -63,6 +63,19 @@ export function resolveDeviceIp(settings: EiscpActionSettings): string | undefin
 	return getCachedGlobalSettings().deviceIp || undefined;
 }
 
+/**
+ * Catch-and-log for fire-and-forget SDK calls (setTitle, setFeedback, ...)
+ * made from synchronous code. Node 24 runs with unhandled rejections fatal,
+ * so every dropped promise must be caught somewhere.
+ */
+export function fireAndLog(
+	promise: Promise<unknown>,
+	logger: { error(message: string): void },
+	what: string,
+): void {
+	promise.catch((err) => logger.error(`${what} failed: ${err}`));
+}
+
 export function generateColoredBg(color: string): string {
 	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144"><rect width="144" height="144" fill="${color}"/></svg>`;
 	return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;

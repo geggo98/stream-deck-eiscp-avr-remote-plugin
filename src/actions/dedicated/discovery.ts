@@ -12,7 +12,7 @@
 import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
-import { type EiscpActionSettings, resolveDeviceIp } from "../eiscp-base.ts";
+import { type EiscpActionSettings, fireAndLog, resolveDeviceIp } from "../eiscp-base.ts";
 import { nameFor, noteChange, noteFld, recordSli, setSliSweeping, type TrackedCommand } from "./name-store.ts";
 
 const logger = streamDeck.logger.createScope("Discovery");
@@ -134,11 +134,12 @@ export async function handleDiscoverMessage(
 	const host = resolveDeviceIp(settings);
 	// Plugin -> PI messages go through the global UI controller (the currently
 	// visible property inspector, i.e. this action's PI).
-	const send = (m: JsonValue) => void streamDeck.ui.sendToPropertyInspector(m);
+	const send = (m: JsonValue) =>
+		fireAndLog(streamDeck.ui.sendToPropertyInspector(m), log, "sendToPropertyInspector");
 
 	if (!host) {
 		send({ event: "discover", phase: "error", message: "No device IP configured" });
-		if (action.isKey()) action.showAlert();
+		if (action.isKey()) await action.showAlert();
 		return;
 	}
 
@@ -148,11 +149,11 @@ export async function handleDiscoverMessage(
 			send({ event: "discover", phase: "progress", done: p.done, current: p.current }),
 		);
 		send({ event: "discover", phase: "done", count });
-		// showOk/showAlert are Keypad-only; dials report status via the PI messages.
-		if (action.isKey()) action.showOk();
+		// showOk is Keypad-only; dials report status via the PI messages.
+		if (action.isKey()) await action.showOk();
 	} catch (err) {
 		log.error(`discover sweep failed: ${err}`);
 		send({ event: "discover", phase: "error", message: String(err) });
-		if (action.isKey()) action.showAlert();
+		if (action.isKey()) await action.showAlert();
 	}
 }

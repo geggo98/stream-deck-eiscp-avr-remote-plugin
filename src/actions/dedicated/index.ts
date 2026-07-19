@@ -16,6 +16,7 @@ import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
 import {
 	type EiscpActionSettings,
+	fireAndLog,
 	parseTone,
 	resolveDeviceIp,
 	resolveDialPress,
@@ -124,12 +125,17 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		const host = resolveDeviceIp(ev.payload.settings);
 		if (!host) {
 			this.logger.warn("onWillAppear: no device IP configured");
-			action.setTitle(UNCONFIGURED_TITLE);
+			await action.setTitle(UNCONFIGURED_TITLE);
 			return;
 		}
 		const command = this.displayCommand();
 		const mgr = ConnectionManager.getInstance();
-		const refresh = () => action.setTitle(nameFor(host, command, mgr.getCachedValue(host, command)));
+		const refresh = () =>
+			fireAndLog(
+				action.setTitle(nameFor(host, command, mgr.getCachedValue(host, command))),
+				this.logger,
+				"setTitle",
+			);
 
 		// Re-render on a value change, or when a name is learned (FLD arrives).
 		this.trackSub(action.id, mgr.onCommandUpdate(host, command, () => refresh()));
@@ -264,7 +270,7 @@ export class TransportAction extends KeyActionBase<TransportSettings> {
 
 	private setTransportTitle(action: KeyAction<TransportSettings>, settings: TransportSettings): void {
 		const key = settings.transportKey || SPEC_BY_ID["transport"].parameter || "P/P";
-		action.setTitle(TRANSPORT_LABELS[key] ?? key);
+		fireAndLog(action.setTitle(TRANSPORT_LABELS[key] ?? key), this.logger, "setTitle");
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<TransportSettings>): Promise<void> {
@@ -305,11 +311,15 @@ export class VolumeDialAction extends DialActionBase<EiscpActionSettings> {
 	): void {
 		const num = parseInt(rawValue, 16);
 		const percent = Math.round(((Number.isNaN(num) ? 0 : num) / 80) * 100);
-		action.setFeedback({
-			value: Number.isNaN(num) ? rawValue : String(num),
-			title: pressOn ? "MUTED" : "Volume",
-			indicator: { value: Math.min(percent, 100), bar_fill_c: pressOn ? "#F44336" : "#4CAF50" },
-		});
+		fireAndLog(
+			action.setFeedback({
+				value: Number.isNaN(num) ? rawValue : String(num),
+				title: pressOn ? "MUTED" : "Volume",
+				indicator: { value: Math.min(percent, 100), bar_fill_c: pressOn ? "#F44336" : "#4CAF50" },
+			}),
+			this.logger,
+			"setFeedback",
+		);
 	}
 }
 
@@ -359,11 +369,15 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 		pressOn: boolean,
 	): void {
 		const host = resolveDeviceIp(settings);
-		action.setFeedback({
-			title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
-			// bind() never renders without a host; fall back defensively anyway.
-			value: host ? nameFor(host, this.command(), rawValue) : rawValue,
-		});
+		fireAndLog(
+			action.setFeedback({
+				title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
+				// bind() never renders without a host; fall back defensively anyway.
+				value: host ? nameFor(host, this.command(), rawValue) : rawValue,
+			}),
+			this.logger,
+			"setFeedback",
+		);
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, EiscpActionSettings>): Promise<void> {
@@ -426,14 +440,18 @@ abstract class ToneDialAction extends DialActionBase<EiscpActionSettings> {
 		const signed = tone ? tone[this.component] : undefined;
 		const percent = signed === undefined ? 0 : Math.round(((signed + 10) / 20) * 100);
 		const display = signed === undefined ? "—" : signed > 0 ? `+${signed}` : String(signed);
-		action.setFeedback({
-			title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
-			value: display,
-			indicator: {
-				value: Math.max(0, Math.min(percent, 100)),
-				bar_fill_c: pressOn ? "#9E9E9E" : "#4CAF50",
-			},
-		});
+		fireAndLog(
+			action.setFeedback({
+				title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
+				value: display,
+				indicator: {
+					value: Math.max(0, Math.min(percent, 100)),
+					bar_fill_c: pressOn ? "#9E9E9E" : "#4CAF50",
+				},
+			}),
+			this.logger,
+			"setFeedback",
+		);
 	}
 }
 
@@ -483,7 +501,11 @@ export class PresetDialAction extends DialActionBase<EiscpActionSettings> {
 		_pressOn: boolean,
 	): void {
 		const num = parseInt(rawValue, 16);
-		action.setFeedback({ title: "Preset", value: Number.isNaN(num) ? rawValue : `P${num}` });
+		fireAndLog(
+			action.setFeedback({ title: "Preset", value: Number.isNaN(num) ? rawValue : `P${num}` }),
+			this.logger,
+			"setFeedback",
+		);
 	}
 }
 

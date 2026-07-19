@@ -13,7 +13,7 @@
 import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { discoverEiscpDevicesStreaming } from "../adapter/eiscp/discover.ts";
-import { getCachedGlobalSettings, type EiscpActionSettings } from "./eiscp-base.ts";
+import { fireAndLog, getCachedGlobalSettings, type EiscpActionSettings } from "./eiscp-base.ts";
 
 const logger = streamDeck.logger.createScope("PiDevices");
 
@@ -73,10 +73,14 @@ export async function handleDeviceListMessage<T extends EiscpActionSettings>(
 	const payload = ev.payload as { event?: string; isRefresh?: boolean } | null;
 	if (!payload || typeof payload !== "object" || payload.event !== DEVICE_DATASOURCE) return false;
 	const reply = (devices: Device[], discoveryFailed = false) =>
-		void streamDeck.ui.sendToPropertyInspector({
-			event: DEVICE_DATASOURCE,
-			items: buildItems(devices, discoveryFailed),
-		});
+		fireAndLog(
+			streamDeck.ui.sendToPropertyInspector({
+				event: DEVICE_DATASOURCE,
+				items: buildItems(devices, discoveryFailed),
+			}),
+			logger,
+			"sendToPropertyInspector",
+		);
 
 	// Serve a fresh-enough cache unless the user explicitly asked to refresh.
 	if (!payload.isRefresh && cache && Date.now() - cache.at < CACHE_TTL_MS) {

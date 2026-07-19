@@ -9,7 +9,7 @@
 
 import { action, type DialAction } from "@elgato/streamdeck";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
-import { type EiscpActionSettings, resolveParam, formatCommandValue } from "./eiscp-base.ts";
+import { type EiscpActionSettings, fireAndLog, resolveParam, formatCommandValue } from "./eiscp-base.ts";
 import { DialActionBase, type DialConfig } from "./eiscp-action-base.ts";
 
 interface DialIndicatorSettings extends EiscpActionSettings {
@@ -65,17 +65,25 @@ export class EiscpDialIndicatorAction extends DialActionBase<DialIndicatorSettin
 			const max = this.getMaxValue(cfg.command);
 			const percent = Math.round((num / max) * 100);
 			const fillColor = pressOn ? barMutedColor : barColor;
-			action.setFeedback({
-				value: `${num}`,
-				title,
-				indicator: { value: Math.min(percent, 100), bar_fill_c: fillColor },
-			});
+			fireAndLog(
+				action.setFeedback({
+					value: `${num}`,
+					title,
+					indicator: { value: Math.min(percent, 100), bar_fill_c: fillColor },
+				}),
+				this.logger,
+				"setFeedback",
+			);
 		} else {
-			action.setFeedback({
-				value: formatCommandValue(cfg.command, rawValue),
-				title,
-				indicator: { value: 0, enabled: false },
-			});
+			fireAndLog(
+				action.setFeedback({
+					value: formatCommandValue(cfg.command, rawValue),
+					title,
+					indicator: { value: 0, enabled: false },
+				}),
+				this.logger,
+				"setFeedback",
+			);
 		}
 	}
 }
