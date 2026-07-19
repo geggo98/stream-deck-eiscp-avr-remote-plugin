@@ -218,6 +218,15 @@ describe("EiscpTransport lifecycle", () => {
 			await transport.connect();
 			assert.ok(transport.isConnected());
 
+			// The server registers the connection a tick after connect()
+			// resolves; destroying before that destroys nothing and the
+			// close event never comes (this hung the whole suite once).
+			const start = Date.now();
+			while (sockets.length === 0 && Date.now() - start < 2000) {
+				await sleep(5);
+			}
+			assert.ok(sockets.length > 0, "server never saw the connection");
+
 			const closed = new Promise<void>((resolve) => transport.once("close", () => resolve()));
 			for (const socket of sockets) {
 				socket.destroy();
