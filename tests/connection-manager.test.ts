@@ -4,7 +4,22 @@
 
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import { ConnectionManager } from "../src/adapter/eiscp/connection-manager.ts";
+import { createTransport } from "../src/adapter/eiscp/transport.ts";
+
+/** Start a TCP server on an ephemeral port and count incoming connections. */
+async function startCountingServer(): Promise<{ server: Server; port: number; connections: () => number }> {
+	const server = createServer();
+	let count = 0;
+	server.on("connection", (socket: Socket) => {
+		count++;
+		socket.on("error", () => {});
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const port = (server.address() as AddressInfo).port;
+	return { server, port, connections: () => count };
+}
 
 describe("ConnectionManager", () => {
 	describe("singleton", () => {
@@ -49,6 +64,41 @@ describe("ConnectionManager", () => {
 			// (We can't easily trigger a message without a real connection,
 			// but at least verify the unsubscribe doesn't throw)
 			assert.equal(callCount, 0);
+		});
+	});
+
+	describe("connect deduplication", () => {
+		it("parallel ensureConnected calls share a single connection", async () => {
+			const { server, port, connections } = await startCountingServer();
+			const mgr = new ConnectionManager();
+			try {
+				const [a, b] = await Promise.all([
+					mgr.ensureConnected("127.0.0.1", port),
+					mgr.ensureConnected("127.0.0.1", port),
+				]);
+				assert.strictEqual(a, b);
+				assert.ok(a.isConnected());
+				// The server registers the connection a beat after the client does.
+				await new Promise((resolve) => setTimeout(resolve, 50));
+				assert.equal(connections(), 1);
+				a.disconnect();
+			} finally {
+				server.close();
+			}
+		});
+
+		it("parallel transport.connect calls resolve without throwing", async () => {
+			const { server, port } = await startCountingServer();
+			const transport = createTransport({ host: "127.0.0.1", port });
+			// Without a listener a late socket error would crash the test process.
+			transport.on("error", () => {});
+			try {
+				await Promise.all([transport.connect(), transport.connect()]);
+				assert.ok(transport.isConnected());
+			} finally {
+				transport.disconnect();
+				server.close();
+			}
 		});
 	});
 });

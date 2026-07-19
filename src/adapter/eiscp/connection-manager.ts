@@ -26,6 +26,7 @@ export class ConnectionManager {
 	private stateCache: Map<string, Map<string, string>> = new Map();
 	private subscriptions: Subscription[] = [];
 	private messageObservers: MessageObserver[] = [];
+	private connecting: Map<string, Promise<EiscpClient>> = new Map();
 
 	static getInstance(): ConnectionManager {
 		if (!ConnectionManager.instance) {
@@ -35,12 +36,31 @@ export class ConnectionManager {
 	}
 
 	async ensureConnected(host: string, port = 60128): Promise<EiscpClient> {
-		let client = this.clients.get(host);
+		const client = this.clients.get(host);
 		if (client && client.isConnected()) {
 			logger.debug(`Reusing existing connection to ${host}:${port}`);
 			return client;
 		}
 
+		// Actions appearing together on a profile page all fire ensureConnected
+		// for the same host at once; they must share one connect attempt.
+		const inFlight = this.connecting.get(host);
+		if (inFlight) {
+			logger.debug(`Joining in-flight connect to ${host}:${port}`);
+			return inFlight;
+		}
+
+		const attempt = this.connectClient(host, port);
+		this.connecting.set(host, attempt);
+		try {
+			return await attempt;
+		} finally {
+			this.connecting.delete(host);
+		}
+	}
+
+	private async connectClient(host: string, port: number): Promise<EiscpClient> {
+		let client = this.clients.get(host);
 		if (!client) {
 			logger.info(`Creating new client for ${host}:${port}`);
 			client = createClient({

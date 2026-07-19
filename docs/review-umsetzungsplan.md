@@ -19,7 +19,7 @@ Erledigte Punkte hier abhaken.
 
 ### Schritt 1: Connect-Race im ConnectionManager beheben
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** `ensureConnected` (`src/adapter/eiscp/connection-manager.ts:37-79`)
 dedupliziert laufende Verbindungsaufbauten nicht; `EiscpTransport.connect()`
@@ -33,12 +33,12 @@ Gleiches Muster trifft Profilseiten, auf denen mehrere Actions gleichzeitig
 `onWillAppear` für denselben Host feuern.
 
 **Umsetzung:**
-- [ ] In-Flight-Connect-Promise pro Host im `ConnectionManager` memoizen
+- [x] In-Flight-Connect-Promise pro Host im `ConnectionManager` memoizen
       (z. B. `private connecting = new Map<string, Promise<void>>()`); alle
       parallelen `ensureConnected`-Aufrufer awaiten dasselbe Promise.
-- [ ] Alternativ/zusätzlich: `EiscpTransport.connect()` gibt bei Zustand
+- [x] Alternativ/zusätzlich: `EiscpTransport.connect()` gibt bei Zustand
       `CONNECTING` das laufende Promise zurück, statt zu werfen.
-- [ ] Test in `tests/connection-manager.test.ts`: zwei parallele
+- [x] Test in `tests/connection-manager.test.ts`: zwei parallele
       `ensureConnected`-Aufrufe gegen einen Mock-TCP-Server → beide resolven,
       es entsteht genau eine Verbindung.
 

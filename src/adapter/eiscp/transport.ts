@@ -57,6 +57,7 @@ export interface EiscpTransportEvents {
 export class EiscpTransport extends EventEmitter {
 	private socket: Socket | null = null;
 	private state: ConnectionState = ConnectionState.DISCONNECTED;
+	private connectPromise: Promise<void> | null = null;
 	private options: Required<Omit<EiscpTransportOptions, "keepAliveInitialDelay">> & {
 		keepAliveInitialDelay?: number;
 	};
@@ -95,13 +96,15 @@ export class EiscpTransport extends EventEmitter {
 			return;
 		}
 
-		if (this.state === ConnectionState.CONNECTING) {
-			throw new Error("Connection already in progress");
+		// Concurrent callers (e.g. several actions appearing on the same profile
+		// page) share the in-flight attempt instead of failing.
+		if (this.connectPromise) {
+			return this.connectPromise;
 		}
 
 		this.state = ConnectionState.CONNECTING;
 
-		return new Promise((resolve, reject) => {
+		this.connectPromise = new Promise((resolve, reject) => {
 			const connectOpts: TcpNetConnectOpts = {
 				host: this.options.host,
 				port: this.options.port,
@@ -114,6 +117,7 @@ export class EiscpTransport extends EventEmitter {
 				this.socket?.off("connect", onConnect);
 				this.socket?.off("error", onError);
 				this.socket?.off("timeout", onTimeout);
+				this.connectPromise = null;
 			};
 
 			const onConnect = () => {
@@ -151,6 +155,7 @@ export class EiscpTransport extends EventEmitter {
 
 			this.socket.connect(connectOpts);
 		});
+		return this.connectPromise;
 	}
 
 	/**
