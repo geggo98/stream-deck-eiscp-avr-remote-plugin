@@ -122,12 +122,17 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 			const connectOpts: TcpNetConnectOpts = {
 				host: this.options.host,
 				port: this.options.port,
-				timeout: this.options.connectTimeout,
 			};
 
 			// A previous socket may linger after a remote close; replace it cleanly.
 			this.socket?.destroy();
 			this.socket = new Socket();
+
+			// Socket.prototype.connect IGNORES a `timeout` option (only
+			// net.connect() honours it), so the timeout must be armed
+			// explicitly or connects to silent hosts hang for the OS TCP
+			// timeout (~75 s). onConnect disarms it.
+			this.socket.setTimeout(this.options.connectTimeout);
 
 			// Backstop against late socket errors (e.g. the macOS local-network
 			// firewall delivering EHOSTUNREACH after the connect attempt already
@@ -146,6 +151,9 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 			const onConnect = () => {
 				cleanup();
 				this.state = ConnectionState.CONNECTED;
+
+				// The connect timeout must not double as an idle timeout.
+				this.socket?.setTimeout(0);
 
 				// Enable keepalive
 				this.socket?.setKeepAlive(this.options.keepAlive, this.options.keepAliveInitialDelay);

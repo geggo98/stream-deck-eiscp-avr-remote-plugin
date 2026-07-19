@@ -99,15 +99,18 @@ describe("EiscpTransport lifecycle", () => {
 	});
 
 	it("connect timeout rejects, destroys the socket, and leaves a consistent state", async () => {
-		// TEST-NET-3 never answers, so the socket 'timeout' event fires after
-		// connectTimeout (exercising onTimeout). If the local network
-		// fast-fails instead, the same onError path runs — either way the
-		// attempt must reject quickly and clean up.
+		// The transport arms socket.setTimeout(connectTimeout) explicitly
+		// (Socket.prototype.connect ignores a timeout option), so against
+		// never-answering TEST-NET-3 the 'timeout' event fires after 150 ms
+		// and onTimeout runs — deterministic even on networks that would
+		// fast-fail or black-hole the SYN.
 		const transport = createTransport({ host: "203.0.113.1", port: 60128, connectTimeout: 150 });
 		const errors: Error[] = [];
 		transport.on("error", (err: Error) => errors.push(err));
 
-		await assert.rejects(transport.connect(), /timeout|EHOST|ENET|ECONN/i);
+		const started = Date.now();
+		await assert.rejects(transport.connect(), /Connection timeout to 203\.0\.113\.1|EHOST|ENET|ECONN/);
+		assert.ok(Date.now() - started < 3000, "must reject via the armed timeout, not the OS TCP timeout");
 		assert.equal(transport.getState(), ConnectionState.DISCONNECTED);
 		assert.equal(transport.isConnected(), false);
 		assert.equal(
@@ -118,7 +121,7 @@ describe("EiscpTransport lifecycle", () => {
 		assert.ok(errors.length >= 1, "failure should be emitted");
 
 		// A fresh attempt must be possible (no stuck connectPromise).
-		await assert.rejects(transport.connect(), /timeout|EHOST|ENET|ECONN/i);
+		await assert.rejects(transport.connect(), /Connection timeout to 203\.0\.113\.1|EHOST|ENET|ECONN/);
 	});
 
 	it("reassembles frames split mid-header and mid-body", async () => {

@@ -128,11 +128,20 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 
 	override async onWillAppear(ev: WillAppearEvent<EiscpActionSettings>): Promise<void> {
 		if (!ev.action.isKey()) return;
-		const action = ev.action;
+		await this.bindKey(ev.action, ev.payload.settings);
+	}
+
+	// onDidReceiveSettings is inherited from KeyActionBase and calls bindKey,
+	// so a "No IP" title clears once the PI supplies the device IP.
+
+	protected override async bindKey(
+		action: KeyAction<EiscpActionSettings>,
+		settings: EiscpActionSettings,
+	): Promise<void> {
 		this.clearSubs(action.id);
-		const host = resolveDeviceIp(ev.payload.settings);
+		const host = resolveDeviceIp(settings);
 		if (!host) {
-			this.logger.warn("onWillAppear: no device IP configured");
+			this.logger.warn("bindKey: no device IP configured");
 			await action.setTitle(UNCONFIGURED_TITLE);
 			return;
 		}
@@ -153,7 +162,7 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 			await mgr.queryCommand(host, command);
 			refresh();
 		} catch (err) {
-			this.logger.error(`onWillAppear: query ${command} on ${host} failed: ${err}`);
+			this.logger.error(`bindKey: query ${command} on ${host} failed: ${err}`);
 			// Degrade visibly like the other bases: render from the cache if
 			// one exists, otherwise show "?" instead of a stale title.
 			if (mgr.getCachedValue(host, command) !== undefined) {
@@ -296,7 +305,8 @@ export class TransportAction extends KeyActionBase<TransportSettings> {
 		}
 	}
 
-	override onDidReceiveSettings(ev: DidReceiveSettingsEvent<TransportSettings>): void {
+	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TransportSettings>): Promise<void> {
+		await super.onDidReceiveSettings(ev); // clears a stuck "No IP" title
 		if (ev.action.isKey() && resolveDeviceIp(ev.payload.settings)) {
 			this.setTransportTitle(ev.action, ev.payload.settings);
 		}

@@ -132,19 +132,32 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<TSettings>): Promise<void> {
-		const cfg = this.getToggleConfig(ev.payload.settings);
+		if (!ev.action.isKey()) return;
+		await this.bindKey(ev.action, ev.payload.settings);
+	}
+
+	/**
+	 * Settings changes (e.g. the device IP picked in the PI after the key
+	 * showed "No IP") must re-run the appear wiring — the SDK does not
+	 * re-fire onWillAppear, so a degraded title would otherwise stick.
+	 */
+	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TSettings>): Promise<void> {
+		if (!ev.action.isKey()) return;
+		await this.bindKey(ev.action, ev.payload.settings);
+	}
+
+	private async bindKey(action: KeyAction<TSettings>, settings: TSettings): Promise<void> {
+		const cfg = this.getToggleConfig(settings);
 		if (!cfg) {
-			this.logger.warn("onWillAppear: no command configured, skipping");
+			this.logger.warn("bindKey: no command configured, skipping");
 			return;
 		}
-		if (!ev.action.isKey()) return;
-		const action = ev.action;
 		// Stream Deck may re-fire onWillAppear without an intervening
 		// onWillDisappear (profile switch, reconnect); drop stale subs first.
 		this.clearSubs(action.id);
-		const host = resolveDeviceIp(ev.payload.settings);
+		const host = resolveDeviceIp(settings);
 		if (!host) {
-			this.logger.warn("onWillAppear: no device IP configured");
+			this.logger.warn("bindKey: no device IP configured");
 			// Unconditional: title-less toggles (Power/Mute) would otherwise
 			// look fully functional with no IP configured at all.
 			await action.setTitle(UNCONFIGURED_TITLE);
@@ -161,7 +174,7 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			const value = await mgr.queryCommand(host, cfg.command);
 			this.render(action, cfg, value);
 		} catch (err) {
-			this.logger.error(`onWillAppear: query ${cfg.command} on ${host} failed: ${err}`);
+			this.logger.error(`bindKey: query ${cfg.command} on ${host} failed: ${err}`);
 			// Degrade visibly instead of showing a stale/empty key; render()
 			// restores the configured title on the next successful update.
 			await action.setTitle("?");
@@ -218,24 +231,37 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<TSettings>): Promise<void> {
-		const cfg = this.getKeyConfig(ev.payload.settings);
+		if (!ev.action.isKey()) return;
+		await this.bindKey(ev.action, ev.payload.settings);
+	}
+
+	/** See ToggleActionBase.onDidReceiveSettings: clears stuck degraded titles. */
+	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TSettings>): Promise<void> {
+		if (!ev.action.isKey()) return;
+		await this.bindKey(ev.action, ev.payload.settings);
+	}
+
+	protected async bindKey(action: KeyAction<TSettings>, settings: TSettings): Promise<void> {
+		const cfg = this.getKeyConfig(settings);
 		if (!cfg) {
-			this.logger.warn("onWillAppear: no command configured");
-			if (ev.action.isKey()) await ev.action.setTitle("?");
+			this.logger.warn("bindKey: no command configured");
+			await action.setTitle("?");
 			return;
 		}
-		if (!ev.action.isKey()) return;
-		const action = ev.action;
-		this.clearSubs(action.id); // drop stale subs on a repeated onWillAppear
-		const host = resolveDeviceIp(ev.payload.settings);
+		this.clearSubs(action.id); // drop stale subs on a repeated bind
+		const host = resolveDeviceIp(settings);
 		if (!host) {
 			// Even state-less keys (transport, tone steppers) must reveal a
 			// missing IP; they would otherwise look functional until pressed.
-			this.logger.warn("onWillAppear: no device IP configured");
+			this.logger.warn("bindKey: no device IP configured");
 			await action.setTitle(UNCONFIGURED_TITLE);
 			return;
 		}
-		if (!this.showsState) return;
+		if (!this.showsState) {
+			// Clear a possible lingering "No IP" title now that an IP exists.
+			await action.setTitle();
+			return;
+		}
 		const mgr = ConnectionManager.getInstance();
 
 		this.trackSub(
@@ -246,7 +272,7 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			const value = await mgr.queryCommand(host, cfg.command);
 			this.render(action, cfg, value);
 		} catch (err) {
-			this.logger.error(`onWillAppear: query ${cfg.command} failed: ${err}`);
+			this.logger.error(`bindKey: query ${cfg.command} failed: ${err}`);
 			await action.setTitle(cfg.command);
 		}
 	}
