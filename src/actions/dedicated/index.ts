@@ -30,16 +30,22 @@ import {
 	type KeyConfig,
 	type ToggleConfig,
 } from "../eiscp-action-base.ts";
-import { SPEC_BY_ID, uuidFor } from "./catalog.ts";
+import { SPEC_BY_ID, uuidFor, type DedicatedIdOfKind, type ToggleSpec } from "./catalog.ts";
 import { nameFor, type TrackedCommand } from "./name-store.ts";
 import { handleDiscoverMessage } from "./discovery.ts";
 
-function toggleCfg(id: string): ToggleConfig {
-	const s = SPEC_BY_ID[id];
-	return { command: s.command, onValue: s.onValue ?? "01", offValue: s.offValue ?? "00", toggleValue: s.toggleValue };
+/** Learned-name actions (Auto-Discover UI); their commands are tracked by the name store. */
+type LearnedKeyId = "input-next" | "input-prev" | "mode-next" | "mode-prev";
+type LearnedDialId = "input-dial" | "mode-dial";
+
+function toggleCfg(id: DedicatedIdOfKind<"toggle">): ToggleConfig {
+	// Widen to the interface so the optional toggleValue is accessible even on
+	// catalog literals that omit it.
+	const s: ToggleSpec = SPEC_BY_ID[id];
+	return { command: s.command, onValue: s.onValue, offValue: s.offValue, toggleValue: s.toggleValue };
 }
 
-function keyCfg(id: string): KeyConfig {
+function keyCfg(id: DedicatedIdOfKind<"key">): KeyConfig {
 	const s = SPEC_BY_ID[id];
 	return { command: s.command, parameter: s.parameter };
 }
@@ -74,7 +80,7 @@ export class MuteAction extends ToggleActionBase<EiscpActionSettings> {
 
 /** Base for a key whose command/parameter is fixed by a catalog id. */
 abstract class FixedKeyAction extends KeyActionBase<EiscpActionSettings> {
-	protected abstract id: string;
+	protected abstract readonly id: DedicatedIdOfKind<"key">;
 	protected getKeyConfig(): KeyConfig {
 		return keyCfg(this.id);
 	}
@@ -82,7 +88,7 @@ abstract class FixedKeyAction extends KeyActionBase<EiscpActionSettings> {
 
 @action({ UUID: uuidFor("volume-up") })
 export class VolumeUpAction extends FixedKeyAction {
-	protected id = "volume-up";
+	protected readonly id = "volume-up";
 	constructor() {
 		super("VolumeUp");
 		this.showsState = true;
@@ -91,7 +97,7 @@ export class VolumeUpAction extends FixedKeyAction {
 
 @action({ UUID: uuidFor("volume-down") })
 export class VolumeDownAction extends FixedKeyAction {
-	protected id = "volume-down";
+	protected readonly id = "volume-down";
 	constructor() {
 		super("VolumeDown");
 		this.showsState = true;
@@ -108,14 +114,14 @@ export class VolumeDownAction extends FixedKeyAction {
  * render as "Not Available".
  */
 abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
-	protected abstract id: string;
+	protected abstract readonly id: LearnedKeyId;
 
 	protected getKeyConfig(): KeyConfig {
 		return keyCfg(this.id);
 	}
 
 	private displayCommand(): TrackedCommand {
-		return SPEC_BY_ID[this.id].command as TrackedCommand;
+		return SPEC_BY_ID[this.id].command;
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<EiscpActionSettings>): Promise<void> {
@@ -158,7 +164,7 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 
 @action({ UUID: uuidFor("mode-next") })
 export class ModeNextAction extends LearnedNameKeyAction {
-	protected id = "mode-next";
+	protected readonly id = "mode-next";
 	constructor() {
 		super("ModeNext");
 	}
@@ -166,7 +172,7 @@ export class ModeNextAction extends LearnedNameKeyAction {
 
 @action({ UUID: uuidFor("mode-prev") })
 export class ModePrevAction extends LearnedNameKeyAction {
-	protected id = "mode-prev";
+	protected readonly id = "mode-prev";
 	constructor() {
 		super("ModePrev");
 	}
@@ -174,7 +180,7 @@ export class ModePrevAction extends LearnedNameKeyAction {
 
 @action({ UUID: uuidFor("input-next") })
 export class InputNextAction extends LearnedNameKeyAction {
-	protected id = "input-next";
+	protected readonly id = "input-next";
 	constructor() {
 		super("InputNext");
 	}
@@ -182,7 +188,7 @@ export class InputNextAction extends LearnedNameKeyAction {
 
 @action({ UUID: uuidFor("input-prev") })
 export class InputPrevAction extends LearnedNameKeyAction {
-	protected id = "input-prev";
+	protected readonly id = "input-prev";
 	constructor() {
 		super("InputPrev");
 	}
@@ -190,7 +196,7 @@ export class InputPrevAction extends LearnedNameKeyAction {
 
 @action({ UUID: uuidFor("bass-up") })
 export class BassUpAction extends FixedKeyAction {
-	protected id = "bass-up";
+	protected readonly id = "bass-up";
 	constructor() {
 		super("BassUp");
 		this.showsState = false;
@@ -199,7 +205,7 @@ export class BassUpAction extends FixedKeyAction {
 
 @action({ UUID: uuidFor("bass-down") })
 export class BassDownAction extends FixedKeyAction {
-	protected id = "bass-down";
+	protected readonly id = "bass-down";
 	constructor() {
 		super("BassDown");
 		this.showsState = false;
@@ -208,7 +214,7 @@ export class BassDownAction extends FixedKeyAction {
 
 @action({ UUID: uuidFor("treble-up") })
 export class TrebleUpAction extends FixedKeyAction {
-	protected id = "treble-up";
+	protected readonly id = "treble-up";
 	constructor() {
 		super("TrebleUp");
 		this.showsState = false;
@@ -217,7 +223,7 @@ export class TrebleUpAction extends FixedKeyAction {
 
 @action({ UUID: uuidFor("treble-down") })
 export class TrebleDownAction extends FixedKeyAction {
-	protected id = "treble-down";
+	protected readonly id = "treble-down";
 	constructor() {
 		super("TrebleDown");
 		this.showsState = false;
@@ -226,7 +232,7 @@ export class TrebleDownAction extends FixedKeyAction {
 
 @action({ UUID: uuidFor("preset-next") })
 export class PresetNextAction extends FixedKeyAction {
-	protected id = "preset-next";
+	protected readonly id = "preset-next";
 	constructor() {
 		super("PresetNext");
 		this.showsState = true;
@@ -235,7 +241,7 @@ export class PresetNextAction extends FixedKeyAction {
 
 @action({ UUID: uuidFor("preset-prev") })
 export class PresetPrevAction extends FixedKeyAction {
-	protected id = "preset-prev";
+	protected readonly id = "preset-prev";
 	constructor() {
 		super("PresetPrev");
 		this.showsState = true;
@@ -269,7 +275,7 @@ export class TransportAction extends KeyActionBase<TransportSettings> {
 	}
 
 	private setTransportTitle(action: KeyAction<TransportSettings>, settings: TransportSettings): void {
-		const key = settings.transportKey || SPEC_BY_ID["transport"].parameter || "P/P";
+		const key = settings.transportKey || SPEC_BY_ID["transport"].parameter;
 		fireAndLog(action.setTitle(TRANSPORT_LABELS[key] ?? key), this.logger, "setTitle");
 	}
 
@@ -295,8 +301,8 @@ export class VolumeDialAction extends DialActionBase<EiscpActionSettings> {
 		const s = SPEC_BY_ID["volume-dial"];
 		return {
 			command: s.command,
-			upParam: s.upParam ?? "UP",
-			downParam: s.downParam ?? "DOWN",
+			upParam: s.upParam,
+			downParam: s.downParam,
 			pressCommand: s.pressCommand,
 			pressParam: s.pressParam,
 		};
@@ -332,7 +338,7 @@ export class VolumeDialAction extends DialActionBase<EiscpActionSettings> {
  * also redraw on FLD via extraRerenderCommands.
  */
 abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings> {
-	protected abstract id: string;
+	protected abstract readonly id: LearnedDialId;
 	/** Short title for the touch strip (the catalog name can be too long). */
 	protected abstract stripTitle: string;
 
@@ -340,7 +346,7 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 		return SPEC_BY_ID[this.id];
 	}
 	private command(): TrackedCommand {
-		return this.spec().command as TrackedCommand;
+		return this.spec().command;
 	}
 
 	protected getDialConfig(settings: EiscpActionSettings): DialConfig {
@@ -348,8 +354,8 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 		const press = resolveDialPress(settings.pressAction);
 		return {
 			command: s.command,
-			upParam: s.upParam ?? "UP",
-			downParam: s.downParam ?? "DOWN",
+			upParam: s.upParam,
+			downParam: s.downParam,
 			pressCommand: press.command,
 			pressParam: press.param,
 			pressOnValue: press.on,
@@ -388,7 +394,7 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 
 @action({ UUID: uuidFor("input-dial") })
 export class InputDialAction extends LearnedNameDialAction {
-	protected id = "input-dial";
+	protected readonly id = "input-dial";
 	protected stripTitle = "Input";
 	constructor() {
 		super("InputDial");
@@ -397,7 +403,7 @@ export class InputDialAction extends LearnedNameDialAction {
 
 @action({ UUID: uuidFor("mode-dial") })
 export class ModeDialAction extends LearnedNameDialAction {
-	protected id = "mode-dial";
+	protected readonly id = "mode-dial";
 	protected stripTitle = "Mode";
 	constructor() {
 		super("ModeDial");
@@ -410,7 +416,7 @@ export class ModeDialAction extends LearnedNameDialAction {
  * configurable press action (default Mute); while it reads ON the bar greys out.
  */
 abstract class ToneDialAction extends DialActionBase<EiscpActionSettings> {
-	protected abstract id: string;
+	protected abstract readonly id: DedicatedIdOfKind<"dial">;
 	/** Which half of "B{xx}T{yy}" this dial reflects. */
 	protected abstract component: "bass" | "treble";
 	protected abstract stripTitle: string;
@@ -420,8 +426,8 @@ abstract class ToneDialAction extends DialActionBase<EiscpActionSettings> {
 		const press = resolveDialPress(settings.pressAction);
 		return {
 			command: s.command,
-			upParam: s.upParam ?? "UP",
-			downParam: s.downParam ?? "DOWN",
+			upParam: s.upParam,
+			downParam: s.downParam,
 			pressCommand: press.command,
 			pressParam: press.param,
 			pressOnValue: press.on,
@@ -457,7 +463,7 @@ abstract class ToneDialAction extends DialActionBase<EiscpActionSettings> {
 
 @action({ UUID: uuidFor("bass-dial") })
 export class BassDialAction extends ToneDialAction {
-	protected id = "bass-dial";
+	protected readonly id = "bass-dial";
 	protected component = "bass" as const;
 	protected stripTitle = "Bass";
 	constructor() {
@@ -467,7 +473,7 @@ export class BassDialAction extends ToneDialAction {
 
 @action({ UUID: uuidFor("treble-dial") })
 export class TrebleDialAction extends ToneDialAction {
-	protected id = "treble-dial";
+	protected readonly id = "treble-dial";
 	protected component = "treble" as const;
 	protected stripTitle = "Treble";
 	constructor() {

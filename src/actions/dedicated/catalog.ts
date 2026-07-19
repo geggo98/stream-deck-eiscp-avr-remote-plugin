@@ -11,9 +11,9 @@
  */
 
 export const PLUGIN_ID = "de.schwetschke.sd.eiscp-avr-remote";
-export const uuidFor = (id: string): string => `${PLUGIN_ID}.${id}`;
+export const uuidFor = (id: DedicatedId | GenericId): string => `${PLUGIN_ID}.${id}`;
 
-export type DedicatedKind = "toggle" | "key" | "dial";
+export type DedicatedKind = DedicatedSpec["kind"];
 
 export interface IconSpec {
 	/** Lucide icon name for the default / off state. */
@@ -24,33 +24,59 @@ export interface IconSpec {
 	onPrimary?: string;
 }
 
-export interface DedicatedSpec {
+interface DedicatedSpecBase {
+	/** Manifest UUID suffix AND icon folder name. */
 	id: string;
 	name: string;
 	tooltip: string;
-	kind: DedicatedKind;
-	controller: "Keypad" | "Encoder";
 	command: string;
-	/** key actions: the parameter to send. */
-	parameter?: string;
-	/** key actions: whether to subscribe and show live state as the title. */
-	showsState?: boolean;
-	/** toggle actions. */
-	onValue?: string;
-	offValue?: string;
-	toggleValue?: string;
-	/** dial actions. */
-	upParam?: string;
-	downParam?: string;
-	pressCommand?: string;
-	pressParam?: string;
-	encoderLayout?: string;
 	/** number of manifest States (2 for on/off toggles, else 1). */
 	states: 1 | 2;
 	icon: IconSpec;
 }
 
-export const DEDICATED_SPECS: DedicatedSpec[] = [
+/** Two-state on/off key (Power, Mute). */
+export interface ToggleSpec extends DedicatedSpecBase {
+	kind: "toggle";
+	controller: "Keypad";
+	onValue: string;
+	offValue: string;
+	/** Hardware toggle parameter (TG), preferred over a soft flip when present. */
+	toggleValue?: string;
+	states: 2;
+}
+
+/** One-shot key (cycler, stepper, transport). */
+export interface KeySpec extends DedicatedSpecBase {
+	kind: "key";
+	controller: "Keypad";
+	parameter: string;
+	/** Whether to subscribe and show live state as the title. */
+	showsState: boolean;
+	states: 1;
+}
+
+/** Rotary encoder (Stream Deck Plus). */
+export interface DialSpec extends DedicatedSpecBase {
+	kind: "dial";
+	controller: "Encoder";
+	upParam: string;
+	downParam: string;
+	/** Default press behavior (several dials let the PI override it). */
+	pressCommand: string;
+	pressParam: string;
+	encoderLayout: string;
+	states: 1;
+}
+
+/**
+ * Discriminated on `kind`, so kind-specific fields are required — a toggle
+ * without onValue or a dial without upParam no longer compiles, and consumers
+ * need no bogus fallbacks.
+ */
+export type DedicatedSpec = ToggleSpec | KeySpec | DialSpec;
+
+export const DEDICATED_SPECS = [
 	{
 		id: "power", name: "Power", tooltip: "Toggle the receiver on/standby (PWR).",
 		kind: "toggle", controller: "Keypad", command: "PWR", onValue: "01", offValue: "00",
@@ -166,11 +192,20 @@ export const DEDICATED_SPECS: DedicatedSpec[] = [
 		pressCommand: "SLI", pressParam: "26", encoderLayout: "$A1",
 		states: 1, icon: { primary: "radio" },
 	},
-];
+] as const satisfies readonly DedicatedSpec[];
 
-export const SPEC_BY_ID: Record<string, DedicatedSpec> = Object.fromEntries(
-	DEDICATED_SPECS.map((s) => [s.id, s]),
-);
+/** Union of all catalog ids — a typo in `protected id = "..."` fails to compile. */
+export type DedicatedId = (typeof DEDICATED_SPECS)[number]["id"];
+
+/** Ids of a specific kind, e.g. `DedicatedIdOfKind<"dial">`. */
+export type DedicatedIdOfKind<K extends DedicatedSpec["kind"]> = Extract<
+	(typeof DEDICATED_SPECS)[number],
+	{ kind: K }
+>["id"];
+
+export const SPEC_BY_ID = Object.fromEntries(DEDICATED_SPECS.map((s) => [s.id, s])) as {
+	[K in DedicatedId]: Extract<(typeof DEDICATED_SPECS)[number], { id: K }>;
+};
 
 /** The 4 generic, fully-configurable actions (the "advanced" fallback). */
 export interface GenericSpec {
@@ -185,7 +220,7 @@ export interface GenericSpec {
 	iconName: string;
 }
 
-export const GENERIC_SPECS: GenericSpec[] = [
+export const GENERIC_SPECS = [
 	{
 		id: "eiscp-button", name: "eISCP Button",
 		tooltip: "Send any eISCP command. Use for one-shot commands, volume up/down, etc.",
@@ -206,7 +241,10 @@ export const GENERIC_SPECS: GenericSpec[] = [
 		tooltip: "Encoder with progress bar for numeric eISCP values. Use for volume, center level, etc.",
 		controller: "Encoder", states: 1, encoderLayout: "$B1", propertyInspector: "ui/eiscp-dial-indicator.html", iconName: "gauge",
 	},
-];
+] as const satisfies readonly GenericSpec[];
+
+/** Union of the generic action ids. */
+export type GenericId = (typeof GENERIC_SPECS)[number]["id"];
 
 /** Property Inspector path for a dedicated action. */
 export function dedicatedPropertyInspector(spec: DedicatedSpec): string {

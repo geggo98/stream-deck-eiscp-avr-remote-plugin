@@ -288,9 +288,9 @@ Callback-Annotationen (z. B. `connection-manager.ts:56`) ungeprüft.
    verletzt (`header: "RAW"`, `headerSize: 0`).
 
 **Umsetzung:**
-- [ ] `type DedicatedSpec = ToggleSpec | KeySpec | DialSpec` (diskriminiert
+- [x] `type DedicatedSpec = ToggleSpec | KeySpec | DialSpec` (diskriminiert
       über `kind`, kind-spezifische Felder required); Fallbacks entfernen.
-- [ ] Literal-Id-Union ableiten:
+- [x] Literal-Id-Union ableiten:
       `const DEDICATED_SPECS = [...] as const satisfies readonly DedicatedSpec[]`,
       `type DedicatedId = ...["id"]`; `SPEC_BY_ID: Record<DedicatedId, ...>` —
       Tippfehler in `protected id = "..."` werden Compile-Fehler.
