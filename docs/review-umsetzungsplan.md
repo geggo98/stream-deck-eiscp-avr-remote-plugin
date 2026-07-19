@@ -302,7 +302,7 @@ Callback-Annotationen (z. B. `connection-manager.ts:56`) ungeprüft.
 
 ### Schritt 11: Eine Quelle der Wahrheit für Wire-Values
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** `enums.ts:34-102` (`InputSource`, `ListeningMode`) und das
 generierte `command-registry.ts:75-220` modellieren dieselben SLI/LMD-Werte
@@ -318,14 +318,17 @@ Tone(Front), nicht Tuner; `SPL` = Speaker Layout; `MOT` = Music Optimizer;
 `AEQ` = AccuEQ; `NDS` = Status-Report) — ungenutzt, also billig zu fixen.
 
 **Umsetzung:**
-- [ ] `InputSource`/`ListeningMode` in die generierte Registry konsolidieren
-      (oder Enums aus der Registry generieren) — eine Quelle.
-- [ ] `NetworkService`-Doppel-Keys auflösen (NLS-Zeilennummern sind keine
+- [x] `InputSource`/`ListeningMode` in die generierte Registry konsolidieren
+      (oder Enums aus der Registry generieren) — eine Quelle. → Alle
+      Label-Pfade (Client-Decode, State, query*) nutzen `getValueName`
+      (Registry); die Enums bleiben reine Sende-API (Key→hex) und sind
+      entsprechend dokumentiert. Live gegen die VSX-S520D verifiziert.
+- [x] `NetworkService`-Doppel-Keys auflösen (NLS-Zeilennummern sind keine
       Service-IDs; Service-Auswahl ist `NSV`) oder den Typ entfernen, solange
-      ungenutzt.
-- [ ] NLS-Typ korrigieren (`"A" | "C" | "U"` mit echter Bedeutung), die
+      ungenutzt. → Entfernt (war ungenutzt).
+- [x] NLS-Typ korrigieren (`"A" | "C" | "U"` mit echter Bedeutung), die
       `as "C" | "U"`-Assertion durch echte Prüfung ersetzen.
-- [ ] Falsch gelabelte `IscpCommand`-Konstanten umbenennen oder löschen.
+- [x] Falsch gelabelte `IscpCommand`-Konstanten umbenennen oder löschen.
 
 ### Schritt 12: API-Hygiene (ConnectionManager, Snapshots, Volume-Grenzen)
 

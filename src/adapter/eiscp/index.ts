@@ -27,7 +27,6 @@ export {
 	MuteState,
 	InputSource,
 	ListeningMode,
-	NetworkService,
 	UnitType,
 	Terminator,
 	PacketHeader,
@@ -38,8 +37,6 @@ export {
 	type ListeningModeKey,
 	type ListeningModeValue,
 	type IscpCommand,
-	type NetworkServiceKey,
-	type NetworkServiceValue,
 	type UnitType as UnitTypeType,
 	type Terminator as TerminatorType,
 } from "./enums.ts";
@@ -49,7 +46,6 @@ export {
 	getInputByDecimal,
 	getListeningModeByHex,
 	getListeningModeByDecimal,
-	getNetworkServiceByKey,
 } from "./enums.ts";
 
 // Protocol layer (encoding/decoding)

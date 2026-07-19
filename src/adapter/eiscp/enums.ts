@@ -27,9 +27,12 @@ export const MuteState = {
 export type MuteState = (typeof MuteState)[keyof typeof MuteState];
 
 /**
- * Input source enum with decimal and hex values
+ * Input source send API: friendly key -> SLI wire value (hex).
  *
- * Maps to ISCP SLI command values. Hex value is used in commands.
+ * Display labels come from the generated command registry
+ * (`getValueName("SLI", ...)`) — the single source of truth for labelling —
+ * or from names learned from the receiver itself. The `name` here only
+ * serves the CLI's list output.
  */
 export const InputSource = {
 	DVR_VCR: { decimal: 0, hex: "00", name: "DVR/VCR" },
@@ -79,9 +82,10 @@ export function getInputByDecimal(decimal: number): InputSourceValue | undefined
 }
 
 /**
- * Listening mode (Sound mode) enum
+ * Listening mode send API: friendly key -> LMD wire value (hex).
  *
- * Maps to ISCP LMD command values.
+ * Display labels come from the generated command registry
+ * (`getValueName("LMD", ...)`); see the InputSource note above.
  */
 export const ListeningMode = {
 	STEREO: { decimal: 0, hex: "00", name: "Stereo" },
@@ -129,53 +133,22 @@ export const IscpCommand = {
 	MUTE: "AMT",
 	INPUT: "SLI",
 	LISTENING_MODE: "LMD",
-	AUDIO_EQ: "AEQ",
+	ACCU_EQ: "AEQ",
 	DIMMER: "DIM",
-	MOTOR: "MOT",
+	MUSIC_OPTIMIZER: "MOT",
 	RAS: "RAS",
-	TUNER_FREQ: "TFR",
+	TONE_FRONT: "TFR",
 	PCT: "PCT",
 	ITV: "ITV",
-	NET_DEV_SWITCH: "NDS",
+	NET_STATUS_REPORT: "NDS",
 	FIELD_DISPLAY: "FLD",
 	UPDATE: "UPD",
-	SOUND_PROGRAM: "SPL",
+	SPEAKER_LAYOUT: "SPL",
 	NET_LIST_TRACK: "NLT",
-	NET_LIST_SERVICE: "NLS",
+	NET_LIST_INFO: "NLS",
 } as const;
 
 export type IscpCommand = (typeof IscpCommand)[keyof typeof IscpCommand];
-
-/**
- * Network music service enum
- *
- * Maps to ISCP NLS (Network List Service) command values.
- * These are the streaming services available on the receiver.
- */
-export const NetworkService = {
-	TUNE_IN: { key: "0", name: "TuneIn" },
-	PANDORA: { key: "1", name: "Pandora" },
-	SPOTIFY: { key: "2", name: "Spotify" },
-	DEEZER: { key: "3", name: "Deezer" },
-	TIDAL: { key: "4", name: "Tidal" },
-	AMAZON_MUSIC: { key: "5", name: "Amazon Music" },
-	FLARE_CONNECT: { key: "6", name: "FlareConnect" },
-	CHROMECAST: { key: "7", name: "Chromecast built-in" },
-	DTS_PLAY_FI: { key: "8", name: "DTS Play-Fi" },
-	AIRPLAY: { key: "9", name: "AirPlay" },
-	MUSIC_SERVER: { key: "0", name: "Music Server" },
-	PLAY_QUEUE: { key: "1", name: "Play Queue" },
-} as const;
-
-export type NetworkServiceKey = keyof typeof NetworkService;
-export type NetworkServiceValue = (typeof NetworkService)[NetworkServiceKey];
-
-/**
- * Get network service by key
- */
-export function getNetworkServiceByKey(key: string): NetworkServiceValue | undefined {
-	return Object.values(NetworkService).find((s) => s.key === key);
-}
 
 /**
  * Unit type values

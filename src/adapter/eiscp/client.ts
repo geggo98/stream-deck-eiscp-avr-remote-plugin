@@ -30,15 +30,12 @@ import {
 	MuteState,
 	InputSource,
 	ListeningMode,
-	NetworkService,
-	getInputByHex,
 	getInputByDecimal,
-	getListeningModeByHex,
 	getListeningModeByDecimal,
-	getNetworkServiceByKey,
 	type InputSourceKey,
 	type ListeningModeKey,
 } from "./enums.ts";
+import { getValueName } from "./command-registry.ts";
 
 /**
  * Receiver state
@@ -158,14 +155,16 @@ export interface DisplayFieldMessage {
 }
 
 /**
- * Network list service message (NLS)
- * Contains information about network music services
+ * Network list info message (NLS)
+ * One line of the receiver's network list UI (services, folders, tracks).
  */
 export interface NetworkServiceMessage {
 	type: "networkService";
 	command: "NLS";
 	parameter: string;
-	subCommand: "C" | "U"; // C=Category, U=Service
+	/** Info type of the list line: A=ASCII, C=Cursor, U=Unicode. */
+	subCommand?: "A" | "C" | "U";
+	/** List line content; `key` is the LINE number within the page, not a service id. */
 	service?: {
 		name: string;
 		key: string;
@@ -458,19 +457,15 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 				break;
 
 			case IscpCommand.INPUT:
-				const input = getInputByHex(message.parameter);
-				if (input) {
-					changes.input = input.name;
-					changes.rawInput = message.parameter;
-				}
+				// The registry is the single label source; unknown values stay raw.
+				changes.input = getValueName(IscpCommand.INPUT, message.parameter) ?? message.parameter;
+				changes.rawInput = message.parameter;
 				break;
 
 			case IscpCommand.LISTENING_MODE:
-				const mode = getListeningModeByHex(message.parameter);
-				if (mode) {
-					changes.listeningMode = mode.name;
-					changes.rawListeningMode = message.parameter;
-				}
+				changes.listeningMode =
+					getValueName(IscpCommand.LISTENING_MODE, message.parameter) ?? message.parameter;
+				changes.rawListeningMode = message.parameter;
 				break;
 
 			default:
@@ -523,35 +518,31 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 			}
 
 			case IscpCommand.INPUT: {
-				const input = getInputByHex(message.parameter);
+				const name = getValueName(IscpCommand.INPUT, message.parameter);
+				const decimal = Number.parseInt(message.parameter, 16);
 				return {
 					type: "input",
 					command: "SLI",
 					parameter: message.parameter,
-					input: input
-						? {
-								name: input.name,
-								hex: input.hex,
-								decimal: input.decimal,
-							}
-						: undefined,
+					input:
+						name !== undefined && !Number.isNaN(decimal)
+							? { name, hex: message.parameter, decimal }
+							: undefined,
 					raw,
 				};
 			}
 
 			case IscpCommand.LISTENING_MODE: {
-				const mode = getListeningModeByHex(message.parameter);
+				const name = getValueName(IscpCommand.LISTENING_MODE, message.parameter);
+				const decimal = Number.parseInt(message.parameter, 16);
 				return {
 					type: "listeningMode",
 					command: "LMD",
 					parameter: message.parameter,
-					mode: mode
-						? {
-								name: mode.name,
-								hex: mode.hex,
-								decimal: mode.decimal,
-							}
-						: undefined,
+					mode:
+						name !== undefined && !Number.isNaN(decimal)
+							? { name, hex: message.parameter, decimal }
+							: undefined,
 					raw,
 				};
 			}
@@ -585,12 +576,15 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 			}
 
 			case "NLS": {
-				// Parse NLS parameter: e.g., "C0P" or "U0-TuneIn"
-				const subCommand = message.parameter.charAt(0) as "C" | "U";
+				// Parse an NLS list line, e.g. "C0P" or "U0-TuneIn". The first
+				// character is the info type (A=ASCII, C=Cursor, U=Unicode) —
+				// the digit after it is the LINE number, not a service id.
+				const first = message.parameter.charAt(0);
+				const subCommand = first === "A" || first === "C" || first === "U" ? first : undefined;
 				let service: { name: string; key: string } | undefined;
 
-				if (subCommand === "U" && message.parameter.includes("-")) {
-					const match = message.parameter.match(/U(\d+)-(.+)/);
+				if ((subCommand === "U" || subCommand === "A") && message.parameter.includes("-")) {
+					const match = message.parameter.match(/[UA](\d+)-(.+)/);
 					if (match) {
 						service = {
 							key: match[1],
@@ -864,8 +858,7 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	 */
 	async queryInput(): Promise<string> {
 		const response = await this.sendCommand(IscpCommand.INPUT, "QSTN");
-		const input = getInputByHex(response);
-		return input?.name ?? response;
+		return getValueName(IscpCommand.INPUT, response) ?? response;
 	}
 
 	/**
@@ -904,8 +897,7 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	 */
 	async queryListeningMode(): Promise<string> {
 		const response = await this.sendCommand(IscpCommand.LISTENING_MODE, "QSTN");
-		const mode = getListeningModeByHex(response);
-		return mode?.name ?? response;
+		return getValueName(IscpCommand.LISTENING_MODE, response) ?? response;
 	}
 
 	/**
