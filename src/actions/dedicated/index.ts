@@ -14,7 +14,13 @@ import {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
-import { type EiscpActionSettings, parseTone, resolveDeviceIp, resolveDialPress } from "../eiscp-base.ts";
+import {
+	type EiscpActionSettings,
+	parseTone,
+	resolveDeviceIp,
+	resolveDialPress,
+	UNCONFIGURED_TITLE,
+} from "../eiscp-base.ts";
 import {
 	DialActionBase,
 	KeyActionBase,
@@ -116,6 +122,11 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		const action = ev.action;
 		this.clearSubs(action.id);
 		const host = resolveDeviceIp(ev.payload.settings);
+		if (!host) {
+			this.logger.warn("onWillAppear: no device IP configured");
+			action.setTitle(UNCONFIGURED_TITLE);
+			return;
+		}
 		const command = this.displayCommand();
 		const mgr = ConnectionManager.getInstance();
 		const refresh = () => action.setTitle(nameFor(host, command, mgr.getCachedValue(host, command)));
@@ -350,7 +361,8 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 		const host = resolveDeviceIp(settings);
 		action.setFeedback({
 			title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
-			value: nameFor(host, this.command(), rawValue),
+			// bind() never renders without a host; fall back defensively anyway.
+			value: host ? nameFor(host, this.command(), rawValue) : rawValue,
 		});
 	}
 

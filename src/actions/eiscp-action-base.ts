@@ -34,6 +34,7 @@ import {
 	formatCommandValue,
 	generateColoredBg,
 	getToggleColor,
+	UNCONFIGURED_TITLE,
 } from "./eiscp-base.ts";
 
 /** Behavior for a two-state on/off command (power, mute, ...). */
@@ -136,6 +137,11 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 		// onWillDisappear (profile switch, reconnect); drop stale subs first.
 		this.clearSubs(action.id);
 		const host = resolveDeviceIp(ev.payload.settings);
+		if (!host) {
+			this.logger.warn("onWillAppear: no device IP configured");
+			if (this.showTitle) action.setTitle(UNCONFIGURED_TITLE);
+			return;
+		}
 		const mgr = ConnectionManager.getInstance();
 
 		this.trackSub(
@@ -160,6 +166,11 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			return;
 		}
 		const host = resolveDeviceIp(ev.payload.settings);
+		if (!host) {
+			this.logger.warn("onKeyDown: no device IP configured");
+			ev.action.showAlert();
+			return;
+		}
 		const mgr = ConnectionManager.getInstance();
 		try {
 			if (cfg.toggleValue) {
@@ -209,6 +220,11 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		const action = ev.action;
 		this.clearSubs(action.id); // drop stale subs on a repeated onWillAppear
 		const host = resolveDeviceIp(ev.payload.settings);
+		if (!host) {
+			this.logger.warn("onWillAppear: no device IP configured");
+			action.setTitle(UNCONFIGURED_TITLE);
+			return;
+		}
 		const mgr = ConnectionManager.getInstance();
 
 		this.trackSub(
@@ -232,6 +248,11 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			return;
 		}
 		const host = resolveDeviceIp(ev.payload.settings);
+		if (!host) {
+			this.logger.warn("onKeyDown: no device IP configured");
+			ev.action.showAlert();
+			return;
+		}
 		const mgr = ConnectionManager.getInstance();
 		try {
 			await mgr.sendCommand(host, cfg.command, cfg.parameter);
@@ -299,11 +320,16 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			return;
 		}
 		const host = resolveDeviceIp(settings);
-		const mgr = ConnectionManager.getInstance();
 		const actionId = action.id;
 		// Drop stale subs/press-state on a repeated bind (no disappear).
 		this.clearSubs(actionId);
 		this.pressState.delete(actionId);
+		if (!host) {
+			this.logger.warn("bind: no device IP configured");
+			action.setFeedback({ title: UNCONFIGURED_TITLE, value: "" });
+			return;
+		}
+		const mgr = ConnectionManager.getInstance();
 
 		const rerender = (raw: string) =>
 			this.updateFeedback(action, cfg, raw, settings, this.isPressOn(actionId, cfg));
@@ -356,6 +382,10 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		const cfg = this.getDialConfig(ev.payload.settings);
 		if (!cfg) return;
 		const host = resolveDeviceIp(ev.payload.settings);
+		if (!host) {
+			ev.action.showAlert();
+			return;
+		}
 		const mgr = ConnectionManager.getInstance();
 		const ticks = ev.payload.ticks;
 		const param = ticks > 0 ? cfg.upParam : cfg.downParam;
@@ -381,6 +411,10 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			return;
 		}
 		const host = resolveDeviceIp(ev.payload.settings);
+		if (!host) {
+			ev.action.showAlert();
+			return;
+		}
 		const mgr = ConnectionManager.getInstance();
 		try {
 			await mgr.sendCommand(host, pressCommand, pressParam);

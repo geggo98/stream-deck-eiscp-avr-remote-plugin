@@ -136,6 +136,12 @@ export async function handleDiscoverMessage(
 	// visible property inspector, i.e. this action's PI).
 	const send = (m: JsonValue) => void streamDeck.ui.sendToPropertyInspector(m);
 
+	if (!host) {
+		send({ event: "discover", phase: "error", message: "No device IP configured" });
+		if (action.isKey()) action.showAlert();
+		return;
+	}
+
 	send({ event: "discover", phase: "start", command });
 	try {
 		const { count } = await runSweep(host, command, (p) =>

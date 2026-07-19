@@ -13,7 +13,7 @@
 import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { discoverEiscpDevicesStreaming } from "../adapter/eiscp/discover.ts";
-import { DEFAULT_DEVICE_IP, type EiscpActionSettings } from "./eiscp-base.ts";
+import { getCachedGlobalSettings, type EiscpActionSettings } from "./eiscp-base.ts";
 
 const logger = streamDeck.logger.createScope("PiDevices");
 
@@ -38,16 +38,23 @@ function buildItems(devices: Device[], discoveryFailed = false): JsonValue {
 		seen.add(d.host);
 		children.push({ label: d.model ? `${d.model} (${d.host})` : d.host, value: d.host });
 	}
-	// Always offer the known default so the dropdown works even if discovery is
-	// blocked (e.g. the macOS local-network firewall) or finds nothing.
-	if (!seen.has(DEFAULT_DEVICE_IP)) {
-		children.push({ label: `Receiver (${DEFAULT_DEVICE_IP})`, value: DEFAULT_DEVICE_IP });
+	const discoveredCount = children.length;
+	// Offer the plugin-wide configured IP (if any) so the dropdown still works
+	// when discovery is blocked (e.g. the macOS local-network firewall).
+	const configured = getCachedGlobalSettings().deviceIp;
+	if (configured && !seen.has(configured)) {
+		children.push({ label: `Configured (${configured})`, value: configured });
+	}
+	if (children.length === 0) {
+		// Keep the group visible (it carries the failure label) but make the
+		// placeholder harmless: selecting it leaves the action unconfigured.
+		children.push({ label: "(none found)", value: "", disabled: true });
 	}
 	// Name the failure instead of pretending the fallback was configured on
 	// purpose — a blocked broadcast otherwise looks like "no devices in LAN".
 	const groupLabel = discoveryFailed
 		? "Discovery failed — check Local Network permission"
-		: children.length > 1
+		: discoveredCount > 0
 			? "Discovered"
 			: "Pre-configured";
 	return [

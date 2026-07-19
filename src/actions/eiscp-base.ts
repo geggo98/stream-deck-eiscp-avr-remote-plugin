@@ -44,17 +44,23 @@ export function resolveParam(value?: string, customValue?: string, fallback?: st
 	return value;
 }
 
-/** Fallback receiver IP when nothing is configured (the developer's test unit). */
-export const DEFAULT_DEVICE_IP = "10.2.0.32";
+/** Title/feedback shown while no receiver IP is configured. */
+export const UNCONFIGURED_TITLE = "No IP";
 
-export function resolveDeviceIp(settings: EiscpActionSettings): string {
+/**
+ * Resolve the receiver IP for an action: per-action setting, then the
+ * plugin-wide global setting. Returns undefined when nothing is configured —
+ * deliberately no hardcoded fallback, so an unconfigured action never sends
+ * commands to somebody else's LAN. Callers must degrade visibly instead.
+ */
+export function resolveDeviceIp(settings: EiscpActionSettings): string | undefined {
 	if (settings.deviceIp && settings.deviceIp !== "custom") {
 		return settings.deviceIp;
 	}
 	if (settings.customIp) {
 		return settings.customIp;
 	}
-	return getCachedGlobalSettings().deviceIp || DEFAULT_DEVICE_IP;
+	return getCachedGlobalSettings().deviceIp || undefined;
 }
 
 export function generateColoredBg(color: string): string {

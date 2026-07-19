@@ -151,7 +151,7 @@ blockierter Firewall → Dropdown zeigt den Fehlerhinweis statt nur Default-IP.
 
 ### Schritt 5: Send-Ehrlichkeit — kein `showOk` für nie zugestellte Befehle
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** `send()` resolved, sobald `socket.write()` gequeued ist
 (`src/adapter/eiscp/client.ts:612-614`, `src/adapter/eiscp/transport.ts:271-277`,
@@ -573,9 +573,13 @@ Verifiziert falsch (gegen Code, Node-Runtime, `dns-sd`-Usage bzw.
       Absichtlicher VSX-S520D-Workaround oder Versehen? Gegen den echten
       Receiver testen (`npm run eiscp -- state`), dann entweder Kommentar mit
       Begründung oder zweiten Write entfernen.
-- [ ] **Hardcodierte Default-IP `10.2.0.32`** (`eiscp-base.ts:48-58`): jeder
+- [x] **Hardcodierte Default-IP `10.2.0.32`** (`eiscp-base.ts:48-58`): jeder
       Nutzer ohne Settings sendet an die Entwickler-LAN-IP. Für die
-      Veröffentlichung: „nicht konfiguriert" als eigener Zustand?
+      Veröffentlichung: „nicht konfiguriert" als eigener Zustand? →
+      **Umgesetzt:** `resolveDeviceIp` liefert `undefined` ohne Konfiguration;
+      Actions zeigen „No IP"/Alert und senden nichts. Das PI-Dropdown bietet
+      die global konfigurierte IP (falls vorhanden) statt der Entwickler-IP.
+      Die Dev-CLI (`scripts/eiscp-cli.ts`) behält ihren eigenen Default.
 - [ ] **Client-Pool räumt nie auf** (`connection-manager.ts:25, 65-67`):
       getrennte Clients + Stale-Cache bleiben für immer im Pool. Bewusst so
       lassen (bounded durch Host-Anzahl) oder Eviction einbauen?
