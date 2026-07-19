@@ -1,7 +1,58 @@
 {
-  "capturedAt": null,
-  "host": null,
+  "capturedAt": "2026-07-19T10:01:21.327Z",
+  "host": "10.2.0.32",
   "port": 60128,
-  "note": "Placeholder. Run 'npm run capture:responses' with EISCP_HOST set to capture real device responses.",
-  "responses": []
+  "note": "Captured via QSTN queries only (read-only, no state changes)",
+  "responses": [
+    {
+      "command": "PWR",
+      "response": "00",
+      "timestamp": "2026-07-19T10:01:10.746Z"
+    },
+    {
+      "command": "MVL",
+      "response": "0E",
+      "timestamp": "2026-07-19T10:01:10.819Z"
+    },
+    {
+      "command": "AMT",
+      "response": "00",
+      "timestamp": "2026-07-19T10:01:10.949Z"
+    },
+    {
+      "command": "SLI",
+      "response": "10",
+      "timestamp": "2026-07-19T10:01:11.022Z"
+    },
+    {
+      "command": "LMD",
+      "response": "82",
+      "timestamp": "2026-07-19T10:01:11.102Z"
+    },
+    {
+      "command": "DIM",
+      "response": "00",
+      "timestamp": "2026-07-19T10:01:11.174Z"
+    },
+    {
+      "command": "SPA",
+      "response": "ERROR: Command SPA QSTN to 10.2.0.32:60128 timed out after 5000 ms",
+      "timestamp": "2026-07-19T10:01:16.176Z"
+    },
+    {
+      "command": "SPB",
+      "response": "ERROR: Command SPB QSTN to 10.2.0.32:60128 timed out after 5000 ms",
+      "timestamp": "2026-07-19T10:01:21.178Z"
+    },
+    {
+      "command": "IFA",
+      "response": "ANALOG,,,,DTS Neural:X,2.1 ch,,Off,0 ms,Normal,",
+      "timestamp": "2026-07-19T10:01:21.247Z"
+    },
+    {
+      "command": "IFV",
+      "response": "No Video,Unknown,,24bit,,Unknown,,24bit,,",
+      "timestamp": "2026-07-19T10:01:21.327Z"
+    }
+  ]
 }
