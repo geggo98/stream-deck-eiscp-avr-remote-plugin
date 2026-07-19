@@ -23,8 +23,11 @@
 
 import dgram from "node:dgram";
 import { networkInterfaces } from "node:os";
+import { scopedLogger } from "../logging.ts";
 import { encodePacket, decodePacket, parseIscpMessage, stripTerminators } from "./protocol.ts";
 import type { EncodedPacket, EiscpPacket, IscpMessage } from "./protocol.ts";
+
+const logger = scopedLogger("EiscpDiscovery");
 
 /**
  * Default eISCP port for receivers
@@ -105,6 +108,20 @@ export interface DiscoveryOptions {
 }
 
 /**
+ * A socket-level failure during discovery. A firewall block (EPERM,
+ * EHOSTUNREACH) looks exactly like "no devices in the LAN" unless these are
+ * surfaced — the macOS local-network permission being the prime suspect.
+ */
+export interface DiscoveryError {
+	/** Local interface address the failing socket was bound to (or tried to bind to) */
+	interfaceAddress: string;
+	/** Error message */
+	message: string;
+	/** Node error code (e.g. "EPERM", "EHOSTUNREACH"), if available */
+	code?: string;
+}
+
+/**
  * Streaming discovery options with callbacks
  */
 export interface StreamingDiscoveryOptions extends DiscoveryOptions {
@@ -112,6 +129,8 @@ export interface StreamingDiscoveryOptions extends DiscoveryOptions {
 	onDevice?: (device: DiscoveredReceiver) => void;
 	/** Callback for raw capture data (if capture: true) */
 	onCapture?: (capture: DiscoveryCapture) => void;
+	/** Callback when a socket error occurs (bind, send, or async socket error) */
+	onError?: (error: DiscoveryError) => void;
 }
 
 /**
@@ -122,6 +141,8 @@ export interface DiscoveryResult {
 	devices: DiscoveredReceiver[];
 	/** Captured data (if capture: true) */
 	captures: DiscoveryCapture[];
+	/** Socket errors encountered; non-empty + no devices ⇒ discovery was likely blocked */
+	errors: DiscoveryError[];
 }
 
 /**
@@ -324,11 +345,24 @@ export async function discoverEiscpDevicesStreaming(
 		capture = false,
 		onDevice,
 		onCapture,
+		onError,
 	} = options;
 
 	const devices = new Map<string, DiscoveredReceiver>();
 	const captures: DiscoveryCapture[] = [];
+	const errors: DiscoveryError[] = [];
 	const sockets: dgram.Socket[] = [];
+
+	const recordError = (interfaceAddress: string, err: Error) => {
+		const error: DiscoveryError = {
+			interfaceAddress,
+			message: err.message,
+			code: (err as NodeJS.ErrnoException).code,
+		};
+		errors.push(error);
+		logger.warn(`discovery socket error on ${interfaceAddress}: ${err.message}`);
+		onError?.(error);
+	};
 
 	try {
 		// Get interfaces for broadcast
@@ -344,51 +378,69 @@ export async function discoverEiscpDevicesStreaming(
 			packet: createEcnQueryPacket(unitType),
 		}));
 
-		// Create a socket for each interface
+		// Create a socket for each interface. One failing interface must not
+		// abort discovery on the remaining ones.
 		for (const iface of interfaces) {
 			const socket = dgram.createSocket("udp4");
+			let bound = false;
 
-			// Promise to track when socket is ready
-			await new Promise<void>((resolve, reject) => {
-				socket.on("error", (err) => {
-					reject(err);
-				});
-
-				socket.on("message", (msg: Buffer, rinfo: { address: string; port: number }) => {
-					const receiver = parseDiscoveryResponse(msg, rinfo.address, rinfo.port);
-
-					if (receiver) {
-						// Use identifier as key to avoid duplicates
-						const key = `${receiver.identifier}-${receiver.host}`;
-
-						if (!devices.has(key)) {
-							devices.set(key, receiver);
-							onDevice?.(receiver);
+			try {
+				await new Promise<void>((resolve, reject) => {
+					socket.on("error", (err) => {
+						if (!bound) {
+							reject(err);
+							return;
 						}
+						// After bind the promise is settled; without this the
+						// error would vanish into a no-op reject.
+						recordError(iface.address, err);
+					});
 
-						// Capture raw data if requested
-						if (capture) {
-							const captureData: DiscoveryCapture = {
-								timestamp: new Date().toISOString(),
-								interfaceAddress: iface.address,
-								broadcastAddress: iface.broadcast || "N/A",
-								sentPacket: discoveryPackets[0]!.packet.bytes.toString("hex"),
-								receivedBytes: msg.toString("hex"),
-								receiver,
-							};
-							captures.push(captureData);
-							onCapture?.(captureData);
+					socket.on("message", (msg: Buffer, rinfo: { address: string; port: number }) => {
+						const receiver = parseDiscoveryResponse(msg, rinfo.address, rinfo.port);
+
+						if (receiver) {
+							// Use identifier as key to avoid duplicates
+							const key = `${receiver.identifier}-${receiver.host}`;
+
+							if (!devices.has(key)) {
+								devices.set(key, receiver);
+								onDevice?.(receiver);
+							}
+
+							// Capture raw data if requested
+							if (capture) {
+								const captureData: DiscoveryCapture = {
+									timestamp: new Date().toISOString(),
+									interfaceAddress: iface.address,
+									broadcastAddress: iface.broadcast || "N/A",
+									sentPacket: discoveryPackets[0]!.packet.bytes.toString("hex"),
+									receivedBytes: msg.toString("hex"),
+									receiver,
+								};
+								captures.push(captureData);
+								onCapture?.(captureData);
+							}
 						}
-					}
-				});
+					});
 
-				// Bind to specific interface if provided
-				const bindAddr = bindAddress || iface.address;
-				socket.bind({ port: 0, address: bindAddr }, () => {
-					socket.setBroadcast(true);
-					resolve();
+					// Bind to specific interface if provided
+					const bindAddr = bindAddress || iface.address;
+					socket.bind({ port: 0, address: bindAddr }, () => {
+						socket.setBroadcast(true);
+						bound = true;
+						resolve();
+					});
 				});
-			});
+			} catch (err) {
+				recordError(iface.address, err instanceof Error ? err : new Error(String(err)));
+				try {
+					socket.close();
+				} catch {
+					// Ignore close errors
+				}
+				continue;
+			}
 
 			sockets.push(socket);
 
@@ -397,7 +449,13 @@ export async function discoverEiscpDevicesStreaming(
 
 			if (broadcastAddr) {
 				for (const { packet } of discoveryPackets) {
-					socket.send(packet.bytes as Uint8Array<ArrayBufferLike>, EISCP_PORT, broadcastAddr);
+					socket.send(packet.bytes as Uint8Array<ArrayBufferLike>, EISCP_PORT, broadcastAddr, (err) => {
+						// A firewall block (EPERM) surfaces here, not as an
+						// exception — without this callback it is silent.
+						if (err) {
+							recordError(iface.address, err);
+						}
+					});
 				}
 			}
 		}
@@ -410,6 +468,7 @@ export async function discoverEiscpDevicesStreaming(
 		return {
 			devices: Array.from(devices.values()),
 			captures,
+			errors,
 		};
 	} finally {
 		// Close all sockets

@@ -127,10 +127,10 @@ Verbindungsfehler (`catch` → `return null`), und der Aufrufer
 eISCP connection" (`unified-controller.ts:501`, Reporting 504-519).
 
 **Umsetzung:**
-- [ ] `discover.ts`: nach dem Bind Socket-Fehler an Logger/`onError`-Callback
+- [x] `discover.ts`: nach dem Bind Socket-Fehler an Logger/`onError`-Callback
       routen; `socket.send(...)` einen Error-Callback geben; Fehler in einem
       `DiscoveryResult.errors`-Array sammeln.
-- [ ] `src/actions/pi-devices.ts:69-77`: wenn der Catch-/Fallback-Pfad feuert,
+- [x] `src/actions/pi-devices.ts:69-77`: wenn der Catch-/Fallback-Pfad feuert,
       Gruppen-Label ehrlich benennen (z. B. „Discovery fehlgeschlagen —
       Local-Network-Berechtigung prüfen") statt „Pre-configured".
 - [ ] `dnssd/caller.ts`: `child.on("error")` nicht als Erfolg resolven
