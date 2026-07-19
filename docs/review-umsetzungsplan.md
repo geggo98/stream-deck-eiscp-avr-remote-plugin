@@ -69,7 +69,7 @@ einen evtl. vorhandenen alten Socket, ohne ihn zu destroyen.
 
 ### Schritt 3: Fehler-Robustheit im Event-Pfad (Listener-Guards + Dispatch)
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem (drei Stellen):**
 1. `src/adapter/eiscp/client.ts:366` re-emittiert Transport-Errors ungeschützt
@@ -87,21 +87,21 @@ einen evtl. vorhandenen alten Socket, ohne ihn zu destroyen.
    geschützt — gleiches Muster übernehmen.)
 
 **Umsetzung:**
-- [ ] `setupTransportHandlers` im Client: `listenerCount`-Guard wie in
+- [x] `setupTransportHandlers` im Client: `listenerCount`-Guard wie in
       `refreshState` (dort gibt es nur den Guard — ohne Listener wird der
       Fehler still verworfen). Zusätzlich einen Logger-Fallback neu
       einführen: `client.ts` hat keinen Logger-Import und läuft auch
       außerhalb der Stream-Deck-Runtime (z. B. Scripts), also `console`
       oder injizierter Logger statt `streamDeck.logger`.
-- [ ] `checkEiscpAtIp`: Error-Listener für die gesamte Client-Lebensdauer
+- [x] `checkEiscpAtIp`: Error-Listener für die gesamte Client-Lebensdauer
       registrieren; Abräumen im `finally` nach `disconnect()`.
-- [ ] `unified-controller.ts:444-449`: `.catch` mit Log an die
+- [x] `unified-controller.ts:444-449`: `.catch` mit Log an die
       `checkPromise.then(...)`-Kette hängen (Schutz gegen künftige Rejections).
-- [ ] Subscription-Loop: jeden `sub.callback(parameter)` in `try/catch`
+- [x] Subscription-Loop: jeden `sub.callback(parameter)` in `try/catch`
       wrappen; im Log Host+Command nennen (mehr trägt `Subscription`,
       `connection-manager.ts:15-19`, nicht — für echten Action-Kontext
       müsste `onCommandUpdate` um eine actionId erweitert werden).
-- [ ] Test: werfender Subscriber → nachfolgende Subscriber erhalten die
+- [x] Test: werfender Subscriber → nachfolgende Subscriber erhalten die
       Nachricht trotzdem (siehe auch Schritt 16).
 
 ---

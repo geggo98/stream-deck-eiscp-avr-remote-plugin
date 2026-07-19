@@ -441,12 +441,18 @@ export async function discoverAllDevicesStreaming(
 			const checkPromise = checkDeviceViaEiscp(numericDeviceId);
 			pendingChecks.set(numericDeviceId, checkPromise);
 
-			checkPromise.then((result) => {
-				if (result) {
-					connectedDevices.push(result);
-					options.onConnect?.(result);
-				}
-			});
+			checkPromise
+				.then((result) => {
+					if (result) {
+						connectedDevices.push(result);
+						options.onConnect?.(result);
+					}
+				})
+				.catch((err: unknown) => {
+					// checkDeviceViaEiscp reports failures itself and resolves null;
+					// this guards future refactors from creating an unhandled rejection.
+					console.error(`eISCP check for device ${numericDeviceId} rejected unexpectedly: ${err}`);
+				});
 		}
 	}
 
@@ -532,75 +538,66 @@ export async function discoverAllDevicesStreaming(
 			return null;
 		}
 
-		try {
-			const client = createClient({
-				host: ip,
-				port: EISCP_PORT,
-				autoQuery: false,
-			});
+		const client = createClient({
+			host: ip,
+			port: EISCP_PORT,
+			autoQuery: false,
+		});
 
-			// Wrap connection attempt in a promise that handles error events
+		// Keep an error listener attached for the client's entire lifetime.
+		// A transport error during refreshState (plausible for port-60128
+		// devices that are not receivers) would otherwise crash the process:
+		// connect() delivers its failure via the promise, so this listener
+		// only has to swallow the duplicate/late event notifications.
+		const onClientError = () => {};
+		client.on("error", onClientError);
+
+		try {
 			const connectPromise = new Promise<void>((resolve, reject) => {
 				const timeout = setTimeout(() => {
-					client.off("error", onError);
 					client.disconnect();
 					reject(new Error("Connection timeout"));
 				}, 5000);
 
-				const onError = (err: Error) => {
-					clearTimeout(timeout);
-					client.off("error", onError);
-					client.disconnect();
-					reject(err);
-				};
-
-				client.once("error", onError);
-
 				client.connect()
 					.then(() => {
 						clearTimeout(timeout);
-						client.off("error", onError);
 						resolve();
 					})
 					.catch((err: unknown) => {
 						clearTimeout(timeout);
-						client.off("error", onError);
 						client.disconnect();
 						reject(err);
 					});
 			});
 
-			try {
-				await connectPromise;
-				await client.refreshState();
-				const state = client.getState();
+			await connectPromise;
+			await client.refreshState();
+			const state = client.getState();
 
-				// Emit eiscp-connected update
-				emitUpdate({
-					deviceId: numericDeviceId,
-					type: "eiscp-connected",
-					changes: {
-						source: Array.from(tracked.sources)[0],
-					},
-					currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
-				});
+			// Emit eiscp-connected update
+			emitUpdate({
+				deviceId: numericDeviceId,
+				type: "eiscp-connected",
+				changes: {
+					source: Array.from(tracked.sources)[0],
+				},
+				currentState: { ...tracked, sources: new Set(tracked.sources), originalIds: new Set(tracked.originalIds) },
+			});
 
-				return {
-					deviceId: numericDeviceId.toString(),
-					source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
-					connectedIp: ip,
-					deviceInfo: state,
-					metadata: tracked.metadata,
-				};
-			} catch (error) {
-				// Connection failed, return null
-				return null;
-			} finally {
-				client.disconnect();
-			}
-		} catch {
-			// Exception, return null
+			return {
+				deviceId: numericDeviceId.toString(),
+				source: Array.from(tracked.sources)[0] ?? "eiscp-scan",
+				connectedIp: ip,
+				deviceInfo: state,
+				metadata: tracked.metadata,
+			};
+		} catch (error) {
+			// Connection failed, return null
 			return null;
+		} finally {
+			client.disconnect();
+			client.off("error", onClientError);
 		}
 	}
 

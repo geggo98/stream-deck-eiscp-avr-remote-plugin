@@ -221,6 +221,18 @@ export interface EiscpClientEvents {
 }
 
 /**
+ * Minimal logger interface so the client works outside the Stream Deck
+ * runtime (scripts, tests). Defaults to `console`; the plugin injects a
+ * scoped `streamDeck.logger`.
+ */
+export interface EiscpLogger {
+	debug(message: string): void;
+	info(message: string): void;
+	warn(message: string): void;
+	error(message: string): void;
+}
+
+/**
  * eISCP Client options
  */
 export interface EiscpClientOptions extends EiscpTransportOptions {
@@ -228,6 +240,7 @@ export interface EiscpClientOptions extends EiscpTransportOptions {
 	autoQuery?: boolean; // Automatically query state on connect
 	debugLog?: boolean; // Log all packets
 	commandTimeoutMs?: number; // Timeout for command responses
+	logger?: EiscpLogger; // Fallback reporting when no "error" listener is attached
 }
 
 /**
@@ -250,6 +263,7 @@ export class EiscpClient extends EventEmitter {
 	private autoQuery: boolean;
 	private debugLog: boolean;
 	private commandTimeoutMs: number;
+	private logger: EiscpLogger;
 	private state: ReceiverState;
 	private pendingQueries: Map<string, Array<(value: string) => void>> = new Map();
 
@@ -261,6 +275,7 @@ export class EiscpClient extends EventEmitter {
 		this.autoQuery = options.autoQuery ?? true;
 		this.debugLog = options.debugLog ?? false;
 		this.commandTimeoutMs = options.commandTimeoutMs ?? 5000;
+		this.logger = options.logger ?? console;
 
 		// Initialize volume config
 		const volumeOptions = options.volume ?? {};
@@ -349,10 +364,21 @@ export class EiscpClient extends EventEmitter {
 		for (const result of results) {
 			if (result.status === "rejected") {
 				const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
-				if (this.listenerCount("error") > 0) {
-					this.emit("error", err);
-				}
+				this.emitError(err, "state refresh failed");
 			}
+		}
+	}
+
+	/**
+	 * Emit an error if anyone listens; otherwise log it. Emitting "error" on
+	 * an EventEmitter without listeners would crash the process.
+	 */
+	private emitError(err: Error, context: string): void {
+		if (this.listenerCount("error") > 0) {
+			this.emit("error", err);
+		} else {
+			const { host, port } = this.transport.getConnectionInfo();
+			this.logger.warn(`eISCP client ${host}:${port}: ${context}: ${err.message}`);
 		}
 	}
 
@@ -363,7 +389,7 @@ export class EiscpClient extends EventEmitter {
 		this.transport.on("data", (packet) => this.handlePacket(packet));
 		this.transport.on("connect", () => this.emit("connected"));
 		this.transport.on("close", () => this.emit("disconnected"));
-		this.transport.on("error", (err) => this.emit("error", err));
+		this.transport.on("error", (err) => this.emitError(err, "transport error"));
 	}
 
 	/**
@@ -378,7 +404,7 @@ export class EiscpClient extends EventEmitter {
 			const message = parseIscpMessage(packet.message);
 			this.handleIscpMessage(message);
 		} catch (err) {
-			this.emit("error", err instanceof Error ? err : new Error(String(err)));
+			this.emitError(err instanceof Error ? err : new Error(String(err)), "failed to parse packet");
 		}
 	}
 

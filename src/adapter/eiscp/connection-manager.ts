@@ -68,6 +68,7 @@ export class ConnectionManager {
 				port,
 				autoQuery: false,
 				debugLog: false,
+				logger,
 			});
 			this.clients.set(host, client);
 			this.stateCache.set(host, new Map());
@@ -146,10 +147,15 @@ export class ConnectionManager {
 			hostCache.set(command, parameter);
 		}
 
-		// Notify subscribers
+		// Notify subscribers; a throwing callback (e.g. a render error in an
+		// action) must not stop delivery to the remaining subscribers.
 		for (const sub of this.subscriptions) {
 			if (sub.host === host && sub.command === command) {
-				sub.callback(parameter);
+				try {
+					sub.callback(parameter);
+				} catch (err) {
+					logger.error(`subscriber for ${host}/${command} threw: ${err}`);
+				}
 			}
 		}
 

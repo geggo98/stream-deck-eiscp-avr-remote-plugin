@@ -67,6 +67,27 @@ describe("ConnectionManager", () => {
 		});
 	});
 
+	describe("subscriber dispatch", () => {
+		it("a throwing subscriber does not block later subscribers", () => {
+			const mgr = new ConnectionManager();
+			const received: string[] = [];
+			mgr.onCommandUpdate("throwing-host", "PWR", () => {
+				throw new Error("render failed");
+			});
+			mgr.onCommandUpdate("throwing-host", "PWR", (value) => received.push(value));
+
+			// handleMessage is private; drive it directly instead of via a
+			// network round-trip (the end-to-end path is covered elsewhere).
+			(
+				mgr as unknown as {
+					handleMessage(host: string, msg: { command: string; parameter: string }): void;
+				}
+			).handleMessage("throwing-host", { command: "PWR", parameter: "01" });
+
+			assert.deepEqual(received, ["01"]);
+		});
+	});
+
 	describe("connect deduplication", () => {
 		it("parallel ensureConnected calls share a single connection", async () => {
 			const { server, port, connections } = await startCountingServer();
