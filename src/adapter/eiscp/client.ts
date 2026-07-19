@@ -210,15 +210,16 @@ export type DecodedMessage =
 	| UnknownMessage;
 
 /**
- * Client events
+ * Client events (tuple map bound to the EventEmitter, so event names and
+ * payloads are compile-checked at every on/emit site).
  */
 export interface EiscpClientEvents {
-	connected: () => void;
-	disconnected: () => void;
-	stateChanged: (state: Partial<ReceiverState>) => void;
-	error: (error: Error) => void;
-	rawPacket: (direction: "sent" | "received", packet: EncodedPacket | EiscpPacket) => void;
-	message: (message: DecodedMessage) => void;
+	connected: [];
+	disconnected: [];
+	stateChanged: [state: Partial<ReceiverState>];
+	error: [error: Error];
+	rawPacket: [direction: "sent" | "received", packet: EncodedPacket | EiscpPacket];
+	message: [message: DecodedMessage];
 }
 
 /**
@@ -252,7 +253,7 @@ interface PendingQuery {
  *
  * High-level API for controlling Onkyo/Pioneer receivers.
  */
-export class EiscpClient extends EventEmitter {
+export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	private transport: EiscpTransport;
 	private volumeConfig: Required<VolumeConfig>;
 	private autoQuery: boolean;

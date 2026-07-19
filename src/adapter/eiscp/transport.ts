@@ -42,14 +42,15 @@ export interface EiscpTransportOptions {
 }
 
 /**
- * Events emitted by EiscpTransport
+ * Events emitted by EiscpTransport (tuple map bound to the EventEmitter, so
+ * event names and payloads are compile-checked at every on/emit site).
  */
 export interface EiscpTransportEvents {
-	connect: () => void;
-	close: (hadError: boolean) => void;
-	error: (error: Error) => void;
-	data: (packet: EiscpPacket) => void;
-	packet: (raw: Buffer) => void;
+	connect: [];
+	close: [hadError: boolean];
+	error: [error: Error];
+	data: [packet: EiscpPacket];
+	packet: [raw: Buffer];
 }
 
 /**
@@ -57,7 +58,7 @@ export interface EiscpTransportEvents {
  *
  * Manages TCP connection to the receiver and handles raw packet transmission.
  */
-export class EiscpTransport extends EventEmitter {
+export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 	private socket: Socket | null = null;
 	private state: ConnectionState = ConnectionState.DISCONNECTED;
 	private connectPromise: Promise<void> | null = null;

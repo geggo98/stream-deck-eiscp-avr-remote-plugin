@@ -256,7 +256,7 @@ Settings aller 25+ Action-Klassen — ist `any`; Tippfehler wie
 
 ### Schritt 9: Event-Maps an die Emitter binden
 
-- [ ] umgesetzt
+- [x] umgesetzt
 
 **Problem:** `EiscpClientEvents` (`client.ts:214-221`) und
 `EiscpTransportEvents` (`transport.ts:44-50`) sind deklariert, aber nie an die
@@ -264,7 +264,7 @@ Emitter gebunden — alle `.on`/`.emit` sind stringly-typed, die manuellen
 Callback-Annotationen (z. B. `connection-manager.ts:56`) ungeprüft.
 
 **Umsetzung:**
-- [ ] Node ≥ 19 / 24 unterstützt generische Emitter (reines
+- [x] Node ≥ 19 / 24 unterstützt generische Emitter (reines
       @types/node-Typfeature, keine Runtime-Beteiligung):
       `class EiscpClient extends EventEmitter<{ message: [DecodedMessage]; ... }>`,
       analog für `EiscpTransport`. Die bestehenden Callback-förmigen
