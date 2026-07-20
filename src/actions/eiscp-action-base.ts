@@ -27,6 +27,7 @@ import {
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
+import { BindCoordinator, REBIND_DEBOUNCE_MS } from "./bind-coordinator.ts";
 import { handleDeviceListMessage } from "./pi-devices.ts";
 import {
 	type EiscpActionSettings,
@@ -69,16 +70,12 @@ export interface DialConfig {
 	pressLabel?: string;
 }
 
-/** Debounce for settings-triggered re-binds (the PI's Custom IP textfield
- * flushes partial values every ~200 ms while typing). */
-const REBIND_DEBOUNCE_MS = 400;
-
 /** Common plumbing: scoped logger + per-action subscription bookkeeping. */
 abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends SingletonAction<TSettings> {
 	protected readonly logger: ReturnType<typeof streamDeck.logger.createScope>;
 	private readonly subs = new Map<string, (() => void)[]>();
-	private readonly bindGenerations = new Map<string, number>();
-	private readonly rebindTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	/** Per-action bind generations + re-bind debounce (SDK-free, unit-tested). */
+	private readonly binds = new BindCoordinator(REBIND_DEBOUNCE_MS);
 
 	// Explicit scope string (class names are mangled by terser in release builds).
 	constructor(scope: string) {
@@ -105,13 +102,11 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 * bind's title/state with results from the old configuration.
 	 */
 	protected nextBindGeneration(actionId: string): number {
-		const gen = (this.bindGenerations.get(actionId) ?? 0) + 1;
-		this.bindGenerations.set(actionId, gen);
-		return gen;
+		return this.binds.nextGeneration(actionId);
 	}
 
 	protected isCurrentBind(actionId: string, generation: number): boolean {
-		return this.bindGenerations.get(actionId) === generation;
+		return this.binds.isCurrent(actionId, generation);
 	}
 
 	/**
@@ -121,25 +116,13 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 * debounce window binds.
 	 */
 	protected scheduleRebind(actionId: string, run: () => Promise<void>): void {
-		const previous = this.rebindTimers.get(actionId);
-		if (previous) clearTimeout(previous);
-		const timer = setTimeout(() => {
-			this.rebindTimers.delete(actionId);
-			run().catch((err) => this.logger.error(`re-bind failed: ${err}`));
-		}, REBIND_DEBOUNCE_MS);
-		timer.unref?.();
-		this.rebindTimers.set(actionId, timer);
+		this.binds.scheduleRebind(actionId, run, (err) => this.logger.error(`re-bind failed: ${err}`));
 	}
 
 	override async onWillDisappear(ev: WillDisappearEvent<TSettings>): Promise<void> {
 		this.clearSubs(ev.action.id);
 		// Invalidate pending binds and cancel a queued re-bind.
-		this.nextBindGeneration(ev.action.id);
-		const timer = this.rebindTimers.get(ev.action.id);
-		if (timer) {
-			clearTimeout(timer);
-			this.rebindTimers.delete(ev.action.id);
-		}
+		this.binds.invalidate(ev.action.id);
 	}
 
 	/**
