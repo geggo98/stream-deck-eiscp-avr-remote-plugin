@@ -109,7 +109,7 @@
 			'  <button id="discoverConfirm">Discover</button>&nbsp;' +
 			'  <button id="discoverCancel">Cancel</button>' +
 			"</div>" +
-			'<div id="discoverStatus" style="display:none; margin:8px 4px; font-size:12px; opacity:.75;"></div>';
+			'<div id="discoverStatus" style="display:none; margin:6px 4px; font-size:12px; color:#c8c8c8;"></div>';
 
 		const btn = c.querySelector("#discoverBtn");
 		const warn = c.querySelector("#discoverWarn");
