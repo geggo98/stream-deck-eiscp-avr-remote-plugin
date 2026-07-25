@@ -1,0 +1,173 @@
+{
+  "comment": [
+    "Regression corpus for the fuzzers. Every input that revealed a bug is recorded",
+    "here and replayed deterministically by tests/fuzz-corpus.test.ts, so a finding",
+    "becomes a permanent unit test instead of something that depends on the fuzzer",
+    "happening to generate it again.",
+    "",
+    "To add an entry: when a fuzz failure reports an input, record it here with a",
+    "note saying what it broke and why the expectation is what it is.",
+    "",
+    "An ISCP-message or ECN entry carries either `text` (a literal string) or",
+    "`build` (prefix + a repeated chunk + suffix, for inputs too large to inline).",
+    "A frame entry carries `frame` field overrides; `dataSize` may disagree with the",
+    "body on purpose.",
+    "",
+    "`expect` values:",
+    "  parses-or-rejects - may reject, but never with TypeError/RangeError",
+    "  fast              - must complete within the time budget (ReDoS guard)",
+    "  rejected          - must be refused outright"
+  ],
+  "iscpMessages": [
+    {
+      "id": "redos-trailing-cr-run",
+      "build": {
+        "prefix": "!1FLD",
+        "repeat": "\r",
+        "count": 65000,
+        "suffix": "x"
+      },
+      "expect": "fast",
+      "note": "Found by fuzzing 2026-07-25. stripTerminators used /[\\x0D\\x0A\\x1A\\x19]+$/, which backtracks quadratically when the terminator run is followed by any other character. 65000 CR plus one byte fits inside the 64 KiB frame cap and is pipelineable, so this cost ~1.4 s of CPU per frame on a function called for every inbound message. Fixed with a backward scan."
+    },
+    {
+      "id": "redos-mixed-terminator-run",
+      "build": {
+        "prefix": "!1FLD",
+        "repeat": "\r\n\u001a\u0019",
+        "count": 16000,
+        "suffix": "x"
+      },
+      "expect": "fast",
+      "note": "Same shape across the whole terminator class, so a fix that only special-cased CR would still be caught."
+    },
+    {
+      "id": "redos-leading-whitespace",
+      "build": {
+        "prefix": "",
+        "repeat": " ",
+        "count": 50000,
+        "suffix": "!1PWR01"
+      },
+      "expect": "parses-or-rejects",
+      "note": "parseIscpMessage trims before parsing; a long leading run must not cost more than linear time."
+    },
+    {
+      "id": "truncated-command",
+      "text": "!1PW",
+      "expect": "rejected",
+      "note": "Shorter than the 5-character minimum; must be refused rather than yielding a short command."
+    },
+    {
+      "id": "nul-padded-body",
+      "text": "!1PWR01\r\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+      "expect": "parses-or-rejects",
+      "note": "Real devices pad datagrams with NUL: a VSX-S520D ECN response is 255 bytes of which ~219 are NUL. ASCII decoding preserves them, so they genuinely reach the parser."
+    },
+    {
+      "id": "high-bit-body",
+      "text": "!1FLDÿþýü",
+      "expect": "parses-or-rejects",
+      "note": "ASCII decoding masks the high bit rather than rejecting, so these arrive mangled; the unit/command split must still hold."
+    },
+    {
+      "id": "control-chars-in-parameter",
+      "text": "!1FLD\u001b[31m\u0007",
+      "expect": "parses-or-rejects",
+      "note": "An ANSI escape reaching a log file or a button title is why untrusted text is escaped on output."
+    }
+  ],
+  "ecnBodies": [
+    {
+      "id": "port-out-of-range-negative",
+      "text": "!1ECNModel/-5/DX",
+      "expect": "rejected",
+      "note": "parseInt yields -5; it used to flow into device metadata unchecked."
+    },
+    {
+      "id": "port-out-of-range-overflow",
+      "text": "!1ECNModel/99999999/DX",
+      "expect": "rejected",
+      "note": "parseInt yields 99999999, far outside the port range."
+    },
+    {
+      "id": "port-zero",
+      "text": "!1ECNModel/0/DX",
+      "expect": "rejected",
+      "note": "Port 0 is not a connectable port."
+    },
+    {
+      "id": "model-name-unbounded",
+      "build": {
+        "prefix": "!1ECN",
+        "repeat": "M",
+        "count": 5000,
+        "suffix": "/60128/DX"
+      },
+      "expect": "parses-or-rejects",
+      "note": "The model name is rendered in the PI device dropdown and had no length bound; it must now be clamped, not rejected."
+    },
+    {
+      "id": "real-vsx-s520d-nul-padded",
+      "text": "!1ECNVSX-S520D/60128/XX/0009B0F0EE61\u0019\r\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+      "expect": "parses-or-rejects",
+      "note": "Captured from the reference VSX-S520D. Must keep parsing: sanitisation has to strip the padding rather than treat the response as malformed."
+    }
+  ],
+  "frames": [
+    {
+      "id": "datasize-uint32-max",
+      "frame": {
+        "dataSize": 4294967295,
+        "bodyText": ""
+      },
+      "expect": "rejected",
+      "note": "The memory-exhaustion primitive: the old framing loop waited for 4 GiB while every further byte grew the receive buffer."
+    },
+    {
+      "id": "datasize-just-over-cap",
+      "frame": {
+        "dataSize": 65537,
+        "bodyText": ""
+      },
+      "expect": "rejected",
+      "note": "Boundary case just past MAX_FRAME_BYTES."
+    },
+    {
+      "id": "header-size-not-16",
+      "frame": {
+        "headerSize": 32,
+        "bodyText": "!1PWR01\r"
+      },
+      "expect": "rejected",
+      "note": "headerSize is validated but never used for framing, so a mismatch must be refused rather than reframed."
+    },
+    {
+      "id": "version-not-01",
+      "frame": {
+        "version": "ffffffff",
+        "bodyText": "!1PWR01\r"
+      },
+      "expect": "parses-or-rejects",
+      "note": "The version field is captured but not enforced; recorded so that changing it later is a deliberate decision."
+    },
+    {
+      "id": "datasize-larger-than-body",
+      "frame": {
+        "dataSize": 64,
+        "bodyText": "!1PWR01\r"
+      },
+      "expect": "rejected",
+      "note": "Truncated frame: the declared size exceeds the bytes present."
+    },
+    {
+      "id": "datasize-zero-with-body",
+      "frame": {
+        "dataSize": 0,
+        "bodyText": "!1PWR01\r"
+      },
+      "expect": "parses-or-rejects",
+      "note": "A zero-length body with trailing bytes; the decoder must not read past what it declared."
+    }
+  ]
+}

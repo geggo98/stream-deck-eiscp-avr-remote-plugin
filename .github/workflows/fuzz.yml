@@ -1,0 +1,99 @@
+name: Fuzz
+
+# The normal CI run includes a short, fixed-seed fuzz pass (part of `npm test`),
+# so pull requests can never go flaky from randomness. This workflow is the
+# opposite trade-off: a fresh random seed and a large iteration budget, on a
+# schedule, where a failure is allowed to be a genuine new finding.
+#
+# A failure uploads the seed and the corpus so the run is reproducible locally:
+#   FUZZ_SEED=<seed> FUZZ_ITERATIONS=<n> npm run test:fuzz
+# Findings should then be added to tests/fixtures/fuzz-corpus.json, which the
+# normal suite replays deterministically for ever after.
+
+on:
+  schedule:
+    # 03:17 UTC — off the hour, so it does not pile onto peak runner demand.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Iterations per fuzz case"
+        required: false
+        default: "20000"
+      seed:
+        description: 'Seed ("random", or an integer to replay a finding)'
+        required: false
+        default: "random"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Long fuzz run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Resolved to a concrete integer here rather than inside the test, so the
+      # value that actually ran is recorded in the log and the artifact even when
+      # the input was "random".
+      - name: Resolve seed
+        id: seed
+        env:
+          REQUESTED_SEED: ${{ github.event.inputs.seed || 'random' }}
+        run: |
+          if [ "$REQUESTED_SEED" = "random" ] || [ -z "$REQUESTED_SEED" ]; then
+            seed=$(( RANDOM * 65536 + RANDOM ))
+          else
+            seed="$REQUESTED_SEED"
+          fi
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          echo "Fuzzing with seed $seed"
+
+      - name: Fuzz
+        env:
+          FUZZ_SEED: ${{ steps.seed.outputs.seed }}
+          FUZZ_ITERATIONS: ${{ github.event.inputs.iterations || '20000' }}
+        run: npm run test:fuzz
+
+      - name: Record the reproduction command
+        if: failure()
+        env:
+          FUZZ_SEED: ${{ steps.seed.outputs.seed }}
+          FUZZ_ITERATIONS: ${{ github.event.inputs.iterations || '20000' }}
+        run: |
+          mkdir -p fuzz-artifacts
+          {
+            echo "Fuzz failure in ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+            echo
+            echo "Reproduce locally:"
+            echo "  FUZZ_SEED=${FUZZ_SEED} FUZZ_ITERATIONS=${FUZZ_ITERATIONS} npm run test:fuzz"
+            echo
+            echo "The failing input is printed in the job log next to the assertion."
+            echo "Add it to tests/fixtures/fuzz-corpus.json so the normal suite"
+            echo "replays it deterministically from now on."
+          } > fuzz-artifacts/REPRODUCE.txt
+          cp tests/fixtures/fuzz-corpus.json fuzz-artifacts/
+
+      - name: Upload reproduction details
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-repro-seed-${{ steps.seed.outputs.seed }}
+          path: fuzz-artifacts/
+          if-no-files-found: error
+          retention-days: 30

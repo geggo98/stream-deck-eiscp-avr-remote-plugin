@@ -76,6 +76,18 @@ describe("eISCP protocol layer", () => {
 			assert.throws(() => encodePacket("PWR", "01", "\r"), /Invalid ISCP unit/);
 		});
 
+		it("emits the canonical parameter, so encode/decode round-trips", () => {
+			// Found by fuzzing: parseIscpMessage trims the message it receives, so a
+			// parameter with a trailing space put a value on the wire that could not
+			// be read back — what got sent differed from what was configured.
+			const encoded = encodePacket("PWR", "01  ");
+			assert.equal(encoded.iscpMessage, "!1PWR01\r");
+			assert.equal(parseIscpMessage(decodePacket(encoded.bytes).message).parameter, "01");
+
+			// Leading and interior spaces are inside the message and must survive.
+			assert.equal(encodePacket("NTC", " A B").iscpMessage, "!1NTC A B\r");
+		});
+
 		it("refuses an over-long parameter", () => {
 			assert.throws(() => encodePacket("PWR", "0".repeat(65)), /parameter too long/);
 			// The boundary itself is still encodable ("!1PWR" + 64 + terminator).

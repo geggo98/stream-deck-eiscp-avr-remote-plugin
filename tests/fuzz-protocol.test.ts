@@ -229,13 +229,18 @@ describe("fuzz: encodePacket", () => {
 				);
 				if (!encoded) return;
 
-				// Anything accepted must decode back to exactly what went in —
+				// Anything accepted must decode back to exactly what went out —
 				// otherwise validation let through a value that corrupts the frame.
+				// Compared against the canonical (trailing-space-trimmed) form,
+				// because that is what encodePacket puts on the wire: parseIscpMessage
+				// trims, so an untrimmed parameter could not survive the round-trip.
 				const packet = decodePacket(encoded.bytes);
 				const message = parseIscpMessage(packet.message);
 				assert.equal(message.command, command);
-				assert.equal(message.parameter, parameter);
+				assert.equal(message.parameter, parameter.trimEnd());
 				assert.equal(message.unit, unit);
+				// The bytes sent must match the message we claim to have sent.
+				assert.ok(encoded.iscpMessage.includes(parameter.trimEnd()));
 			},
 		);
 	});

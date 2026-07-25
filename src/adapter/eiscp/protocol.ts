@@ -147,8 +147,16 @@ export function encodePacket(
 
 	assertEncodable(command, parameter, unit);
 
+	// Emit the canonical form: `parseIscpMessage` trims the message it receives,
+	// so a trailing space would be dropped on the way back in and the value on the
+	// wire would differ from the value configured. Found by fuzzing the
+	// encode/decode round-trip. Only trailing spaces are affected — every other
+	// whitespace character is already refused as non-printable, and leading or
+	// interior spaces sit inside the message and survive.
+	const canonicalParameter = parameter.trimEnd();
+
 	// Build ISCP message: !1CCCPP<terminator>
-	const iscpMessage = `!${unit}${command}${parameter}${terminator}`;
+	const iscpMessage = `!${unit}${command}${canonicalParameter}${terminator}`;
 	const iscpMessageBuffer = Buffer.from(iscpMessage, "ascii");
 
 	// Build eISCP header (16 bytes)
