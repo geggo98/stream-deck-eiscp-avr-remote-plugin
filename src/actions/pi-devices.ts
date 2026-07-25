@@ -30,6 +30,17 @@ export const DEVICE_DATASOURCE = "getDevices";
 let cache: DeviceCache | undefined;
 
 /**
+ * The discovery currently running, if any.
+ *
+ * `isRefresh: true` deliberately bypasses the TTL cache, and the PI can send it
+ * as often as it likes (`hot-reload`, or anything with access to the PI). Without
+ * sharing the in-flight run, each message started a full broadcast sweep — one
+ * UDP socket per interface times four probe packets, for 2.5 s — concurrently,
+ * and the last one to finish won the cache. Callers now await the same run.
+ */
+let inFlight: Promise<Awaited<ReturnType<typeof resolveDeviceList>>> | undefined;
+
+/**
  * Handle the Device IP data-source request from any action's PI. Returns true if
  * the message was a getDevices request (so callers can short-circuit).
  */
@@ -39,7 +50,8 @@ export async function handleDeviceListMessage<T extends EiscpActionSettings>(
 	const payload = ev.payload as { event?: string; isRefresh?: boolean } | null;
 	if (!payload || typeof payload !== "object" || payload.event !== DEVICE_DATASOURCE) return false;
 
-	const result = await resolveDeviceList({
+	// Every concurrent caller gets the same answer; only the first starts work.
+	inFlight ??= resolveDeviceList({
 		isRefresh: Boolean(payload.isRefresh),
 		now: Date.now,
 		cache,
@@ -51,7 +63,11 @@ export async function handleDeviceListMessage<T extends EiscpActionSettings>(
 				errors: r.errors,
 			};
 		},
+	}).finally(() => {
+		inFlight = undefined;
 	});
+
+	const result = await inFlight;
 	cache = result.cache;
 	if (result.blockedErrors) {
 		logger.warn(

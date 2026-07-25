@@ -55,16 +55,47 @@ function realSweepDeps(): SweepDeps {
 }
 
 /**
+ * Sweeps currently running, keyed by `host:command`.
+ *
+ * A sweep sends up to 60 steps, each waiting up to 3 s plus a settle delay, so
+ * one run can manipulate the receiver for minutes. The PI's confirm dialog is no
+ * protection — anything with PI access can send the message directly, and there
+ * was no debounce, per-host lock or concurrency counter. Overlapping sweeps on
+ * one host fight over the receiver state and over the shared `sliSweeping` flag,
+ * whose first `finally` clears it for all of them, and each then "restores" its
+ * own captured start value.
+ */
+const activeSweeps = new Set<string>();
+
+/** Raised when a sweep is requested for a host/command that is already sweeping. */
+export class SweepInProgressError extends Error {
+	constructor(host: string, command: TrackedCommand) {
+		super(`A ${command} discovery sweep is already running for ${host}`);
+		this.name = "SweepInProgressError";
+	}
+}
+
+/**
  * "Available-now" sweep: cycle `command` with UP until it returns to the start
  * (or a safety cap), learning each option's name passively, then restore the
  * original value. Disruptive — only call on explicit user request.
+ *
+ * @throws SweepInProgressError when one is already running for this
+ * host/command, rather than starting a second one that would corrupt both.
  */
 export async function runSweep(
 	host: string,
 	command: TrackedCommand,
 	onProgress?: (p: SweepProgress) => void,
 ): Promise<{ count: number }> {
-	return runSweepWithDeps(host, command, onProgress, realSweepDeps());
+	const key = `${host}:${command}`;
+	if (activeSweeps.has(key)) throw new SweepInProgressError(host, command);
+	activeSweeps.add(key);
+	try {
+		return await runSweepWithDeps(host, command, onProgress, realSweepDeps());
+	} finally {
+		activeSweeps.delete(key);
+	}
 }
 
 /**
