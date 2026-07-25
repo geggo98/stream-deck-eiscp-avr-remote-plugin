@@ -6,9 +6,10 @@
  * actually speaks eISCP protocol.
  *
  * Features:
- * - Scans /24 subnets; "private" is judged by the first octet only
- *   (10.x, 172.x, 192.x), which is broader than the RFC 1918 ranges
- * - Only scans subnets that the local machine is part of
+ * - Scans /24 subnets, restricted to the RFC 1918 ranges (10/8, 172.16/12,
+ *   192.168/16). Caller-supplied prefixes are validated for shape as well as
+ *   range, because they are interpolated into connect targets.
+ * - Only scans the /24 the local machine is actually on
  * - Parallel connection checking with configurable concurrency limit
  * - No external dependencies (uses Node.js built-in net module)
  *
@@ -179,6 +180,50 @@ export function isPrivateIp(ip: string): boolean {
 }
 
 /**
+ * Which RFC 1918 range an address falls in, or undefined when it is not private.
+ *
+ * Shares `isPrivateIp`'s bounds rather than re-deriving them from the first
+ * octet, which is how public space used to slip through.
+ */
+export function privateRangeForIp(ip: string): keyof typeof PrivateIpRange | undefined {
+	if (!isPrivateIp(ip)) return undefined;
+	const int = ipToInt(ip);
+	for (const range of ["CLASS_A", "CLASS_B", "CLASS_C"] as const) {
+		const { start, end } = PrivateIpRange[range];
+		if (int >= ipToInt(start) && int <= ipToInt(end)) return range;
+	}
+	return undefined;
+}
+
+/**
+ * Validate a caller-supplied `<a>.<b>.<c>` /24 subnet prefix.
+ *
+ * `generateIpsForSubnet` interpolates this raw into `${network}.${i}`, so an
+ * unvalidated string reached `net.Socket.connect` as a host: a four-octet input
+ * became "10.0.0.5.1" and a name-like input ("192.attacker.example") became 254
+ * DNS lookups, both outside anything the caller could reasonably have meant.
+ *
+ * @returns The matching private range.
+ * @throws Error when the prefix is malformed or not inside RFC 1918.
+ */
+export function validateSubnetPrefix(network: string): keyof typeof PrivateIpRange {
+	const octets = network.split(".");
+	if (octets.length !== 3) {
+		throw new Error(`Invalid subnet ${JSON.stringify(network)}: expected three octets, e.g. "192.168.1"`);
+	}
+	for (const octet of octets) {
+		if (!/^\d{1,3}$/.test(octet) || Number(octet) > 255) {
+			throw new Error(`Invalid subnet ${JSON.stringify(network)}: ${JSON.stringify(octet)} is not an octet`);
+		}
+	}
+	const range = privateRangeForIp(`${network}.1`);
+	if (!range) {
+		throw new Error(`Not a private IP subnet: ${network}`);
+	}
+	return range;
+}
+
+/**
  * Get all /24 subnets the local machine is on
  */
 export function getLocalSubnets(): Subnet[] {
@@ -190,32 +235,23 @@ export function getLocalSubnets(): Subnet[] {
 		for (const info of infos) {
 			if (info.family === "IPv4" && !info.internal) {
 				const ip = info.address;
-				const netmask = info.netmask;
 
-				// Determine which /24 subnet this IP belongs to
-				const ipInt = ipToInt(ip);
-				const maskInt = ipToInt(netmask);
+				// Gate on the real RFC 1918 ranges. This used to compare only the first
+				// octet, which accepted 172.0-172.15 / 172.32-172.255 and
+				// 192.0-192.167 / 192.169-192.255 — public address space, including
+				// TEST-NET-1 (192.0.2.0/24) — as "private". The netmask feeding this is
+				// DHCP-supplied, i.e. attacker-influenced on a hostile network.
+				if (!isPrivateIp(ip)) continue;
 
-				// Convert to /24 network (keep first 3 octets)
-				const network24Int = ipInt & maskInt & 0xffffff00;
-				const network24Ip = intToIp(network24Int);
+				const range = privateRangeForIp(ip);
+				if (!range) continue;
 
-				// Extract just the network part (first 3 octets)
-				const networkParts = network24Ip.split(".").slice(0, 3).join(".");
-
-				// Determine range
-				let range: keyof typeof PrivateIpRange;
-				const firstOctet = Number.parseInt(ip.split(".")[0]!, 10);
-
-				if (firstOctet === 10) {
-					range = "CLASS_A";
-				} else if (firstOctet >= 172 && firstOctet <= 172) {
-					range = "CLASS_B";
-				} else if (firstOctet === 192) {
-					range = "CLASS_C";
-				} else {
-					continue; // Not a private IP
-				}
+				// The host's own /24, not the network base. Masking with the interface
+				// netmask first (`ipInt & maskInt & 0xffffff00`) produced the *network*
+				// /24 for any prefix shorter than /24: a /16 host at 172.20.5.7 yielded
+				// 172.20.0.x, scanning a subnet the machine is not on while missing its
+				// own.
+				const networkParts = ip.split(".").slice(0, 3).join(".");
 
 				subnets.set(networkParts, {
 					network: networkParts,
@@ -356,27 +392,14 @@ export async function scanNetwork(options: ScanOptions = {}): Promise<ScanResult
 
 	if (specifiedSubnets && specifiedSubnets.length > 0) {
 		// Use specified subnets
-		subnetsToScan = specifiedSubnets.map((network) => {
-			// Determine range from first octet
-			const firstOctet = Number.parseInt(network.split(".")[0]!, 10);
-			let range: keyof typeof PrivateIpRange;
-
-			if (firstOctet === 10) {
-				range = "CLASS_A";
-			} else if (firstOctet >= 172 && firstOctet <= 172) {
-				range = "CLASS_B";
-			} else if (firstOctet === 192) {
-				range = "CLASS_C";
-			} else {
-				throw new Error(`Not a private IP subnet: ${network}`);
-			}
-
-			return {
-				network,
-				netmask: "255.255.255.0",
-				range,
-			};
-		});
+		subnetsToScan = specifiedSubnets.map((network) => ({
+			network,
+			netmask: "255.255.255.0",
+			// Validates the shape as well as the range: the prefix is interpolated
+			// raw into `${network}.${i}`, so a four-octet or name-like input used to
+			// become a connect target (or 254 DNS lookups) of its own.
+			range: validateSubnetPrefix(network),
+		}));
 	} else if (localSubnetsOnly) {
 		// Only scan local subnets
 		subnetsToScan = getLocalSubnets();

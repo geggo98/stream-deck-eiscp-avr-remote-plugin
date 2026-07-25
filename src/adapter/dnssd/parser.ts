@@ -2,6 +2,8 @@
  * Types representing parsed DNS-SD output
  */
 
+import { isIP } from "node:net";
+
 /**
  * Parsed result from browsing for AirPlay devices
  */
@@ -363,22 +365,53 @@ export function parseGetAddrOutput(output: string): AddressResult[] {
 		);
 		if (tableMatch) {
 			// All capture groups are non-optional, so they exist when the regex matched.
-			const flags = tableMatch[2]!;
 			const host = tableMatch[4]!;
-			const address = tableMatch[5]!;
-			// Heuristic: last hex digit of flags: 2 = IPv4, 3 = IPv6
-			const lastFlag = flags.slice(-1);
-			const addressType = lastFlag === "2" ? "ipv4" : "ipv6";
+			const address = tableMatch[5]!.trim();
 
+			// The address field is `(.+?)` — any text. It was never checked, yet these
+			// strings become connect targets in the unified controller, so a non-IP
+			// value turned into a DNS lookup of whatever an mDNS responder published.
+			const validated = validateAddress(address);
+			if (!validated) continue;
+
+			// Derive the family from the address itself. The previous heuristic read
+			// the last digit of the flags field, which an advertiser also controls, so
+			// an IPv6 literal could be labelled ipv4 and vice versa.
 			results.push({
 				hostname: host,
-				addressType,
-				address: address.trim(),
+				addressType: validated.family === 6 ? "ipv6" : "ipv4",
+				address: validated.address,
 			});
 		}
 	}
 
 	return results;
+}
+
+/**
+ * Validate a `dns-sd` address field and normalise its IPv6 zone suffix.
+ *
+ * Real output carries scoped IPv6 addresses: a link-local arrives as
+ * `FE80::…%en0` (a zone that matters, and that `net.isIP` rejects), and a global
+ * one as `2003:…%<0>`, where `<0>` is dns-sd's placeholder for "no scope". So the
+ * base address is what gets validated; a real interface zone is preserved and the
+ * placeholder is dropped.
+ *
+ * @returns The normalised address and its family, or undefined when the base is
+ * not an IP address at all.
+ */
+function validateAddress(raw: string): { address: string; family: 4 | 6 } | undefined {
+	const separator = raw.indexOf("%");
+	const base = separator === -1 ? raw : raw.slice(0, separator);
+	const zone = separator === -1 ? "" : raw.slice(separator + 1);
+
+	const family = isIP(base);
+	if (family === 0) return undefined;
+
+	// Keep only a plausible interface identifier; "<0>" and anything else exotic
+	// is dropped rather than carried into a connect target.
+	const keepZone = family === 6 && /^[A-Za-z0-9._-]+$/.test(zone);
+	return { address: keepZone ? `${base}%${zone}` : base, family: family === 6 ? 6 : 4 };
 }
 
 /**

@@ -10,6 +10,32 @@ export function isDnsSdAvailable(): boolean {
 }
 
 /**
+ * Largest stdout/stderr we will retain from one `dns-sd` invocation.
+ *
+ * `spawn` has no `maxBuffer`, so without this the chunk arrays grow for the
+ * process lifetime — and the content is mDNS advertisements, i.e. whatever any
+ * host on the LAN chose to publish.
+ */
+export const MAX_DNS_SD_OUTPUT_BYTES = 1024 * 1024;
+
+/**
+ * Refuse an argument that `dns-sd` would read as an option.
+ *
+ * Arguments are passed as argv (no shell), so there is no command injection —
+ * but mDNS instance names are arbitrary UTF-8 and the parsed hostname comes from
+ * `dns-sd`'s own output, so a value beginning with "-" becomes a flag rather
+ * than the positional argument it was meant to be. `dns-sd` takes no `--`
+ * end-of-options separator, so rejecting is the available fix.
+ */
+function assertNotOptionLike(value: string, what: string): void {
+	if (value.startsWith("-")) {
+		throw new Error(
+			`Refusing to pass ${what} ${JSON.stringify(value)} to dns-sd: a leading "-" would be read as an option`,
+		);
+	}
+}
+
+/**
  * Result type for dns-sd command execution
  */
 export interface DnsSdResult {
@@ -91,6 +117,8 @@ export async function lookupDevice(
 		throw new Error("dns-sd is only available on macOS");
 	}
 
+	assertNotOptionLike(instanceName, "instance name");
+
 	// dns-sd -L "instance name" _airplay._tcp local.
 	const args = ["-L", instanceName, "_airplay._tcp", "local."];
 	if (options.extraArgs) {
@@ -115,6 +143,8 @@ export async function getHostAddresses(
 	if (!isDnsSdAvailable()) {
 		throw new Error("dns-sd is only available on macOS");
 	}
+
+	assertNotOptionLike(hostname, "hostname");
 
 	// dns-sd -G v4v6 hostname.local
 	const args = ["-G", "v4v6", hostname];
@@ -141,6 +171,8 @@ async function executeDnsSd(
 	return new Promise((resolve) => {
 		const stdoutChunks: Buffer[] = [];
 		const stderrChunks: Buffer[] = [];
+		let stdoutBytes = 0;
+		let stderrBytes = 0;
 		let currentLine = "";
 
 		let child: ChildProcess;
@@ -162,18 +194,30 @@ async function executeDnsSd(
 
 		// Process stdout line by line as it arrives
 		child.stdout?.on("data", (chunk: Buffer) => {
+			// Bounded: spawn has no maxBuffer, and this content is whatever hosts on
+			// the LAN chose to advertise. Once the cap is reached we stop retaining
+			// (and stop parsing) rather than growing for the process lifetime.
+			if (stdoutBytes >= MAX_DNS_SD_OUTPUT_BYTES) return;
+			stdoutBytes += chunk.length;
 			stdoutChunks.push(chunk);
 
 			// Convert chunk to string and process
 			const text = chunk.toString("utf-8");
 			currentLine += text;
 
+			// A line that never terminates would otherwise buffer without limit.
+			if (currentLine.length > MAX_DNS_SD_OUTPUT_BYTES) {
+				currentLine = "";
+			}
+
 			// Process complete lines
 			const lines = currentLine.split("\n");
 			// Keep the last (potentially incomplete) line in the buffer
 			currentLine = lines.pop() ?? "";
 
-			// Call onData with accumulated output so far
+			// Call onData with accumulated output so far. Quadratic by construction
+			// (it re-concatenates and re-decodes everything per chunk), which the
+			// cap above bounds; prefer onLine for streaming consumers.
 			if (onData) {
 				onData(Buffer.concat(stdoutChunks as Uint8Array[]).toString("utf-8"));
 			}
@@ -188,8 +232,11 @@ async function executeDnsSd(
 			}
 		});
 
-		// Collect stderr
+		// Collect stderr, bounded the same way (its text ends up in exception
+		// messages that get logged).
 		child.stderr?.on("data", (chunk: Buffer) => {
+			if (stderrBytes >= MAX_DNS_SD_OUTPUT_BYTES) return;
+			stderrBytes += chunk.length;
 			stderrChunks.push(chunk);
 		});
 

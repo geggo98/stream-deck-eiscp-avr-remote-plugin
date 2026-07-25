@@ -17,6 +17,18 @@ import {
 import { EventEmitter } from "node:events";
 
 /**
+ * Instances one streaming discovery will act on.
+ *
+ * Instance names come from any host on the LAN, and each one costs two `dns-sd`
+ * subprocesses; a flood advertising thousands of services would otherwise be
+ * turned straight into thousands of processes.
+ */
+const MAX_TRACKED_INSTANCES = 128;
+
+/** Resolve chains (two subprocesses each) allowed to run at once. */
+const MAX_CONCURRENT_LOOKUPS = 4;
+
+/**
  * Raw intermediate results from the discovery process
  */
 export interface DiscoveryIntermediateResults {
@@ -441,6 +453,24 @@ export async function discoverAirplayDevicesStreaming(
 	const addresses = new Map<string, { raw: string; parsed: readonly AddressResult[] }>();
 	const lookupPromises: Promise<void>[] = [];
 
+	// Serialise at most MAX_CONCURRENT_LOOKUPS resolve chains. Every chain runs
+	// two dns-sd subprocesses, so this is the fan-out bound; contrast the eISCP
+	// connect path in unified-controller.ts, which already had a semaphore.
+	let activeLookups = 0;
+	const lookupQueue: Array<() => void> = [];
+	const limitLookups = async (task: () => Promise<void>): Promise<void> => {
+		while (activeLookups >= MAX_CONCURRENT_LOOKUPS) {
+			await new Promise<void>((resolve) => lookupQueue.push(resolve));
+		}
+		activeLookups++;
+		try {
+			await task();
+		} finally {
+			activeLookups--;
+			lookupQueue.shift()?.();
+		}
+	};
+
 	/**
 	 * Lookup and resolve a single device, emitting results as they arrive
 	 */
@@ -503,6 +533,14 @@ export async function discoverAirplayDevicesStreaming(
 
 				for (const result of newResults) {
 					if (result.action === "add" && !seenInstances.has(result.instanceName)) {
+						// Cap the instances we act on. Each one spawns two more dns-sd
+						// processes (-L then -G) with their own pipes and timers, and
+						// instance names come from anyone on the LAN — an mDNS flood
+						// advertising N services otherwise means 2N concurrent
+						// subprocesses with no limiter anywhere.
+						if (seenInstances.size >= MAX_TRACKED_INSTANCES) {
+							continue;
+						}
 						seenInstances.add(result.instanceName);
 						if (onBrowseResult) {
 							onBrowseResult(result);
@@ -512,7 +550,7 @@ export async function discoverAirplayDevicesStreaming(
 						}
 
 						// Start lookup immediately for this device and track the promise
-						lookupPromises.push(lookupAndResolveDevice(result.instanceName));
+						lookupPromises.push(limitLookups(() => lookupAndResolveDevice(result.instanceName)));
 					}
 				}
 

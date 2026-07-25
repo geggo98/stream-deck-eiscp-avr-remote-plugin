@@ -169,14 +169,16 @@ describe("parseGetAddrOutput", () => {
 		assert.deepEqual(result, []);
 	});
 
-	it("should identify IPv4 by flag ending in 2", () => {
+	// The family is derived from the address itself, not the flags field (see the
+	// hardening suite below); these two only pin that real rows still parse.
+	it("parses an IPv4 table row", () => {
 		const output = `Timestamp     A/R  Flags         IF  Hostname                               Address                                      TTL
 14:15:36.907  Add  40000002      14  test.local.                            192.168.1.100                                120`;
 		const result = parseGetAddrOutput(output);
 		assert.equal(result[0]?.addressType, "ipv4");
 	});
 
-	it("should identify IPv6 by flag ending in 3", () => {
+	it("parses an IPv6 table row", () => {
 		const output = `Timestamp     A/R  Flags         IF  Hostname                               Address                                      TTL
 14:15:36.907  Add  40000003      14  test.local.                            FE80::1234                                    120`;
 		const result = parseGetAddrOutput(output);
@@ -259,5 +261,43 @@ describe("combineDeviceInfo", () => {
 
 		assert.equal(device.ipv4Addresses.length, 0);
 		assert.equal(device.ipv6Addresses.length, 0);
+	});
+});
+
+// DNS-SD is dev-only tooling (tree-shaken out of the shipped plugin), but the
+// input is mDNS advertisements from any host on the LAN, and these strings become
+// connect targets in the unified controller.
+describe("parseGetAddrOutput address hardening", () => {
+	const row = (flags: string, address: string) =>
+		`Timestamp     A/R  Flags         IF  Hostname   Address   TTL\n` +
+		`14:15:36.907  Add  ${flags}      14  host.local.        ${address}        120\n`;
+
+	it("drops rows whose address is not an IP at all", () => {
+		// `(.+?)` matched any text, so a name-like value became a DNS lookup.
+		for (const bad of ["attacker.example.com", "not-an-ip", "999.1.1.1", "1.2.3", "::gg"]) {
+			assert.deepEqual(parseGetAddrOutput(row("40000002", bad)), [], `${bad} must be dropped`);
+		}
+	});
+
+	it("derives the family from the address, not the advertiser-controlled flags", () => {
+		// The old heuristic read the last digit of the flags field, so an IPv6
+		// literal could be labelled ipv4 and vice versa.
+		const asIpv4Flags = parseGetAddrOutput(row("40000002", "FE80::1%en0"));
+		assert.equal(asIpv4Flags.length, 1);
+		assert.equal(asIpv4Flags[0]!.addressType, "ipv6");
+
+		const asIpv6Flags = parseGetAddrOutput(row("40000003", "10.2.0.32"));
+		assert.equal(asIpv6Flags.length, 1);
+		assert.equal(asIpv6Flags[0]!.addressType, "ipv4");
+	});
+
+	it("keeps a real IPv6 zone but drops the dns-sd no-scope placeholder", () => {
+		// Both forms come from real captured output; the zone matters for
+		// link-local addresses, while "%<0>" is dns-sd's placeholder.
+		const scoped = parseGetAddrOutput(row("40000003", "FE80::209:B0FF:FE73:5ED9%en0"));
+		assert.equal(scoped[0]!.address, "FE80::209:B0FF:FE73:5ED9%en0");
+
+		const placeholder = parseGetAddrOutput(row("40000003", "2003:F2:C704:2000::1%<0>"));
+		assert.equal(placeholder[0]!.address, "2003:F2:C704:2000::1");
 	});
 });

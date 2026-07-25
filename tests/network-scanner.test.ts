@@ -15,6 +15,8 @@ import {
 	ipToInt,
 	intToIp,
 	isPrivateIp,
+	privateRangeForIp,
+	validateSubnetPrefix,
 	type Subnet,
 	type ScannedDevice,
 	formatScannedDevice,
@@ -299,5 +301,49 @@ describe("network-scanner", () => {
 				}
 			}
 		});
+	});
+});
+
+// The scanner is dev-only tooling (tree-shaken out of the shipped plugin), but it
+// is public API of this repo and its inputs come from the network environment.
+describe("subnet gating hardening", () => {
+	it("uses the real RFC 1918 bounds, not a first-octet comparison", () => {
+		// These are public address space that a first-octet check accepted.
+		for (const ip of ["172.0.0.1", "172.15.255.255", "172.32.0.1", "192.0.2.1", "192.167.1.1", "192.169.1.1"]) {
+			assert.equal(isPrivateIp(ip), false, `${ip} must not count as private`);
+			assert.equal(privateRangeForIp(ip), undefined, `${ip} must have no private range`);
+		}
+		// And the genuinely private ones still resolve.
+		assert.equal(privateRangeForIp("10.2.0.32"), "CLASS_A");
+		assert.equal(privateRangeForIp("172.20.5.7"), "CLASS_B");
+		assert.equal(privateRangeForIp("192.168.1.1"), "CLASS_C");
+	});
+
+	it("rejects subnet prefixes that are not three octets", () => {
+		// A four-octet prefix used to produce targets like "10.0.0.5.1", which
+		// net.connect would treat as a hostname and resolve.
+		for (const bad of ["10.0.0.5", "10.0", "10", "", "10.0.0."]) {
+			assert.throws(() => validateSubnetPrefix(bad), /Invalid subnet/, `${bad} must be refused`);
+		}
+	});
+
+	it("rejects name-like subnet prefixes", () => {
+		// "192.attacker.example" passed the first-octet test and became 254 DNS
+		// lookups of attacker-chosen names.
+		for (const bad of ["192.attacker.example", "10.foo.bar", "192.168.x", "10.0.-1"]) {
+			assert.throws(() => validateSubnetPrefix(bad), /Invalid subnet/, `${bad} must be refused`);
+		}
+	});
+
+	it("rejects out-of-range octets and non-private prefixes", () => {
+		assert.throws(() => validateSubnetPrefix("10.0.999"), /Invalid subnet/);
+		assert.throws(() => validateSubnetPrefix("192.0.2"), /Not a private IP subnet/);
+		assert.throws(() => validateSubnetPrefix("8.8.8"), /Not a private IP subnet/);
+	});
+
+	it("accepts real private prefixes and reports their range", () => {
+		assert.equal(validateSubnetPrefix("10.2.0"), "CLASS_A");
+		assert.equal(validateSubnetPrefix("172.20.5"), "CLASS_B");
+		assert.equal(validateSubnetPrefix("192.168.1"), "CLASS_C");
 	});
 });
