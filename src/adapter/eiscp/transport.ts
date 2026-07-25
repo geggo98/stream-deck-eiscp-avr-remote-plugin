@@ -15,9 +15,31 @@ import { connect, Socket, type TcpNetConnectOpts } from "node:net";
 import { EventEmitter } from "node:events";
 import { scopedLogger } from "../logging.ts";
 import type { EiscpPacket } from "./protocol.ts";
-import { decodeMultiplePackets } from "./protocol.ts";
+import { decodeMultiplePackets, MAX_FRAME_BYTES } from "./protocol.ts";
+import { ReceiveBuffer } from "./receive-buffer.ts";
 
 const logger = scopedLogger("EiscpTransport");
+
+/**
+ * Hard ceiling on unparsed bytes held for one connection.
+ *
+ * Sized to hold a few maximum-size frames (see `MAX_FRAME_BYTES`) so legitimate
+ * pipelined traffic is never affected, while bounding what a peer can make the
+ * plugin retain. Exceeding it is treated as a protocol violation: we cannot keep
+ * framing a stream once we would have to drop bytes from it, so the connection
+ * is torn down and reconnected on next use.
+ */
+export const MAX_RECEIVE_BUFFER_BYTES = 4 * MAX_FRAME_BYTES;
+
+/**
+ * Consecutive undecodable frames tolerated before dropping the connection.
+ *
+ * Malformed frames used to be surfaced as `error` events forever, so a peer
+ * could emit unlimited errors (and unlimited log volume) while staying
+ * connected. A handful of failures is plausible from a genuine glitch; a
+ * sustained stream of them is not something to keep listening to.
+ */
+const MAX_CONSECUTIVE_BAD_FRAMES = 16;
 
 /**
  * Connection state
@@ -75,7 +97,8 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 	private options: Required<Omit<EiscpTransportOptions, "keepAliveInitialDelay">> & {
 		keepAliveInitialDelay?: number;
 	};
-	private receiveBuffer: Buffer = Buffer.alloc(0);
+	private receiveBuffer = new ReceiveBuffer(MAX_RECEIVE_BUFFER_BYTES);
+	private consecutiveBadFrames = 0;
 
 	constructor(options: EiscpTransportOptions) {
 		super();
@@ -203,7 +226,8 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 			this.socket = null;
 		}
 		this.state = ConnectionState.DISCONNECTED;
-		this.receiveBuffer = Buffer.alloc(0);
+		this.receiveBuffer.clear();
+		this.consecutiveBadFrames = 0;
 	}
 
 	/**
@@ -213,8 +237,19 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 		if (!this.socket) return;
 
 		this.socket.on("data", (data: Buffer) => {
-			// Append to receive buffer
-			this.receiveBuffer = Buffer.concat([this.receiveBuffer as Uint8Array<ArrayBufferLike>, data as Uint8Array<ArrayBufferLike>]);
+			if (!this.receiveBuffer.append(data)) {
+				// Refusing the append means we would have to exceed the ceiling.
+				// Dropping bytes mid-stream would desynchronise framing silently,
+				// so fail loud and let ConnectionManager reconnect on next use.
+				this.failConnection(
+					new Error(
+						`${this.options.host}: receive buffer limit exceeded ` +
+							`(${this.receiveBuffer.length} buffered + ${data.length} received > ` +
+							`${MAX_RECEIVE_BUFFER_BYTES}); dropping connection`,
+					),
+				);
+				return;
+			}
 
 			// Try to decode complete packets
 			this.processReceiveBuffer();
@@ -222,7 +257,8 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 
 		this.socket.on("close", (hadError: boolean) => {
 			this.state = ConnectionState.DISCONNECTED;
-			this.receiveBuffer = Buffer.alloc(0);
+			this.receiveBuffer.clear();
+			this.consecutiveBadFrames = 0;
 			this.emit("close", hadError);
 		});
 
@@ -236,47 +272,36 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 	 */
 	private processReceiveBuffer(): void {
 		try {
-			while (this.receiveBuffer.length >= 16) {
-				// Check minimum packet size (header only)
-				const header = this.receiveBuffer.subarray(0, 4).toString("ascii");
-				if (header !== "ISCP") {
-					// Attempt to parse raw ISCP message without eISCP header.
-					const startIdx = this.receiveBuffer.indexOf(0x21); // '!'
-					if (startIdx === -1) {
-						// Breadcrumb for protocol debugging — otherwise dropped
-						// bytes are indistinguishable from "nothing received".
-						logger.warn(
-							`${this.options.host}: discarding ${this.receiveBuffer.length} unparseable bytes: ` +
-								this.receiveBuffer.subarray(0, 32).toString("hex"),
-						);
-						this.receiveBuffer = Buffer.alloc(0);
-						break;
-					}
+			while (this.receiveBuffer.length > 0) {
+				// A full eISCP header is 16 bytes. Anything shorter is either the
+				// start of one we have not fully received, or a headerless raw ISCP
+				// line — the latter can be as short as 8 bytes ("!1PWR01\r"), so we
+				// must try the raw path before waiting for 16 bytes.
+				const looksLikeHeader = this.startsWithMagic();
+				if (looksLikeHeader === "incomplete") break; // need more data
 
-					if (startIdx > 0) {
-						logger.debug(
-							`${this.options.host}: skipping ${startIdx} bytes before ISCP start: ` +
-								this.receiveBuffer.subarray(0, Math.min(startIdx, 32)).toString("hex"),
-						);
-						this.receiveBuffer = this.receiveBuffer.subarray(startIdx);
-					}
-
-					const terminatorIdx = this.receiveBuffer.findIndex(
-						(byte) => byte === 0x0d || byte === 0x0a || byte === 0x1a,
-					);
-					if (terminatorIdx === -1) {
-						break; // Need more data
-					}
-
-					const rawPacket = this.receiveBuffer.subarray(0, terminatorIdx + 1);
-					this.receiveBuffer = this.receiveBuffer.subarray(terminatorIdx + 1);
-
-					this.emit("packet", rawPacket);
-					this.emit("data", { kind: "raw-iscp", message: rawPacket.toString("ascii") });
+				if (looksLikeHeader === "no") {
+					if (!this.processRawIscpLine()) break; // need more data
 					continue;
 				}
 
+				if (this.receiveBuffer.length < 16) break; // header not fully received
+
 				const dataSize = this.receiveBuffer.readUInt32BE(8);
+
+				// Check the declared size before waiting on it: an oversized
+				// dataSize would otherwise keep this loop waiting for bytes that
+				// will never legitimately arrive, buffering all the while.
+				if (dataSize > MAX_FRAME_BYTES) {
+					this.failConnection(
+						new Error(
+							`${this.options.host}: declared frame size ${dataSize} exceeds ` +
+								`maximum ${MAX_FRAME_BYTES}; dropping connection`,
+						),
+					);
+					return;
+				}
+
 				const packetSize = 16 + dataSize;
 
 				// Check if we have a complete packet
@@ -284,9 +309,7 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 					break; // Need more data
 				}
 
-				// Extract packet
-				const packetBuffer = this.receiveBuffer.subarray(0, packetSize);
-				this.receiveBuffer = this.receiveBuffer.subarray(packetSize);
+				const packetBuffer = this.receiveBuffer.consume(packetSize);
 
 				// Emit raw packet
 				this.emit("packet", packetBuffer);
@@ -297,13 +320,102 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 					for (const packet of packets) {
 						this.emit("data", { kind: "eiscp", packet });
 					}
+					this.consecutiveBadFrames = 0;
 				} catch (err) {
 					this.emit("error", err instanceof Error ? err : new Error(String(err)));
+					if (this.noteBadFrame()) return;
 				}
 			}
 		} catch (err) {
 			this.emit("error", err instanceof Error ? err : new Error(String(err)));
 		}
+	}
+
+	/**
+	 * Whether the buffer starts with the eISCP magic. "incomplete" means fewer
+	 * than 4 bytes are buffered and they are still a viable prefix of "ISCP", so
+	 * the caller must wait rather than guess.
+	 */
+	private startsWithMagic(): "yes" | "no" | "incomplete" {
+		const MAGIC = "ISCP";
+		const available = Math.min(this.receiveBuffer.length, MAGIC.length);
+		for (let i = 0; i < available; i++) {
+			if (this.receiveBuffer.byteAt(i) !== MAGIC.charCodeAt(i)) return "no";
+		}
+		return available === MAGIC.length ? "yes" : "incomplete";
+	}
+
+	/**
+	 * Try to frame one headerless raw ISCP line ("!1PWR01\r"). Some receivers
+	 * emit these without the eISCP envelope.
+	 *
+	 * @returns `false` when more data is needed, `true` when a line was emitted
+	 * or the buffer was resynchronised and the caller should loop again.
+	 */
+	private processRawIscpLine(): boolean {
+		const startIdx = this.receiveBuffer.indexOfByte(0x21); // '!'
+		if (startIdx === -1) {
+			// Breadcrumb for protocol debugging — otherwise dropped
+			// bytes are indistinguishable from "nothing received".
+			logger.warn(
+				`${this.options.host}: discarding ${this.receiveBuffer.length} unparseable bytes: ` +
+					this.receiveBuffer.peek(32).toString("hex"),
+			);
+			this.receiveBuffer.clear();
+			this.noteBadFrame();
+			return false;
+		}
+
+		if (startIdx > 0) {
+			logger.debug(
+				`${this.options.host}: skipping ${startIdx} bytes before ISCP start: ` +
+					this.receiveBuffer.peek(Math.min(startIdx, 32)).toString("hex"),
+			);
+			this.receiveBuffer.discard(startIdx);
+		}
+
+		const terminatorIdx = this.receiveBuffer.findIndex(
+			(byte) => byte === 0x0d || byte === 0x0a || byte === 0x1a,
+		);
+		if (terminatorIdx === -1) return false; // Need more data
+
+		const rawPacket = this.receiveBuffer.consume(terminatorIdx + 1);
+
+		this.emit("packet", rawPacket);
+		this.emit("data", { kind: "raw-iscp", message: rawPacket.toString("ascii") });
+		this.consecutiveBadFrames = 0;
+		return true;
+	}
+
+	/**
+	 * Record an undecodable frame.
+	 *
+	 * @returns `true` when the connection was dropped for exceeding
+	 * `MAX_CONSECUTIVE_BAD_FRAMES`, so callers stop processing.
+	 */
+	private noteBadFrame(): boolean {
+		this.consecutiveBadFrames++;
+		if (this.consecutiveBadFrames < MAX_CONSECUTIVE_BAD_FRAMES) return false;
+
+		this.failConnection(
+			new Error(
+				`${this.options.host}: ${this.consecutiveBadFrames} consecutive undecodable ` +
+					"frames; dropping connection",
+			),
+		);
+		return true;
+	}
+
+	/**
+	 * Report a protocol-level violation and tear the connection down.
+	 *
+	 * `disconnect()` clears the buffer and destroys the socket, so the next use
+	 * reconnects through ConnectionManager with clean framing state.
+	 */
+	private failConnection(err: Error): void {
+		logger.warn(err.message);
+		this.emit("error", err);
+		this.disconnect();
 	}
 
 	/**

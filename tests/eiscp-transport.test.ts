@@ -199,14 +199,15 @@ describe("EiscpTransport lifecycle", () => {
 		try {
 			await transport.connect();
 			await mock.waitForClient();
-			// The parser only runs with >= 16 buffered bytes, so the second
-			// 8-byte line stays queued until more data arrives — that is the
-			// documented reassembly behaviour, asserted here.
+			// Both lines are emitted immediately. A headerless ISCP line can be as
+			// short as 8 bytes, so the framing loop must not wait for a full
+			// 16-byte eISCP header before trying the raw path — it used to, which
+			// stranded every trailing short line until unrelated data arrived.
 			mock.broadcastRaw(Buffer.from("!1PWR01\r!1MVL0E\r", "ascii"));
-			await waitForFrames(frames, 1);
-			assert.deepEqual(frames.map(project), ["raw:!1PWR01"]);
+			await waitForFrames(frames, 2);
+			assert.deepEqual(frames.map(project), ["raw:!1PWR01", "raw:!1MVL0E"]);
 
-			// More data flushes the queued line, then the new frame decodes.
+			// A following enveloped frame still decodes.
 			mock.broadcastRaw(frameReply("AMT", "00"));
 			await waitForFrames(frames, 3);
 			assert.deepEqual(frames.map(project), ["raw:!1PWR01", "raw:!1MVL0E", "eiscp:!1AMT00"]);
@@ -237,6 +238,65 @@ describe("EiscpTransport lifecycle", () => {
 			mock.broadcastRaw(frameReply("AMT", "00"));
 			await waitForFrames(frames, 2);
 			assert.deepEqual(frames.map(project).at(-1), "eiscp:!1AMT00");
+		} finally {
+			transport.disconnect();
+			await mock.close();
+		}
+	});
+
+	it("drops the connection when a peer declares an oversized frame", async () => {
+		const mock = await startMockReceiver();
+		const transport = createTransport({ host: "127.0.0.1", port: mock.port });
+		const errors: Error[] = [];
+		transport.on("error", (err) => errors.push(err));
+		try {
+			await transport.connect();
+			await mock.waitForClient();
+
+			// A well-formed header claiming a 4 GiB body. The old framing loop
+			// waited for those bytes forever while every further chunk grew the
+			// receive buffer, so this is the memory-exhaustion primitive.
+			const header = Buffer.alloc(16);
+			header.write("ISCP", 0, "ascii");
+			header.writeUInt32BE(16, 4);
+			header.writeUInt32BE(0xffffffff, 8);
+			header.writeUInt32BE(0x01000000, 12);
+			mock.broadcastRaw(header);
+
+			const start = Date.now();
+			while (transport.isConnected() && Date.now() - start < 3000) {
+				await sleep(20);
+			}
+			assert.equal(transport.isConnected(), false, "connection should have been dropped");
+			assert.match(String(errors.at(-1)?.message), /exceeds maximum/);
+		} finally {
+			transport.disconnect();
+			await mock.close();
+		}
+	});
+
+	it("drops the connection rather than buffering past the receive limit", async () => {
+		const mock = await startMockReceiver();
+		const transport = createTransport({ host: "127.0.0.1", port: mock.port });
+		const errors: Error[] = [];
+		transport.on("error", (err) => errors.push(err));
+		try {
+			await transport.connect();
+			await mock.waitForClient();
+
+			// An ISCP line that is opened and never terminated: the framing loop
+			// legitimately needs more data, so nothing here is malformed — the only
+			// thing stopping unbounded growth is the ceiling.
+			mock.broadcastRaw(Buffer.from("!1", "ascii"));
+			const filler = Buffer.alloc(8 * 1024, 0x41);
+			const start = Date.now();
+			while (transport.isConnected() && Date.now() - start < 5000) {
+				mock.broadcastRaw(filler);
+				await sleep(5);
+			}
+
+			assert.equal(transport.isConnected(), false, "connection should have been dropped");
+			assert.match(String(errors.at(-1)?.message), /receive buffer limit exceeded/);
 		} finally {
 			transport.disconnect();
 			await mock.close();

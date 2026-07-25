@@ -16,6 +16,20 @@
 import { PacketHeader, Terminator, type Terminator as TerminatorType } from "./enums.ts";
 
 /**
+ * Largest ISCP message body we will accept from a peer.
+ *
+ * The `dataSize` header field is a full uint32, so a peer can declare up to 4
+ * GiB. Without a ceiling, `decodePacket` only rejects buffers that are *too
+ * short* for the declared size, and the transport therefore waits — and keeps
+ * buffering — for a frame that never completes. Real traffic is tiny: the
+ * longest response captured from the reference VSX-S520D is 66 bytes. 64 KiB
+ * leaves ample room for the largest realistic payloads (the `NRI` receiver-info
+ * XML, which this plugin does not currently query) while keeping the worst case
+ * bounded.
+ */
+export const MAX_FRAME_BYTES = 64 * 1024;
+
+/**
  * Represents a parsed eISCP packet
  */
 export interface EiscpPacket {
@@ -131,6 +145,15 @@ export function decodePacket(buffer: Buffer): EiscpPacket {
 
 	const dataSize = buffer.readUInt32BE(8);
 	const version = buffer.subarray(12, 16);
+
+	// Reject absurd declared sizes before doing anything sized by them. Without
+	// this the only check is "is the buffer long enough yet", which a peer can
+	// keep false forever while the transport buffers.
+	if (dataSize > MAX_FRAME_BYTES) {
+		throw new Error(
+			`Data size ${dataSize} exceeds maximum frame size ${MAX_FRAME_BYTES}`,
+		);
+	}
 
 	// Validate buffer size
 	if (buffer.length < PacketHeader.HEADER_SIZE + dataSize) {
