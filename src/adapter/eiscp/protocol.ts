@@ -309,7 +309,20 @@ export function isQuery(message: string): boolean {
  * @returns Message without terminators
  */
 export function stripTerminators(message: string): string {
-	return message.replace(/[\x0D\x0A\x1A\x19]+$/g, "");
+	// A backward scan rather than /[\x0D\x0A\x1A\x19]+$/, which backtracks
+	// quadratically: for a long run of terminators followed by any other
+	// character the engine retries the whole run from every start position.
+	// Found by fuzzing — 64 KiB of CR plus one trailing byte (a frame a peer can
+	// send, and pipeline) cost ~1.4 s of CPU each. Behaviour is identical: strip
+	// the maximal run of terminator characters at the end.
+	let end = message.length;
+	while (end > 0 && isTerminatorCode(message.charCodeAt(end - 1))) end--;
+	return end === message.length ? message : message.slice(0, end);
+}
+
+/** CR, LF, SUB and EM — the terminators receivers are known to append. */
+function isTerminatorCode(code: number): boolean {
+	return code === 0x0d || code === 0x0a || code === 0x1a || code === 0x19;
 }
 
 /**
