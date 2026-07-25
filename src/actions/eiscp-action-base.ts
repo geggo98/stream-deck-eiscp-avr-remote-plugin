@@ -194,7 +194,7 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			this.logger.warn("bindKey: no device IP configured");
 			// Unconditional: title-less toggles (Power/Mute) would otherwise
 			// look fully functional with no IP configured at all.
-			await action.setTitle(UNCONFIGURED_TITLE);
+			fireAndLog(action.setTitle(UNCONFIGURED_TITLE), this.logger, "setTitle");
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -213,20 +213,20 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			if (!fresh()) return;
 			// Degrade visibly instead of showing a stale/empty key; render()
 			// restores the configured title on the next successful update.
-			await action.setTitle("?");
+			fireAndLog(action.setTitle("?"), this.logger, "setTitle");
 		}
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<TSettings>): Promise<void> {
 		const cfg = this.getToggleConfig(ev.payload.settings);
 		if (!cfg) {
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 			return;
 		}
 		const host = resolveDeviceIp(ev.payload.settings);
 		if (!host) {
 			this.logger.warn("onKeyDown: no device IP configured");
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -243,10 +243,10 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 				}
 				await mgr.sendCommand(host, cfg.command, nextToggleValue(current, cfg));
 			}
-			await ev.action.showOk();
+			fireAndLog(ev.action.showOk(), this.logger, "showOk");
 		} catch (err) {
 			this.logger.error(`onKeyDown: toggle ${cfg.command} on ${host} failed: ${err}`);
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 		}
 	}
 }
@@ -283,7 +283,7 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		const cfg = this.getKeyConfig(settings);
 		if (!cfg) {
 			this.logger.warn("bindKey: no command configured");
-			await action.setTitle("?");
+			fireAndLog(action.setTitle("?"), this.logger, "setTitle");
 			return;
 		}
 		const generation = this.nextBindGeneration(action.id);
@@ -294,12 +294,12 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			// Even state-less keys (transport, tone steppers) must reveal a
 			// missing IP; they would otherwise look functional until pressed.
 			this.logger.warn("bindKey: no device IP configured");
-			await action.setTitle(UNCONFIGURED_TITLE);
+			fireAndLog(action.setTitle(UNCONFIGURED_TITLE), this.logger, "setTitle");
 			return;
 		}
 		if (!this.showsState) {
 			// Clear a possible lingering "No IP" title now that an IP exists.
-			await action.setTitle();
+			fireAndLog(action.setTitle(), this.logger, "setTitle");
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -315,7 +315,7 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		} catch (err) {
 			this.logger.error(`bindKey: query ${cfg.command} failed: ${err}`);
 			if (!fresh()) return;
-			await action.setTitle(cfg.command);
+			fireAndLog(action.setTitle(cfg.command), this.logger, "setTitle");
 		}
 	}
 
@@ -323,22 +323,22 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		const cfg = this.getKeyConfig(ev.payload.settings);
 		if (!cfg || !cfg.parameter) {
 			this.logger.warn("onKeyDown: missing command/parameter");
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 			return;
 		}
 		const host = resolveDeviceIp(ev.payload.settings);
 		if (!host) {
 			this.logger.warn("onKeyDown: no device IP configured");
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
 		try {
 			await mgr.sendCommand(host, cfg.command, cfg.parameter);
-			await ev.action.showOk();
+			fireAndLog(ev.action.showOk(), this.logger, "showOk");
 		} catch (err) {
 			this.logger.error(`onKeyDown: ${cfg.command} ${cfg.parameter} failed: ${err}`);
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 		}
 	}
 }
@@ -412,7 +412,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		this.pressState.delete(actionId);
 		if (!host) {
 			this.logger.warn("bind: no device IP configured");
-			await action.setFeedback({ title: UNCONFIGURED_TITLE, value: "" });
+			fireAndLog(action.setFeedback({ title: UNCONFIGURED_TITLE, value: "" }), this.logger, "setFeedback");
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -461,7 +461,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			this.logger.error(`bind: query ${cfg.command} on ${host} failed: ${err}`);
 			if (!fresh()) return;
 			// Degrade visibly; the next live update overwrites this.
-			await action.setFeedback({ title: "?", value: "" });
+			fireAndLog(action.setFeedback({ title: "?", value: "" }), this.logger, "setFeedback");
 		}
 	}
 
@@ -475,7 +475,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		if (!cfg) return;
 		const host = resolveDeviceIp(ev.payload.settings);
 		if (!host) {
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -489,7 +489,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		} catch (err) {
 			this.logger.error(`onDialRotate: ${cfg.command} ${param} on ${host} failed: ${err}`);
 			// showAlert works on dials too (only showOk is keypad-only).
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 		}
 	}
 
@@ -504,7 +504,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		}
 		const host = resolveDeviceIp(ev.payload.settings);
 		if (!host) {
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 			return;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -512,7 +512,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			await mgr.sendCommand(host, pressCommand, pressParam);
 		} catch (err) {
 			this.logger.error(`onDialDown: ${pressCommand} ${pressParam} on ${host} failed: ${err}`);
-			await ev.action.showAlert();
+			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
 		}
 	}
 }

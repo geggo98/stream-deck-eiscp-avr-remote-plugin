@@ -83,16 +83,27 @@ export async function handleDiscoverMessage(
 	if (!payload || typeof payload !== "object" || payload.action !== "discover") return;
 	if (!ev.action.isKey() && !ev.action.isDial()) return;
 	const action = ev.action;
-	const settings = await action.getSettings();
-	const host = resolveDeviceIp(settings);
 	// Plugin -> PI messages go through the global UI controller (the currently
 	// visible property inspector, i.e. this action's PI).
 	const send = (m: JsonValue) =>
 		fireAndLog(streamDeck.ui.sendToPropertyInspector(m), log, "sendToPropertyInspector");
 
+	// The SDK invokes onSendToPlugin without awaiting or catching it, so anything
+	// that rejects here escapes as an unhandled rejection. Route every SDK call
+	// through fireAndLog / an explicit catch rather than a bare await.
+	let settings: EiscpActionSettings;
+	try {
+		settings = await action.getSettings();
+	} catch (err) {
+		log.error(`discover: failed to read settings: ${err}`);
+		send({ event: "discover", phase: "error", message: "Could not read action settings" });
+		return;
+	}
+	const host = resolveDeviceIp(settings);
+
 	if (!host) {
 		send({ event: "discover", phase: "error", message: "No device IP configured" });
-		if (action.isKey()) await action.showAlert();
+		if (action.isKey()) fireAndLog(action.showAlert(), log, "showAlert");
 		return;
 	}
 
@@ -103,10 +114,10 @@ export async function handleDiscoverMessage(
 		);
 		send({ event: "discover", phase: "done", count });
 		// showOk is Keypad-only; dials report status via the PI messages.
-		if (action.isKey()) await action.showOk();
+		if (action.isKey()) fireAndLog(action.showOk(), log, "showOk");
 	} catch (err) {
 		log.error(`discover sweep failed: ${err}`);
 		send({ event: "discover", phase: "error", message: String(err) });
-		if (action.isKey()) await action.showAlert();
+		if (action.isKey()) fireAndLog(action.showAlert(), log, "showAlert");
 	}
 }

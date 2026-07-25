@@ -17,6 +17,21 @@ import { setAdapterLogger } from "./adapter/logging";
 // EISCP_DEBUG for local debugging; ship at INFO.
 streamDeck.logger.setLevel(process.env.EISCP_DEBUG ? "trace" : "info");
 
+// Node runs with unhandled rejections fatal, and the SDK's own safety net is a
+// `process.once("uncaughtException", …)` — so it absorbs exactly one escaped
+// error and the *second* one kills the plugin, taking every button on the deck
+// with it. A remote peer or a rejected SDK call should never be able to do that,
+// so keep the process alive and leave a breadcrumb instead. Deliberately not
+// re-thrown: a dead plugin is strictly worse than a logged fault.
+process.on("unhandledRejection", (reason) => {
+	streamDeck.logger.error(
+		`Unhandled promise rejection (plugin kept running): ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
+	);
+});
+process.on("uncaughtException", (err) => {
+	streamDeck.logger.error(`Uncaught exception (plugin kept running): ${err.stack ?? err.message}`);
+});
+
 // The adapter layer must not import the SDK (its log rotation is an import
 // side effect that races in parallel test processes); wire its logging here.
 setAdapterLogger(streamDeck.logger);

@@ -144,7 +144,7 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		const host = resolveDeviceIp(settings);
 		if (!host) {
 			this.logger.warn("bindKey: no device IP configured");
-			await action.setTitle(UNCONFIGURED_TITLE);
+			fireAndLog(action.setTitle(UNCONFIGURED_TITLE), this.logger, "setTitle");
 			return;
 		}
 		const command = this.displayCommand();
@@ -172,7 +172,7 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 			if (mgr.getCachedValue(host, command) !== undefined) {
 				refresh();
 			} else {
-				await action.setTitle("?");
+				fireAndLog(action.setTitle("?"), this.logger, "setTitle");
 			}
 		}
 	}
