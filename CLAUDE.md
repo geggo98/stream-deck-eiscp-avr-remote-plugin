@@ -74,9 +74,17 @@ only accepts known catalog ids, so typos fail to compile).
 
 - **Plugin ID:** `de.schwetschke.sd.eiscp-avr-remote`
 - **Node.js requirement:** Plugin targets the Node.js 24 runtime (manifest `Nodejs.Version` 24), which needs Stream Deck 7.1+ (`Software.MinimumVersion` 7.1); dev env also uses Node 24
-- **Debug mode:** Enabled in manifest
+- **Debug mode:** **disabled** in the committed manifest and in everything
+  `npm run build` produces. `Nodejs.Debug: "enabled"` opens a Node inspector
+  port (local code execution into the plugin process) and flips the SDK to
+  TRACE, so it must never ship. `npm run watch` turns it on for the dev loop
+  (`sync-manifest-version.ts --debug`); `npm run build` turns it back off.
+  `npm run verify:manifest` gates `npm run pack` and CI, and a pre-commit hook
+  (`forbid-debug-manifest` in `devenv.nix`) blocks committing it enabled.
 - **Build output ignored:** `*.sdPlugin/bin` is gitignored, plugin source is tracked
-- **Logging:** Currently set to "trace" level in `plugin.ts`
+- **Logging:** "info" by default; set `EISCP_DEBUG` to get "trace" (see
+  `plugin.ts`). TRACE dumps every WebSocket frame, i.e. full settings objects,
+  LAN IPs and the learned-name map, into the plugin's log files.
 - **No default device IP:** `resolveDeviceIp` returns `undefined` when neither
   the action settings nor the global settings carry an IP; actions then show
   "No IP" / alert and send nothing. There is deliberately no baked-in fallback.
@@ -148,7 +156,10 @@ PIs are static HTML in `*.sdPlugin/ui/` using SDPI Components v4
 ## Testing the live Property Inspector (CDP)
 
 Stream Deck in debug mode exposes Chrome DevTools Protocol at
-`http://127.0.0.1:23654`; `…/json/list` lists the open PI webview. Attach a
+`http://127.0.0.1:23654`; `…/json/list` lists the open PI webview. **Debug mode
+is off in normal builds** — run `npm run watch` (which sets
+`Nodejs.Debug: "enabled"`) and restart the plugin to get the endpoint, and
+remember that `npm run build` turns it back off. Attach a
 CDP browser (e.g. the `web-browser` skill, `connect 23654`) to inspect and
 drive the live PI. The webview title depends on the PI HTML:
 "eISCP Settings" (`dedicated.html`, `discover.html`), "eISCP Button Settings"

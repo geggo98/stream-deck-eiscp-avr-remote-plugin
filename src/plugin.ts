@@ -11,7 +11,11 @@ import { register as registerDiscovery } from "./actions/dedicated/discovery";
 import { ConnectionManager } from "./adapter/eiscp/connection-manager";
 import { setAdapterLogger } from "./adapter/logging";
 
-streamDeck.logger.setLevel("trace");
+// TRACE makes the SDK dump every WebSocket frame, which means complete settings
+// objects, LAN IPs and the whole learned-name map land in the plugin's log files
+// (up to 10x50 MB, plaintext, and routinely attached to bug reports). Opt in via
+// EISCP_DEBUG for local debugging; ship at INFO.
+streamDeck.logger.setLevel(process.env.EISCP_DEBUG ? "trace" : "info");
 
 // The adapter layer must not import the SDK (its log rotation is an import
 // side effect that races in parallel test processes); wire its logging here.

@@ -80,6 +80,28 @@
       pass_filenames = false;
       always_run = true;
     };
+    # Refuse to commit a manifest with the Node inspector switched on. `npm run
+    # watch` enables it for the dev loop; committing that would ship an open
+    # inspector port and TRACE logging to users. `npm run build` resets it.
+    forbid-debug-manifest = {
+      enable = true;
+      name = "forbid committing a debug-enabled manifest";
+      entry = "${pkgs.writeShellScript "forbid-debug-manifest" ''
+        manifest=de.schwetschke.sd.eiscp-avr-remote.sdPlugin/manifest.json
+        if ! git diff --cached --name-only --diff-filter=AM | grep -qxF "$manifest"; then
+          exit 0
+        fi
+        if git show ":$manifest" | ${pkgs.jq}/bin/jq -e '.Nodejs.Debug != "disabled"' >/dev/null; then
+          echo "ERROR: refusing to commit $manifest with Nodejs.Debug != \"disabled\"." >&2
+          echo "An enabled Node debug mode opens an inspector port in production and" >&2
+          echo "logs settings and LAN IPs at TRACE. Run 'npm run build' to reset it." >&2
+          exit 1
+        fi
+      ''}";
+      language = "system";
+      pass_filenames = false;
+      always_run = true;
+    };
     # Block secrets from being committed (pre-commit).
     gitleaks = {
       enable = true;
