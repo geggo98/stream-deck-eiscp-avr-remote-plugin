@@ -15,8 +15,13 @@
  * process, and it flips the SDK to TRACE logging (every WebSocket frame, i.e.
  * complete settings objects and LAN IPs, onto disk). It must therefore never
  * ship. Pass `--debug` (or set SD_DEBUG=1) to turn it on for the local dev
- * loop; `npm run watch` does. Plain `npm run build` always turns it off, and
- * `npm run verify:manifest` fails the build if a release artifact has it on.
+ * loop; `npm run watch` does. Plain `npm run build` removes it again, and
+ * `npm run verify:manifest` fails the build if a release artifact still has it.
+ *
+ * Note the off state is the key being **absent**, not `"disabled"`: Stream Deck
+ * refuses to launch a plugin whose `Nodejs.Debug` is `"disabled"` (it exits
+ * immediately with code 1, before any JS runs, so nothing is logged), and
+ * `streamdeck pack` likewise strips the key rather than writing a value.
  *
  * Runs as the first step of `npm run build` (chained directly, so a global
  * `ignore-scripts` can't silently skip it); also available as `npm run sync:version`.
@@ -39,7 +44,6 @@ const manifestVersion = `${major}.${minor}.${patch}.0`;
 // A CLI flag rather than only an env var, so `npm run watch` works the same on
 // Windows cmd, where `SD_DEBUG=1 tsx …` is not valid syntax.
 const debugRequested = process.argv.includes("--debug") || process.env.SD_DEBUG === "1";
-const debugMode = debugRequested ? "enabled" : "disabled";
 
 const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf-8"));
 const changes: string[] = [];
@@ -50,14 +54,22 @@ if (manifest.Version !== manifestVersion) {
 }
 
 manifest.Nodejs ??= {};
-if (manifest.Nodejs.Debug !== debugMode) {
-	manifest.Nodejs.Debug = debugMode;
-	changes.push(`Nodejs.Debug → ${debugMode}`);
+if (debugRequested) {
+	if (manifest.Nodejs.Debug !== "enabled") {
+		manifest.Nodejs.Debug = "enabled";
+		changes.push('Nodejs.Debug → "enabled"');
+	}
+} else if ("Debug" in manifest.Nodejs) {
+	// Remove rather than set "disabled": Stream Deck refuses to launch a plugin
+	// whose Nodejs.Debug is "disabled" (the process exits with code 1 before any
+	// JS runs, so nothing appears in the plugin's own log — it just looks dead).
+	delete manifest.Nodejs.Debug;
+	changes.push("Nodejs.Debug removed");
 }
 
 if (changes.length === 0) {
 	console.log(
-		`manifest already in sync (Version ${manifestVersion}, Nodejs.Debug ${debugMode}).`,
+		`manifest already in sync (Version ${manifestVersion}, Nodejs.Debug ${debugRequested ? '"enabled"' : "absent"}).`,
 	);
 } else {
 	writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n", "utf-8");

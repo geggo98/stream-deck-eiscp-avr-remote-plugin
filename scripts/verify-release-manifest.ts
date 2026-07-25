@@ -9,11 +9,16 @@
  * up to 10x50 MB of plaintext log files. It is useful in the dev loop and must
  * never reach a user.
  *
- * `npm run build` already resets the flag via sync-manifest-version.ts. This
+ * `npm run build` already removes the flag via sync-manifest-version.ts. This
  * script is the backstop for the two ways it could still escape: someone
  * committing a manifest left over from `npm run watch`, and `npm run pack`
  * being run without a preceding build. Wired into `pack`, into CI, and into a
  * pre-commit hook (devenv.nix).
+ *
+ * The release state is the key being **absent**. It is not `"disabled"`: Stream
+ * Deck refuses to launch a plugin with `Nodejs.Debug: "disabled"` — the process
+ * exits with code 1 before any JS runs, so the plugin simply never appears and
+ * its own log stays empty. `streamdeck pack` strips the key for the same reason.
  */
 
 import { readFileSync } from "node:fs";
@@ -27,15 +32,16 @@ const MANIFEST_PATH = resolve(
 );
 
 const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf-8"));
-const debugMode = manifest.Nodejs?.Debug;
 
-if (debugMode !== "disabled") {
+if (manifest.Nodejs && "Debug" in manifest.Nodejs) {
 	console.error(
-		`ERROR: manifest Nodejs.Debug is ${JSON.stringify(debugMode)}, expected "disabled".\n` +
-			"An enabled Node debug mode opens an inspector port in production and logs\n" +
-			"settings and LAN IPs at TRACE. Run `npm run build` to reset it, then retry.",
+		`ERROR: manifest has Nodejs.Debug: ${JSON.stringify(manifest.Nodejs.Debug)}; it must be absent.\n` +
+			'"enabled" opens an inspector port in production and logs settings and LAN IPs\n' +
+			'at TRACE. "disabled" is worse than useless: Stream Deck then refuses to launch\n' +
+			"the plugin at all (exit code 1 before any JS runs).\n" +
+			"Run `npm run build` to remove the key, then retry.",
 	);
 	process.exit(1);
 }
 
-console.log('manifest Nodejs.Debug is "disabled" — safe to release.');
+console.log("manifest has no Nodejs.Debug key — safe to release.");

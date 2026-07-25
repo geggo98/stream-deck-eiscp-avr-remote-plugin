@@ -1,0 +1,36 @@
+/*
+ * Shared Property Inspector styling.
+ *
+ * sdpi-components themes its own components only; plain text in a PI inherits
+ * the document default, which is BLACK on Stream Deck's dark panel. Any hint
+ * paragraph therefore needs an explicit light colour — and must not be dimmed
+ * with `opacity`, which was making black text on a dark panel effectively
+ * invisible rather than merely secondary.
+ *
+ * Loaded by every PI so hints look the same everywhere and there is one place
+ * to change them.
+ */
+
+/* Secondary explanatory text. Light enough to read (roughly 9:1 against the
+   panel) while still reading as secondary next to the sdpi labels. */
+.pi-hint {
+	color: #c8c8c8;
+	font-size: 12px;
+	margin: 8px 4px 2px;
+	line-height: 1.35;
+}
+
+/* A hint that reports a problem the user needs to act on. */
+.pi-warn {
+	color: #f5a623;
+	font-size: 12px;
+	margin: 4px 4px 2px;
+	line-height: 1.35;
+}
+
+/* Trim the trailing scrollbar: content is tightened to fit; if the panel is
+   very short it still scrolls (wheel), the bar just stays hidden. */
+::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+}

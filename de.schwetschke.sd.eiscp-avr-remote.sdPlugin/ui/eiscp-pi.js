@@ -4,23 +4,79 @@
  * Populates command/parameter dropdowns from window.EISCP_COMMANDS (generated
  * by `npm run generate:commands` into commands.js) so the PI never has to be
  * hand-synced with the registry. Load order in each PI:
- *   sdpi-components.js  ->  commands.js  ->  eiscp-pi.js  ->  inline init
+ *   sdpi-components.js  ->  commands.js  ->  eiscp-pi.js  ->  init/<pi-name>.js
+ *
+ * The per-PI init script is a separate file rather than an inline <script>
+ * because the PIs carry a Content-Security-Policy that refuses inline script
+ * (see SECURITY.md). Shared styling lives in eiscp-pi.css.
  */
 (function () {
 	"use strict";
 
 	const COMMANDS = () => window.EISCP_COMMANDS || [];
 
+	/** How long to wait for the plugin's device-list reply before offering a way out. */
+	const DEVICE_LIST_TIMEOUT_MS = 6000;
+
+	// Anything that depends on "is a usable device IP configured?" registers here:
+	// the Device IP select, the custom-IP field and the plugin-wide global setting
+	// can each change it, and the Auto-Discover button has to follow.
+	const ipListeners = new Set();
+	function onEffectiveIpChanged(fn) {
+		ipListeners.add(fn);
+		fn();
+	}
+	function notifyIpChanged() {
+		for (const fn of ipListeners) {
+			try {
+				fn();
+			} catch (e) {
+				/* a broken listener must not stop the others */
+			}
+		}
+	}
+
+	// The plugin-wide fallback IP (global settings). resolveDeviceIp() in the
+	// plugin falls back to it, so an action with nothing selected can still be
+	// perfectly functional — the PI must not claim otherwise.
+	let globalDeviceIp = "";
+	try {
+		SDPIComponents.streamDeckClient
+			.getGlobalSettings()
+			.then((gs) => {
+				globalDeviceIp = (gs && gs.deviceIp) || "";
+				notifyIpChanged();
+			})
+			.catch(() => {
+				/* leave the fallback empty */
+			});
+	} catch (e) {
+		/* sdpi client not ready; the per-action value is still evaluated */
+	}
+
+	/** The IP this action would actually use, mirroring the plugin's resolveDeviceIp. */
+	function effectiveDeviceIp() {
+		const sel = document.querySelector('[setting="deviceIp"]');
+		const custom = document.querySelector('[setting="customIp"]');
+		const selected = sel && sel.value ? String(sel.value) : "";
+		if (selected && selected !== "custom") return selected;
+		const manual = custom && custom.value ? String(custom.value).trim() : "";
+		if (manual) return manual;
+		return globalDeviceIp;
+	}
+
 	/** Show/hide a "Custom..." text field when its select is set to "custom". */
-	function setupCustomToggle(selectSetting, customItemId) {
+	function setupCustomToggle(selectSetting, customItemId, isForced) {
 		const selectEl = document.querySelector('[setting="' + selectSetting + '"]');
 		const customItem = document.getElementById(customItemId);
 		if (!selectEl || !customItem) return;
 		const update = () => {
-			customItem.style.display = selectEl.value === "custom" ? "block" : "none";
+			const on = selectEl.value === "custom" || (isForced && isForced());
+			customItem.style.display = on ? "block" : "none";
 		};
 		selectEl.addEventListener("valuechange", update);
 		setTimeout(update, 200);
+		return update;
 	}
 
 	/** Inject the shared Device IP selector + custom-IP field into a container. */
@@ -38,10 +94,71 @@
 			'  <sdpi-select setting="deviceIp" placeholder="Select device"' +
 			'    datasource="getDevices" loading="Scanning the network…" hot-reload></sdpi-select>' +
 			"</sdpi-item>" +
+			'<div class="sdpi-item" id="deviceIpFallback" style="display:none; margin:2px 4px 6px;">' +
+			'  <span id="deviceIpHint" class="pi-warn"></span>' +
+			"</div>" +
+			'<div class="sdpi-item" style="justify-content:flex-end; margin:0 4px 4px;">' +
+			'  <button id="manualIpBtn" style="font-size:12px;">Enter IP manually</button>' +
+			"</div>" +
 			'<sdpi-item label="Custom IP" id="customIpItem" style="display:none;">' +
 			'  <sdpi-textfield setting="customIp" placeholder="192.168.1.100"></sdpi-textfield>' +
 			"</sdpi-item>";
-		setupCustomToggle("deviceIp", "customIpItem");
+
+		// The manual field must be reachable *without* the plugin: it used to appear
+		// only when the dropdown's "Custom IP…" entry was selected, and that entry
+		// arrives in the plugin's reply — so when the plugin was not answering there
+		// was no way to type an address at all. An escape hatch cannot depend on the
+		// thing it is an escape hatch from.
+		let manualForced = false;
+		const refreshCustomVisibility = setupCustomToggle("deviceIp", "customIpItem", () => manualForced);
+		const manualBtn = c.querySelector("#manualIpBtn");
+		if (manualBtn) {
+			manualBtn.addEventListener("click", () => {
+				manualForced = true;
+				if (refreshCustomVisibility) refreshCustomVisibility();
+				const field = document.querySelector('[setting="customIp"]');
+				if (field && typeof field.focus === "function") field.focus();
+			});
+		}
+
+		// Keep dependent UI (the Auto-Discover button) in step with either input.
+		const selectEl = document.querySelector('[setting="deviceIp"]');
+		if (selectEl) selectEl.addEventListener("valuechange", notifyIpChanged);
+		const customEl = document.querySelector('[setting="customIp"]');
+		if (customEl) {
+			customEl.addEventListener("valuechange", notifyIpChanged);
+			customEl.addEventListener("input", notifyIpChanged);
+		}
+
+		// Watchdog: the dropdown shows its "loading" text until the plugin replies,
+		// so a plugin that is not running left it on "Scanning the network…" forever
+		// with no explanation. Time out, say so, and reveal the manual field. Mirrors
+		// the watchdog renderDiscover already had for its own messages.
+		const fallback = c.querySelector("#deviceIpFallback");
+		const hint = c.querySelector("#deviceIpHint");
+		let answered = false;
+		const watchdog = setTimeout(() => {
+			if (answered) return;
+			if (hint) {
+				hint.textContent =
+					"No device list from the plugin — is it running? Enter the IP manually below.";
+			}
+			if (fallback) fallback.style.display = "flex";
+			manualForced = true;
+			if (refreshCustomVisibility) refreshCustomVisibility();
+		}, DEVICE_LIST_TIMEOUT_MS);
+
+		try {
+			SDPIComponents.streamDeckClient.sendToPropertyInspector.subscribe((ev) => {
+				const p = ev && ev.payload ? ev.payload : ev;
+				if (!p || p.event !== "getDevices") return;
+				answered = true;
+				clearTimeout(watchdog);
+				if (fallback) fallback.style.display = "none";
+			});
+		} catch (e) {
+			/* sdpi client not ready; the watchdog still offers the manual field */
+		}
 	}
 
 	/** Populate a command <sdpi-select>, grouped into optgroups by category. */
@@ -101,7 +218,7 @@
 			" names</button>" +
 			"</div>" +
 			'<div id="discoverWarn" style="display:none; margin:8px 4px; font-size:12px;">' +
-			'  <p style="color:#f5a623;">This cycles the receiver through every ' +
+			'  <p class="pi-warn">This cycles the receiver through every ' +
 			label +
 			" to read each name from its display. The " +
 			label +
@@ -109,14 +226,37 @@
 			'  <button id="discoverConfirm">Discover</button>&nbsp;' +
 			'  <button id="discoverCancel">Cancel</button>' +
 			"</div>" +
-			'<div id="discoverStatus" style="display:none; margin:6px 4px; font-size:12px; color:#c8c8c8;"></div>';
+			'<div id="discoverNeedsIp" class="pi-hint" style="display:none;">' +
+			"  Select a device IP above to enable Auto-Discover." +
+			"</div>" +
+			'<div id="discoverStatus" class="pi-hint" style="display:none;"></div>';
 
 		const btn = c.querySelector("#discoverBtn");
 		const warn = c.querySelector("#discoverWarn");
 		const status = c.querySelector("#discoverStatus");
+		const needsIp = c.querySelector("#discoverNeedsIp");
 		const show = (el, on) => {
 			if (el) el.style.display = on ? "block" : "none";
 		};
+
+		// A sweep talks to the receiver, so it is meaningless without an address:
+		// the plugin would answer "No device IP configured" and the key would just
+		// flash an alert. Disable it until an IP would actually be resolved — which
+		// includes the plugin-wide global setting, not only this action's selection.
+		onEffectiveIpChanged(() => {
+			const hasIp = effectiveDeviceIp() !== "";
+			if (btn) {
+				btn.disabled = !hasIp;
+				btn.style.opacity = hasIp ? "" : "0.5";
+				btn.style.cursor = hasIp ? "" : "not-allowed";
+				btn.title = hasIp ? "" : "Select a device IP first";
+			}
+			show(needsIp, !hasIp);
+			if (!hasIp) {
+				show(warn, false);
+				show(status, false);
+			}
+		});
 
 		// Watchdog: if the plugin never answers (e.g. it was just restarted),
 		// don't leave the status stuck on "Starting discovery…" forever.
@@ -139,6 +279,12 @@
 		btn.addEventListener("click", () => show(warn, true));
 		c.querySelector("#discoverCancel").addEventListener("click", () => show(warn, false));
 		c.querySelector("#discoverConfirm").addEventListener("click", () => {
+			// Defence in depth: the panel is hidden when no IP resolves, but never
+			// start a receiver sweep that the plugin can only reject.
+			if (effectiveDeviceIp() === "") {
+				show(warn, false);
+				return;
+			}
 			show(warn, false);
 			show(status, true);
 			show(btn, false);

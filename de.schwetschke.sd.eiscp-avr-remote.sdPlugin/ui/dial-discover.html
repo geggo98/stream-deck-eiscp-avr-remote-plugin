@@ -9,15 +9,7 @@
     <script src="vendor/sdpi-components.js"></script>
     <script src="commands.js"></script>
     <script src="eiscp-pi.js"></script>
-    <style>
-        /* The PI's default text colour is black, which is unreadable on the dark
-           panel; sdpi only themes its own components. Give our plain text a light
-           colour (like the sdpi labels, rgb(150,150,150)) so it is legible. */
-        .pi-hint { color: #a0a0a0; font-size: 12px; margin: 4px 4px 2px; line-height: 1.3; }
-        /* Trim the trailing scrollbar: content is tightened to fit; if the panel
-           is very short it still scrolls (wheel), the bar just stays hidden. */
-        ::-webkit-scrollbar { width: 0; height: 0; }
-    </style>
+    <link rel="stylesheet" href="eiscp-pi.css" />
 </head>
 
 <body>

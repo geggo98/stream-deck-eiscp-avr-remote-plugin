@@ -89,6 +89,27 @@ who types a wrong IP gets a non-working button, and that is fine.
 > data, and relying on a packaging step to strip a dangerous flag is fragile — but
 > it should not be read as having affected users. The parts of the logging problem
 > that *did* affect every install are tracked separately as M11.
+
+> **The first attempt at this fix broke the plugin.** It set
+> `Nodejs.Debug: "disabled"`, which is not a value Stream Deck accepts: it then
+> refuses to launch the plugin at all. The process exits with code 1 *before any
+> JavaScript runs*, so the plugin's own log stays empty and there is no crash to
+> find — the plugin simply never appears. Stream Deck's own log
+> (`~/Library/Logs/ElgatoStreamDeck/StreamDeck.log`) shows
+> `Process stopped (unexpected): code=0x00000001` in a 10-second restart loop,
+> ending in `Plugin is unstable an was disabled`; after that, `npx streamdeck
+> restart` no longer helps and the app must be restarted.
+>
+> The correct release state is the key being **absent**, which is also what
+> `streamdeck pack` produces. `sync-manifest-version.ts` now deletes it for
+> release builds and adds `"enabled"` only for `npm run watch`;
+> `verify-release-manifest.ts` and the pre-commit hook reject the key in *any*
+> form. Both directions are verified against the real app.
+>
+> Two lessons worth keeping: a green `npm test` / `npm run build` /
+> `streamdeck validate` says nothing about whether Stream Deck will *launch* the
+> plugin, and a security hardening step that changes packaging metadata has to be
+> verified by actually running the product.
 | H2 | All nine Property Inspectors loaded `sdpi-components.js` from `https://sdpi-components.dev` with no Subresource Integrity and no CSP. A PI webview has full access to `SDPIComponents.streamDeckClient`, so altering that one response yields: write any action setting (device IP, custom command parameters → H4/M7), read back all global settings, and drive the receiver sweep (M8). | T3 | `vendor sdpi-components and add a CSP to every PI` |
 | H3 | Unbounded receive path. `dataSize` is an unchecked `uint32`, and the framing loop only asked "is the buffer long enough yet" — which a peer keeps false forever by declaring `0xFFFFFFFF`, or simply by opening an ISCP line with `!` and never terminating it. Meanwhile `receiveBuffer = Buffer.concat([receiveBuffer, chunk])` ran per `data` event (O(n²) in bytes received) and consuming via `subarray` retained the whole parent allocation. | T2 | `bound the eISCP receive path` |
 | H4 | The discovery socket is bound but never connected, and neither the source address nor the source port was checked, so any host that could reach the ephemeral port had its datagrams parsed and trusted. The dedupe key (`identifier-host`) is built from attacker-supplied bytes and nothing capped the device list, so one host could flood the PI device dropdown — and in the unified controller each entry also triggers an outbound TCP connect. | T1 | `validate and bound eISCP discovery input` |
@@ -228,11 +249,33 @@ generating it again.
   `npm run discover-eiscp-broadcast` and `npm run discover-airplay` (4 LAN
   devices, IPv4 and zone-scoped IPv6) all still work.
 
-## Not verified
+## Confirmed in the running app
 
-One thing needs a human at the Stream Deck UI, because a PI webview only exists
-while its action is selected: **open one Property Inspector of each kind and
-confirm the Device IP dropdown and the dynamic parameter selects still populate.**
-The headless check above covers CSP enforcement and element upgrade, but the
-`datasource` round-trip to the plugin needs the real app. This is the regression
-the `sdpi-select` upgrade-order behaviour documented in CLAUDE.md would cause.
+The `datasource` round-trip was subsequently verified in the real Stream Deck app
+after the manifest correction above: the Device IP dropdown populates with
+`VSX-S520D (10.2.0.32)`, the dials show live receiver values, and the plugin log
+reports `Connected to 10.2.0.32:60128`. Property Inspectors for the other action
+types are worth a look after any change to `ui/`, since a PI webview only exists
+while its action is selected and cannot be opened from a script.
+
+## Follow-up hardening in the Property Inspector
+
+Fixing the manifest exposed that the PI had no defence against the plugin being
+unavailable, which is what made the failure so opaque:
+
+- The Device IP dropdown waited forever on its `loading` text ("Scanning the
+  network…") with no explanation. It now has a watchdog, like the Auto-Discover
+  button already had.
+- The manual-IP field could only be revealed by selecting the dropdown's
+  "Custom IP…" entry — which arrives *in the plugin's reply*. The one escape hatch
+  from "the plugin is not answering" required the plugin to answer. There is now
+  an "Enter IP manually" button that does not depend on it.
+- `handleDeviceListMessage` now always sends a reply, even if resolution fails
+  unexpectedly, so the plugin can never be the reason the dropdown hangs.
+- Auto-Discover is disabled unless an IP would actually resolve (including the
+  plugin-wide global setting, not just the action's own selection); a sweep
+  without an address can only be rejected.
+- PI hint text had `opacity: 0.6` on text that inherits **black** on a dark panel,
+  making it unreadable. Hints now use shared `.pi-hint` / `.pi-warn` classes in
+  `ui/eiscp-pi.css`, and the one hint that carried no actionable information was
+  removed rather than restyled.

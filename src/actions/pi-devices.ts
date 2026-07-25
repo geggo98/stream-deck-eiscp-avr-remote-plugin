@@ -20,7 +20,13 @@ import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { discoverEiscpDevicesStreaming } from "../adapter/eiscp/discover.ts";
 import { fireAndLog, getCachedGlobalSettings, type EiscpActionSettings } from "./eiscp-base.ts";
-import { DISCOVERY_TIMEOUT_MS, resolveDeviceList, type DeviceCache } from "./pi-device-list.ts";
+import {
+	buildItems,
+	DISCOVERY_TIMEOUT_MS,
+	resolveDeviceList,
+	type DeviceCache,
+	type DeviceListItem,
+} from "./pi-device-list.ts";
 
 const logger = streamDeck.logger.createScope("PiDevices");
 
@@ -67,18 +73,34 @@ export async function handleDeviceListMessage<T extends EiscpActionSettings>(
 		inFlight = undefined;
 	});
 
-	const result = await inFlight;
-	cache = result.cache;
-	if (result.blockedErrors) {
-		logger.warn(
-			`getDevices discovery blocked: ${result.blockedErrors.map((e) => `${e.interfaceAddress}: ${e.message}`).join("; ")}`,
-		);
+	// The dropdown shows its "loading" text until a reply arrives, so a request
+	// that produces no reply leaves the PI stuck on "Scanning the network…" with no
+	// explanation. resolveDeviceList is written not to reject, but this handler
+	// must not be the reason the UI hangs — so always answer, even with a minimal
+	// list that at least carries the "Custom IP…" escape hatch.
+	let items: DeviceListItem[];
+	try {
+		const result = await inFlight;
+		cache = result.cache;
+		items = result.items;
+		if (result.blockedErrors) {
+			logger.warn(
+				`getDevices discovery blocked: ${result.blockedErrors.map((e) => `${e.interfaceAddress}: ${e.message}`).join("; ")}`,
+			);
+		}
+		if (result.error !== undefined) {
+			logger.error(`getDevices discovery failed: ${result.error}`);
+		}
+	} catch (err) {
+		logger.error(`getDevices failed unexpectedly, replying with a fallback list: ${err}`);
+		items = buildItems([], {
+			discoveryFailed: true,
+			configuredIp: getCachedGlobalSettings().deviceIp,
+		});
 	}
-	if (result.error !== undefined) {
-		logger.error(`getDevices discovery failed: ${result.error}`);
-	}
+
 	fireAndLog(
-		streamDeck.ui.sendToPropertyInspector({ event: DEVICE_DATASOURCE, items: result.items }),
+		streamDeck.ui.sendToPropertyInspector({ event: DEVICE_DATASOURCE, items }),
 		logger,
 		"sendToPropertyInspector",
 	);

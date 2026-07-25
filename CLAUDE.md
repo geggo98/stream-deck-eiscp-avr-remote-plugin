@@ -74,13 +74,25 @@ only accepts known catalog ids, so typos fail to compile).
 
 - **Plugin ID:** `de.schwetschke.sd.eiscp-avr-remote`
 - **Node.js requirement:** Plugin targets the Node.js 24 runtime (manifest `Nodejs.Version` 24), which needs Stream Deck 7.1+ (`Software.MinimumVersion` 7.1); dev env also uses Node 24
-- **Debug mode:** **disabled** in the committed manifest and in everything
-  `npm run build` produces. `Nodejs.Debug: "enabled"` opens a Node inspector
-  port (local code execution into the plugin process) and flips the SDK to
-  TRACE, so it must never ship. `npm run watch` turns it on for the dev loop
-  (`sync-manifest-version.ts --debug`); `npm run build` turns it back off.
-  `npm run verify:manifest` gates `npm run pack` and CI, and a pre-commit hook
-  (`forbid-debug-manifest` in `devenv.nix`) blocks committing it enabled.
+- **Debug mode:** the `Nodejs.Debug` key is **absent** from the committed
+  manifest and from everything `npm run build` produces. `"enabled"` opens a Node
+  inspector port (local code execution into the plugin process) and flips the SDK
+  to TRACE, so it must never ship. **Do not write `"disabled"`** — Stream Deck
+  then refuses to launch the plugin at all: the process exits with code 1 before
+  any JS runs, so nothing lands in the plugin's own log and it just looks dead
+  (the app log says `Process stopped (unexpected): code=0x00000001`, then
+  eventually `Plugin is unstable an was disabled`). `npm run watch` adds
+  `"enabled"` for the dev loop (`sync-manifest-version.ts --debug`);
+  `npm run build` removes the key again. `npm run verify:manifest` gates
+  `npm run pack` and CI, and a pre-commit hook (`forbid-debug-manifest` in
+  `devenv.nix`) blocks committing the key in any form.
+- **A plugin that will not start:** check
+  `~/Library/Logs/ElgatoStreamDeck/StreamDeck.log` for
+  `[de.schwetschke.sd.eiscp-avr-remote]`. An empty plugin log plus exit code 1
+  there means the failure is before the SDK logger loads — usually the manifest,
+  not the code. Once Stream Deck has marked the plugin unstable it stops
+  launching it, and `npx streamdeck restart` will not clear that; restart the
+  Stream Deck app.
 - **Build output ignored:** `*.sdPlugin/bin` is gitignored, plugin source is tracked
 - **Logging:** "info" by default; set `EISCP_DEBUG` to get "trace" (see
   `plugin.ts`). TRACE dumps every WebSocket frame, i.e. full settings objects,
@@ -120,7 +132,16 @@ and `docs/security-review-2026-07.md` the full findings; the load-bearing rules:
   ISCP command into one frame.
 - **Regexes over wire data must be linear.** Anchored trailing-run patterns
   backtrack quadratically; `stripTerminators` was a real ReDoS found by fuzzing.
-- **Debug mode must not ship** — see the note above.
+- **`Nodejs.Debug` must be absent in a release manifest** — not `"disabled"`; see
+  the note above.
+- **PI hint text needs an explicit colour.** Plain text in a Property Inspector
+  inherits black, which is invisible on the dark panel; sdpi-components themes
+  only its own components. Use the shared `.pi-hint` / `.pi-warn` classes in
+  `ui/eiscp-pi.css` and never dim hints with `opacity`.
+- **The manual-IP escape hatch must not depend on the plugin.** The Device IP
+  dropdown is filled by a plugin round-trip; if the plugin is down the PI still
+  has to let the user type an address (`renderDeviceIp`'s watchdog and "Enter IP
+  manually" button).
 - **New fuzz findings go into `tests/fixtures/fuzz-corpus.json`**, not just a fix.
 
 ## Testing without hardware
