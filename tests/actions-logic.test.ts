@@ -43,6 +43,45 @@ describe("resolveDeviceIp", () => {
 		setCachedGlobalSettings({ deviceIp: "" });
 		assert.equal(resolveDeviceIp({}), undefined);
 	});
+
+	it("rejects hostnames, so a setting cannot make the plugin resolve arbitrary names", () => {
+		assert.equal(resolveDeviceIp({ deviceIp: "receiver.local" }), undefined);
+		assert.equal(resolveDeviceIp({ customIp: "attacker.example.com" }), undefined);
+		setCachedGlobalSettings({ deviceIp: "evil.example" });
+		assert.equal(resolveDeviceIp({}), undefined);
+	});
+
+	it("rejects non-string values from the untyped PI JSON", () => {
+		// `deviceIp?: string` is a compile-time fiction: the index signature is
+		// JsonValue and these arrive as untyped JSON at runtime.
+		for (const value of [42, true, { host: "1.1.1.1" }, ["1.1.1.1"], null]) {
+			assert.equal(
+				resolveDeviceIp({ deviceIp: value as never }),
+				undefined,
+				`${JSON.stringify(value)} must not resolve`,
+			);
+		}
+	});
+
+	it("rejects malformed and whitespace-only addresses", () => {
+		for (const value of ["   ", "1.2.3", "1.2.3.4.5", "999.1.1.1", "1.1.1.1 ; rm -rf /", "::gg"]) {
+			assert.equal(resolveDeviceIp({ deviceIp: value }), undefined, `${value} must not resolve`);
+		}
+	});
+
+	it("accepts IPv4 and IPv6 literals, trimming surrounding whitespace", () => {
+		assert.equal(resolveDeviceIp({ deviceIp: " 10.2.0.32 " }), "10.2.0.32");
+		assert.equal(resolveDeviceIp({ deviceIp: "fe80::1" }), "fe80::1");
+		assert.equal(resolveDeviceIp({ deviceIp: "::1" }), "::1");
+	});
+
+	it("does not fall back to the global IP when an explicit device is invalid", () => {
+		// Silently retargeting to a different receiver than the action names would
+		// be worse than degrading to "No IP".
+		setCachedGlobalSettings({ deviceIp: "3.3.3.3" });
+		assert.equal(resolveDeviceIp({ deviceIp: "not-an-ip" }), undefined);
+		assert.equal(resolveDeviceIp({ deviceIp: "custom", customIp: "also-not-an-ip" }), undefined);
+	});
 });
 
 describe("resolveParam", () => {

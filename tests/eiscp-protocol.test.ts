@@ -17,6 +17,7 @@ import {
 	isQuery,
 	parseQueryResponse,
 } from "../src/adapter/eiscp/protocol.ts";
+import { COMMAND_REGISTRY } from "../src/adapter/eiscp/command-registry.ts";
 import {
 	InputSource,
 	ListeningMode,
@@ -47,6 +48,49 @@ describe("eISCP protocol layer", () => {
 		it("should encode with custom terminator", () => {
 			const packet = encodePacket("PWR", "01", "1", { terminator: "\x0A" });
 			assert.equal(packet.iscpMessage, "!1PWR01\n");
+		});
+
+		it("refuses a parameter containing a terminator, which would smuggle a second command", () => {
+			// "01\r!1PWR00" would produce !1PWR01\r!1PWR00\r inside one correctly
+			// framed packet — the frame-splicing primitive that free-text PI
+			// settings could otherwise reach.
+			assert.throws(() => encodePacket("PWR", "01\r!1PWR00"), /control or non-ASCII/);
+			assert.throws(() => encodePacket("PWR", "01\n!1PWR00"), /control or non-ASCII/);
+			assert.throws(() => encodePacket("PWR", "01\x1a!1PWR00"), /control or non-ASCII/);
+			assert.throws(() => encodePacket("PWR", "01\x00"), /control or non-ASCII/);
+		});
+
+		it("refuses a malformed command code", () => {
+			for (const command of ["", "PW", "PWRR", "pwr", "PW-", "PW\r", "!1P"]) {
+				assert.throws(
+					() => encodePacket(command, "01"),
+					/Invalid ISCP command/,
+					`command ${JSON.stringify(command)} should be refused`,
+				);
+			}
+		});
+
+		it("refuses an over-long or non-printable unit", () => {
+			assert.throws(() => encodePacket("PWR", "01", ""), /Invalid ISCP unit/);
+			assert.throws(() => encodePacket("PWR", "01", "11"), /Invalid ISCP unit/);
+			assert.throws(() => encodePacket("PWR", "01", "\r"), /Invalid ISCP unit/);
+		});
+
+		it("refuses an over-long parameter", () => {
+			assert.throws(() => encodePacket("PWR", "0".repeat(65)), /parameter too long/);
+			// The boundary itself is still encodable ("!1PWR" + 64 + terminator).
+			assert.equal(encodePacket("PWR", "0".repeat(64)).iscpMessage.length, 5 + 64 + 1);
+		});
+
+		it("still encodes every command and value in the generated registry", () => {
+			// Guards against the validation being stricter than real protocol data:
+			// every shipped command/value pair must remain encodable.
+			for (const def of Object.values(COMMAND_REGISTRY)) {
+				assert.doesNotThrow(() => encodePacket(def.code, "QSTN"), `${def.code} QSTN`);
+				for (const value of def.values) {
+					assert.doesNotThrow(() => encodePacket(def.code, value.param), `${def.code} ${value.param}`);
+				}
+			}
 		});
 
 		it("should have correct packet structure", () => {

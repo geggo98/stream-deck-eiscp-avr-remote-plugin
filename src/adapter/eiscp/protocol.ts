@@ -30,6 +30,60 @@ import { PacketHeader, Terminator, type Terminator as TerminatorType } from "./e
 export const MAX_FRAME_BYTES = 64 * 1024;
 
 /**
+ * Longest outbound parameter we will encode.
+ *
+ * The longest parameter in the generated command registry is 8 characters
+ * ("PLAYLIST"); discovery responses synthesised by the dev tooling reach ~30.
+ * 64 is comfortably above both while keeping a bound on values that originate
+ * from free-text Property Inspector fields.
+ */
+export const MAX_PARAMETER_LENGTH = 64;
+
+/** ISCP command codes are exactly three uppercase alphanumerics (PWR, MVL, …). */
+const COMMAND_PATTERN = /^[A-Z0-9]{3}$/;
+
+/**
+ * Reject outbound values that would corrupt the frame or smuggle a second
+ * command into it.
+ *
+ * `encodePacket` interpolates `command` and `parameter` straight into
+ * `!<unit><command><parameter><terminator>`, and several of these values come
+ * from free-text Property Inspector settings. A parameter containing CR — the
+ * ISCP terminator — produces two ISCP messages inside one correctly-framed
+ * packet, so whoever can write a setting can send arbitrary bytes to the
+ * configured host. Validating here covers every call site at once.
+ */
+function assertEncodable(command: string, parameter: string, unit: string): void {
+	if (!COMMAND_PATTERN.test(command)) {
+		throw new Error(
+			`Invalid ISCP command ${JSON.stringify(command)}: expected three uppercase alphanumerics`,
+		);
+	}
+	if (unit.length !== 1 || !isPrintableAscii(unit)) {
+		throw new Error(`Invalid ISCP unit ${JSON.stringify(unit)}: expected one printable character`);
+	}
+	if (parameter.length > MAX_PARAMETER_LENGTH) {
+		throw new Error(
+			`ISCP parameter too long: ${parameter.length} characters (maximum ${MAX_PARAMETER_LENGTH})`,
+		);
+	}
+	if (!isPrintableAscii(parameter)) {
+		throw new Error(
+			"Invalid ISCP parameter: control or non-ASCII characters would split or corrupt the frame",
+		);
+	}
+}
+
+/** True when every character is printable ASCII (0x20-0x7E). */
+function isPrintableAscii(value: string): boolean {
+	for (let i = 0; i < value.length; i++) {
+		const code = value.charCodeAt(i);
+		if (code < 0x20 || code > 0x7e) return false;
+	}
+	return true;
+}
+
+/**
  * Represents a parsed eISCP packet
  */
 export interface EiscpPacket {
@@ -89,6 +143,8 @@ export function encodePacket(
 	options: EncodingOptions = DEFAULT_ENCODING_OPTIONS,
 ): EncodedPacket {
 	const terminator = options.terminator ?? PacketHeader.DEFAULT_TERMINATOR;
+
+	assertEncodable(command, parameter, unit);
 
 	// Build ISCP message: !1CCCPP<terminator>
 	const iscpMessage = `!${unit}${command}${parameter}${terminator}`;

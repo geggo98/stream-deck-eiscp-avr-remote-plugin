@@ -2,6 +2,8 @@
  * Shared helpers for eISCP actions
  */
 
+import { isIP } from "node:net";
+
 import { COMMAND_REGISTRY, getValueName } from "../adapter/eiscp/command-registry.ts";
 
 /** JSON-compatible value (mirrors the SDK's JsonValue; undefined is allowed). */
@@ -51,19 +53,43 @@ export function resolveParam(value?: string, customValue?: string, fallback?: st
 export const UNCONFIGURED_TITLE = "No IP";
 
 /**
+ * Validate an address coming out of the untyped Property Inspector JSON.
+ *
+ * The declared `deviceIp?: string` is a compile-time fiction — the index
+ * signature is `JsonValue` and the values arrive as untyped JSON, so numbers,
+ * objects and arrays reach here at runtime and used to be handed straight to
+ * `socket.connect({ host })`. Only literal IP addresses are accepted:
+ * hostnames would make the plugin issue DNS lookups for whatever a settings
+ * writer chose, and nothing in this plugin needs to address a receiver by name.
+ *
+ * @returns The trimmed address, or undefined when it is not a usable IP.
+ */
+function validDeviceIp(value: JsonValue): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	if (!trimmed) return undefined;
+	return isIP(trimmed) === 0 ? undefined : trimmed;
+}
+
+/**
  * Resolve the receiver IP for an action: per-action setting, then the
- * plugin-wide global setting. Returns undefined when nothing is configured —
- * deliberately no hardcoded fallback, so an unconfigured action never sends
- * commands to somebody else's LAN. Callers must degrade visibly instead.
+ * plugin-wide global setting. Returns undefined when nothing is configured or
+ * the configured value is not a valid IP address — deliberately no hardcoded
+ * fallback, so an unconfigured action never sends commands to somebody else's
+ * LAN. Callers must degrade visibly instead.
+ *
+ * The precedence between the three sources is unchanged; each candidate is now
+ * validated, and a candidate that fails validation resolves to undefined rather
+ * than being passed to `socket.connect`.
  */
 export function resolveDeviceIp(settings: EiscpActionSettings): string | undefined {
 	if (settings.deviceIp && settings.deviceIp !== "custom") {
-		return settings.deviceIp;
+		return validDeviceIp(settings.deviceIp);
 	}
 	if (settings.customIp) {
-		return settings.customIp;
+		return validDeviceIp(settings.customIp);
 	}
-	return getCachedGlobalSettings().deviceIp || undefined;
+	return validDeviceIp(getCachedGlobalSettings().deviceIp);
 }
 
 /**
