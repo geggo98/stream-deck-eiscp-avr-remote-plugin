@@ -55,5 +55,8 @@
   },
   "dependencies": {
     "@elgato/streamdeck": "^2.1.0"
+  },
+  "overrides": {
+    "brace-expansion": "^5.0.8"
   }
 }

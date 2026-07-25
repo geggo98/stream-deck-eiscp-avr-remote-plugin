@@ -98,6 +98,31 @@ only accepts known catalog ids, so typos fail to compile).
 - **Typecheck surface:** `npm run typecheck` uses `tsconfig.typecheck.json`
   (src + tests + scripts); the build's `tsconfig.json` covers src only.
 
+## Security invariants
+
+The plugin parses unauthenticated LAN traffic, so the network-facing code carries
+invariants that are easy to undo by accident. `SECURITY.md` has the threat model
+and `docs/security-review-2026-07.md` the full findings; the load-bearing rules:
+
+- **Bound anything that comes off the wire.** `MAX_FRAME_BYTES` (protocol),
+  `MAX_RECEIVE_BUFFER_BYTES` (transport), device/datagram caps (discovery), name
+  and entry caps (`name-store`). Exceeding a limit tears the connection down —
+  fail loudly, never grow quietly.
+- **`ReceiveBuffer` is the only accumulator.** Do not reintroduce
+  `Buffer.concat([buffer, chunk])` per `data` event (quadratic) or hand out
+  `subarray` views of it (they pin the whole allocation).
+- **Untrusted text is escaped or clamped at every output.** `truncateForLog` for
+  logs; the sanitisers in `discover.ts` and `name-store.ts` for anything rendered
+  or persisted. ASCII decoding masks the high bit rather than rejecting, so
+  control bytes genuinely arrive.
+- **`encodePacket` is the outbound validation boundary** (3-char command,
+  printable bounded parameter). A parameter containing CR would smuggle a second
+  ISCP command into one frame.
+- **Regexes over wire data must be linear.** Anchored trailing-run patterns
+  backtrack quadratically; `stripTerminators` was a real ReDoS found by fuzzing.
+- **Debug mode must not ship** — see the note above.
+- **New fuzz findings go into `tests/fixtures/fuzz-corpus.json`**, not just a fix.
+
 ## Testing without hardware
 
 `tests/helpers/mock-receiver.ts` is a fixture-driven TCP double of the

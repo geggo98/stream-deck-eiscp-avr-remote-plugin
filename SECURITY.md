@@ -5,6 +5,60 @@
 Please report security issues privately to **stefan@schwetschke.de** rather than
 opening a public issue. You will get an acknowledgement as soon as possible.
 
+## Threat model
+
+The plugin is a network client for unauthenticated LAN traffic: eISCP frames over
+TCP from an AV receiver, and UDP discovery responses from anything that answers.
+
+| Actor | Access |
+|---|---|
+| Any host on the LAN | UDP to the discovery socket; mDNS advertisements |
+| A compromised receiver, or a MITM on the plugin↔receiver path | Full control of the TCP byte stream |
+| Whoever controls the Property Inspector's script source | Arbitrary script in the PI webview |
+| Any local process on the machine | The plugin's Node inspector port, when debug mode is on |
+
+No actor reaches credentials — eISCP is unauthenticated by design and the plugin
+holds no secrets. What is worth protecting is the availability of the plugin
+process (it dies, every button on the deck stops working), the integrity of the
+persisted settings, control over where the plugin opens connections, and the
+contents of the log files (LAN topology and usage patterns in plaintext, in files
+that get attached to bug reports).
+
+The consequences for code: bound everything that comes off the wire, treat
+device-supplied text as untrusted right through to rendering, never let a peer
+decide how much memory or CPU to spend, and fail loudly rather than quietly.
+
+## Review history
+
+- **2026-07-25 — first application-level review.**
+  [`docs/security-review-2026-07.md`](docs/security-review-2026-07.md): threat
+  model, scope (what ships and what does not), 16 findings with their fixes, and
+  the two defects that fuzzing found after the manual pass had cleared the same
+  code.
+
+## Fuzzing
+
+Parser and socket-level fuzzing for the network-facing code, with no added
+dependency: a seeded PRNG plus structure-aware generators
+(`tests/helpers/fuzz.ts`).
+
+```bash
+npm test                                          # short fixed-seed pass, part of CI
+npm run test:fuzz                                 # the fuzz files on their own
+FUZZ_ITERATIONS=200000 npm run test:fuzz          # a long local run
+FUZZ_SEED=1234 npm run test:fuzz                  # replay a reported failure
+```
+
+`npm test` uses a fixed seed and a small budget, so pull requests cannot go flaky.
+`.github/workflows/fuzz.yml` runs nightly (and on demand) with a fresh random seed
+and a large budget, and uploads the seed plus corpus when it fails. Every failure
+prints the command that reproduces it.
+
+When a fuzzer finds something, add the input to
+`tests/fixtures/fuzz-corpus.json` with a note on what it broke.
+`tests/fuzz-corpus.test.ts` replays the corpus deterministically as part of the
+normal suite, so the finding no longer depends on the fuzzer generating it again.
+
 ## Dependency scanning
 
 Dependencies are scanned with [osv-scanner](https://google.github.io/osv-scanner/)
@@ -103,6 +157,21 @@ Post-remediation: `npm run scan:vulns` reports no issues.
 
 ## Pinned dependency overrides
 
-None currently. If a transitive dependency ever needs to be force-upgraded ahead
-of its parent, add a `package.json` `overrides` entry and record the advisory ID
-and rationale here.
+### `brace-expansion` → `^5.0.8`
+
+Pulled in transitively by `minimatch` (dev-only), which requires `^2.0.1`.
+
+- [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) (7.7)
+  — fixed in 2.1.2, reachable in range.
+- [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) (7.5)
+  — fixed only in 5.0.8, i.e. past `minimatch`'s range, so an override is the only
+  way to clear it without waiting for `minimatch` to move.
+
+`brace-expansion` is a small, stable glob-brace utility and the consumer is
+dev-only tooling. Verified after the override: `npm run typecheck`, `npm test`,
+`npm run build`, `npm run validate` and `npm run pack` all pass, and
+`npm run scan:vulns` reports no issues. Drop the override once `minimatch` widens
+its range.
+
+Add further entries the same way: the advisory ID, why the parent's range does not
+cover it, and what was verified.
