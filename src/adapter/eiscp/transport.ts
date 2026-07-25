@@ -332,6 +332,32 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 	}
 
 	/**
+	 * Offset of the first complete eISCP magic in the buffer, or -1.
+	 *
+	 * A partial magic at the very end is deliberately not reported: the caller
+	 * would discard bytes before it and then still have to wait, and the next
+	 * `data` event re-runs this anyway.
+	 */
+	private indexOfMagic(): number {
+		const MAGIC = "ISCP";
+		let from = 0;
+		for (;;) {
+			const candidate = this.receiveBuffer.indexOfByte(MAGIC.charCodeAt(0), from);
+			if (candidate === -1) return -1;
+			if (candidate + MAGIC.length > this.receiveBuffer.length) return -1;
+			let matched = true;
+			for (let i = 1; i < MAGIC.length; i++) {
+				if (this.receiveBuffer.byteAt(candidate + i) !== MAGIC.charCodeAt(i)) {
+					matched = false;
+					break;
+				}
+			}
+			if (matched) return candidate;
+			from = candidate + 1;
+		}
+	}
+
+	/**
 	 * Whether the buffer starts with the eISCP magic. "incomplete" means fewer
 	 * than 4 bytes are buffered and they are still a viable prefix of "ISCP", so
 	 * the caller must wait rather than guess.
@@ -353,7 +379,24 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 	 * or the buffer was resynchronised and the caller should loop again.
 	 */
 	private processRawIscpLine(): boolean {
-		const startIdx = this.receiveBuffer.indexOfByte(0x21); // '!'
+		// Resync to whichever marker comes first: the eISCP magic, or a bare '!'.
+		// Skipping straight to '!' would find the marker *inside* the body of a
+		// following enveloped frame, silently discarding its header and reframing it
+		// as a headerless line. The message survived that, but preferring the magic
+		// keeps the framing (and the declared length) intact.
+		const magicIdx = this.indexOfMagic();
+		const bangIdx = this.receiveBuffer.indexOfByte(0x21); // '!'
+
+		if (magicIdx !== -1 && (bangIdx === -1 || magicIdx < bangIdx)) {
+			logger.debug(
+				`${this.options.host}: skipping ${magicIdx} bytes before an eISCP header: ` +
+					this.receiveBuffer.peek(Math.min(magicIdx, 32)).toString("hex"),
+			);
+			this.receiveBuffer.discard(magicIdx);
+			return true; // let the main loop take the enveloped path
+		}
+
+		const startIdx = bangIdx;
 		if (startIdx === -1) {
 			// Breadcrumb for protocol debugging — otherwise dropped
 			// bytes are indistinguishable from "nothing received".

@@ -53,6 +53,21 @@ export interface MockReceiver {
 	broadcast(command: string, parameter: string): void;
 	/** Send raw bytes to every connected client (for reassembly tests). */
 	broadcastRaw(bytes: Buffer): void;
+	/**
+	 * Send raw bytes split into `chunkSize`-byte writes, so the client's framing
+	 * has to reassemble them. Fuzzing needs this because chunk boundaries are
+	 * where reassembly bugs live, and a single write usually arrives intact.
+	 *
+	 * @param bytes - Bytes to send.
+	 * @param chunkSize - Bytes per write (at least 1).
+	 */
+	broadcastRawChunked(bytes: Buffer, chunkSize: number): void;
+	/**
+	 * Destroy every connected socket without a graceful close, simulating a
+	 * receiver that drops the connection mid-frame. Unlike `close()` the server
+	 * keeps listening, so the client can reconnect.
+	 */
+	resetConnections(): void;
 	close(): Promise<void>;
 }
 
@@ -185,6 +200,21 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 			for (const socket of sockets) {
 				if (!socket.destroyed) socket.write(bytes);
 			}
+		},
+
+		broadcastRawChunked(bytes, chunkSize) {
+			const size = Math.max(1, Math.floor(chunkSize));
+			for (const socket of sockets) {
+				if (socket.destroyed) continue;
+				for (let offset = 0; offset < bytes.length; offset += size) {
+					socket.write(bytes.subarray(offset, offset + size));
+				}
+			}
+		},
+
+		resetConnections() {
+			for (const socket of sockets) socket.destroy();
+			sockets.clear();
 		},
 		async close() {
 			for (const socket of sockets) socket.destroy();
