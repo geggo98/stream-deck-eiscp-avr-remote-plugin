@@ -18,3 +18,9 @@ Third-party material
   documentation of the protocol (e.g. the OpenHAB Onkyo binding and the
   miracle2k/onkyo-eiscp project). See docs/eiscp-reference.md for sources.
 - Built on the Elgato Stream Deck SDK (@elgato/streamdeck), MIT License.
+- The Property Inspectors bundle sdpi-components v4.0.1
+  (https://sdpi-components.dev), Copyright Corsair Memory Inc. and other
+  contributors, MIT License — vendored at
+  de.schwetschke.sd.eiscp-avr-remote.sdPlugin/ui/vendor/sdpi-components.js.
+  That bundle embeds Lit (https://lit.dev), Copyright 2019 Google LLC,
+  BSD-3-Clause. See SECURITY.md for why it is vendored and how to update it.

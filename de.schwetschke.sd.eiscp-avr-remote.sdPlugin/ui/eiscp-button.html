@@ -4,7 +4,9 @@
 <head lang="en">
     <title>eISCP Button Settings</title>
     <meta charset="utf-8" />
-    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*" />
+    <script src="vendor/sdpi-components.js"></script>
     <script src="commands.js"></script>
     <script src="eiscp-pi.js"></script>
 </head>
@@ -34,21 +36,7 @@
         <sdpi-select setting="customParameter" placeholder="Pick a value for this command…"></sdpi-select>
     </sdpi-item>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            EiscpPI.renderDeviceIp('deviceIp');
-            const cmdSel = document.querySelector('[setting="command"]');
-            EiscpPI.buildCommandSelect(cmdSel, null);
-
-            // When "custom" is chosen, offer the selected command's real values.
-            const customSel = document.querySelector('[setting="customParameter"]');
-            const rebuildCustom = () => EiscpPI.buildParamSelect(customSel, cmdSel.value, null);
-            cmdSel.addEventListener('valuechange', rebuildCustom);
-            setTimeout(rebuildCustom, 250);
-
-            EiscpPI.setupCustomToggle('parameter', 'customParameterItem');
-        });
-    </script>
+    <script src="init/eiscp-button.js"></script>
 </body>
 
 </html>

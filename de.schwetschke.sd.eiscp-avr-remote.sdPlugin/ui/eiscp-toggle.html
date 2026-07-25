@@ -4,7 +4,9 @@
 <head lang="en">
     <title>eISCP Toggle Settings</title>
     <meta charset="utf-8" />
-    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*" />
+    <script src="vendor/sdpi-components.js"></script>
     <script src="commands.js"></script>
     <script src="eiscp-pi.js"></script>
 </head>
@@ -44,14 +46,7 @@
         <sdpi-textfield setting="customOffValue" placeholder="e.g. 02, FF"></sdpi-textfield>
     </sdpi-item>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            EiscpPI.renderDeviceIp('deviceIp');
-            EiscpPI.buildCommandSelect(document.querySelector('[setting="command"]'), null);
-            EiscpPI.setupCustomToggle('onValue', 'customOnValueItem');
-            EiscpPI.setupCustomToggle('offValue', 'customOffValueItem');
-        });
-    </script>
+    <script src="init/eiscp-toggle.js"></script>
 </body>
 
 </html>

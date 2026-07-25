@@ -4,7 +4,9 @@
 <head lang="en">
     <title>eISCP Settings</title>
     <meta charset="utf-8" />
-    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*" />
+    <script src="vendor/sdpi-components.js"></script>
     <script src="commands.js"></script>
     <script src="eiscp-pi.js"></script>
     <style>
@@ -30,12 +32,7 @@
         this plugin). Auto-Discover fills them all in one pass.
     </p>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            EiscpPI.renderDeviceIp('deviceIp');
-            EiscpPI.renderDiscover('discover', 'option');
-        });
-    </script>
+    <script src="init/discover.js"></script>
 </body>
 
 </html>

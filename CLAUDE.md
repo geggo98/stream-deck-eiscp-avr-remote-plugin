@@ -155,11 +155,13 @@ PIs are static HTML in `*.sdPlugin/ui/` using SDPI Components v4
 
 ## Testing the live Property Inspector (CDP)
 
-Stream Deck in debug mode exposes Chrome DevTools Protocol at
-`http://127.0.0.1:23654`; `…/json/list` lists the open PI webview. **Debug mode
-is off in normal builds** — run `npm run watch` (which sets
-`Nodejs.Debug: "enabled"`) and restart the plugin to get the endpoint, and
-remember that `npm run build` turns it back off. Attach a
+Stream Deck exposes Chrome DevTools Protocol at `http://127.0.0.1:23654`;
+`…/json/list` lists the open PI webview. This endpoint belongs to the **Stream
+Deck app** (it is the app process that listens on 23654) and is independent of
+the plugin's `Nodejs.Debug` setting — PI debugging keeps working with debug mode
+off. `Nodejs.Debug: "enabled"` is a different thing: it adds
+`--inspect=127.0.0.1:<port>` to the *plugin's* Node process, which is why it
+must not ship. Attach a
 CDP browser (e.g. the `web-browser` skill, `connect 23654`) to inspect and
 drive the live PI. The webview title depends on the PI HTML:
 "eISCP Settings" (`dedicated.html`, `discover.html`), "eISCP Button Settings"

@@ -4,7 +4,9 @@
 <head lang="en">
     <title>eISCP Dial Indicator Settings</title>
     <meta charset="utf-8" />
-    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*" />
+    <script src="vendor/sdpi-components.js"></script>
     <script src="commands.js"></script>
     <script src="eiscp-pi.js"></script>
 </head>
@@ -72,16 +74,7 @@
         <sdpi-color setting="barMutedColor" default="#F44336"></sdpi-color>
     </sdpi-item>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            EiscpPI.renderDeviceIp('deviceIp');
-            EiscpPI.buildCommandSelect(document.querySelector('[setting="command"]'), null);
-            EiscpPI.buildCommandSelect(document.querySelector('[setting="pressCommand"]'), null);
-            EiscpPI.setupCustomToggle('upParam', 'customUpParamItem');
-            EiscpPI.setupCustomToggle('downParam', 'customDownParamItem');
-            EiscpPI.setupCustomToggle('pressParam', 'customPressParamItem');
-        });
-    </script>
+    <script src="init/eiscp-dial-indicator.js"></script>
 </body>
 
 </html>
