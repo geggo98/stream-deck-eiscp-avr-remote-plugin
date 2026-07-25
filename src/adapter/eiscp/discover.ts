@@ -145,6 +145,52 @@ export interface EiscpDiscoveryResult {
 	errors: EiscpDiscoveryError[];
 }
 
+/** Longest model name accepted from an ECN response. Real ones are ~10 chars. */
+const MAX_MODEL_NAME_LENGTH = 64;
+
+/** Identifiers are MAC-like, 12 characters. */
+const MAX_IDENTIFIER_LENGTH = 12;
+
+/** The eISCP port receivers answer discovery from, per the protocol. */
+export const EISCP_DISCOVERY_PORT = 60128;
+
+/**
+ * Hard cap on devices returned by one discovery run.
+ *
+ * The socket accepts datagrams from anyone, and the dedupe key is built from
+ * attacker-supplied bytes, so without a cap a single host can flood the device
+ * list (and, in the unified controller, the outbound connect queue) by varying
+ * the identifier per response. No real LAN has this many receivers.
+ */
+export const MAX_DISCOVERED_DEVICES = 64;
+
+/**
+ * Hard cap on datagrams parsed per discovery run, so a flood costs bounded work
+ * even when every response is a duplicate that never reaches the device cap.
+ */
+export const MAX_DISCOVERY_DATAGRAMS = 512;
+
+/**
+ * Trim an untrusted ECN field to a sane length and drop control characters.
+ *
+ * These strings come straight off the wire and are rendered in the Property
+ * Inspector's device dropdown and printed by the discovery scripts. Real devices
+ * pad responses with NUL bytes (verified against a VSX-S520D, whose ECN datagram
+ * is 255 bytes of which ~219 are NUL), and `decodePacket` decodes as ASCII, which
+ * masks the high bit rather than rejecting — so control bytes genuinely arrive
+ * here and must be stripped rather than treated as a parse failure.
+ */
+function sanitiseEcnField(value: string, maxLength: number): string {
+	let out = "";
+	for (const ch of value) {
+		const code = ch.codePointAt(0)!;
+		// Keep printable ASCII only; anything else is padding or corruption.
+		if (code >= 0x20 && code !== 0x7f) out += ch;
+		if (out.length >= maxLength) break;
+	}
+	return out;
+}
+
 /**
  * Parse the ECN response from a receiver
  *
@@ -171,7 +217,7 @@ export function parseEcnResponse(message: IscpMessage): Omit<DiscoveredReceiver,
 		throw new Error(`Invalid ECN format: ${message.parameter} (expected model/port/area[identifier])`);
 	}
 
-	const modelName = parts[0]!;
+	const modelName = sanitiseEcnField(parts[0]!, MAX_MODEL_NAME_LENGTH);
 	const iscpPortStr = parts[1]!;
 	const areaAndIdentifier = parts[2]!;
 
@@ -192,12 +238,18 @@ export function parseEcnResponse(message: IscpMessage): Omit<DiscoveredReceiver,
 	if (Number.isNaN(iscpPort)) {
 		throw new Error(`Invalid ISCP port: ${iscpPortStr}`);
 	}
+	// `parseInt` also accepts "-5", "99999999" and "60128junk". The value ends up
+	// in device metadata and in script output, so reject anything that is not a
+	// real port rather than carrying it forward.
+	if (!Number.isInteger(iscpPort) || iscpPort < 1 || iscpPort > 65535) {
+		throw new Error(`ISCP port out of range: ${iscpPortStr}`);
+	}
 
 	return {
 		modelName,
 		iscpPort,
-		areaCode,
-		identifier: identifier.substring(0, 12), // Max 12 characters
+		areaCode: sanitiseEcnField(areaCode, 2),
+		identifier: sanitiseEcnField(identifier, MAX_IDENTIFIER_LENGTH),
 		unitType: message.unit,
 		rawMessage: message.raw,
 	};
@@ -354,6 +406,9 @@ export async function discoverEiscpDevicesStreaming(
 	const captures: DiscoveryCapture[] = [];
 	const errors: EiscpDiscoveryError[] = [];
 	const sockets: dgram.Socket[] = [];
+	// Shared across every interface socket, so a flood cannot multiply its budget
+	// by the number of interfaces.
+	let datagramsSeen = 0;
 
 	const recordError = (interfaceAddress: string, err: Error) => {
 		const error: EiscpDiscoveryError = {
@@ -399,6 +454,21 @@ export async function discoverEiscpDevicesStreaming(
 					});
 
 					socket.on("message", (msg: Buffer, rinfo: { address: string; port: number }) => {
+						// The socket is bound but never connected, so anything that can
+						// reach this ephemeral port lands here. Bound the work a flood can
+						// cause, and require the source port the protocol specifies —
+						// verified against a real VSX-S520D, which answers from 60128.
+						if (datagramsSeen >= MAX_DISCOVERY_DATAGRAMS) return;
+						datagramsSeen++;
+
+						if (rinfo.port !== EISCP_DISCOVERY_PORT) {
+							logger.debug(
+								`ignoring discovery response from ${rinfo.address}:${rinfo.port} ` +
+									`(expected source port ${EISCP_DISCOVERY_PORT})`,
+							);
+							return;
+						}
+
 						const receiver = parseDiscoveryResponse(msg, rinfo.address, rinfo.port);
 
 						if (receiver) {
@@ -407,6 +477,13 @@ export async function discoverEiscpDevicesStreaming(
 							const key = `${receiver.identifier}-${receiver.host}`;
 
 							if (!devices.has(key)) {
+								if (devices.size >= MAX_DISCOVERED_DEVICES) {
+									logger.warn(
+										`discovery device cap (${MAX_DISCOVERED_DEVICES}) reached; ` +
+											`ignoring further devices this run`,
+									);
+									return;
+								}
 								devices.set(key, receiver);
 								onDevice?.(receiver);
 							}

@@ -123,6 +123,45 @@ describe("eISCP discovery layer", () => {
 			const message = parseIscpMessage("!1ECNModel/ABC/DX");
 			assert.throws(() => parseEcnResponse(message));
 		});
+
+		it("rejects ports outside the valid range", () => {
+			// parseInt happily yields these; they must not reach device metadata.
+			for (const port of ["0", "-5", "99999999", "65536"]) {
+				assert.throws(
+					() => parseEcnResponse(parseIscpMessage(`!1ECNModel/${port}/DX`)),
+					/ISCP port/,
+					`port ${port} should be rejected`,
+				);
+			}
+		});
+
+		it("accepts a trailing-garbage port only when the parsed value is in range", () => {
+			// parseInt stops at the first non-digit, so this is 60128 — in range,
+			// and accepting it keeps us lenient toward padded real-world responses.
+			const result = parseEcnResponse(parseIscpMessage("!1ECNModel/60128junk/DX"));
+			assert.equal(result.iscpPort, 60128);
+		});
+
+		it("caps an over-long model name", () => {
+			const long = "M".repeat(500);
+			const result = parseEcnResponse(parseIscpMessage(`!1ECN${long}/60128/DX`));
+			assert.equal(result.modelName.length, 64);
+		});
+
+		it("strips control characters and NUL padding from text fields", () => {
+			// Real devices pad the datagram with NULs; a VSX-S520D sends 255 bytes
+			// of which ~219 are NUL. ASCII decoding preserves them, so the fields
+			// must be sanitised rather than the response rejected.
+			const message = parseIscpMessage("!1ECNVSX\x07-520D/60128/XX/0009B0\x00F0EE61\x00\x00\x00");
+			const result = parseEcnResponse(message);
+
+			assert.equal(result.modelName, "VSX-520D");
+			assert.equal(result.identifier, "0009B0F0EE61");
+			assert.ok(
+				!/[\x00-\x1f\x7f]/.test(result.modelName + result.identifier + result.areaCode),
+				"no control characters may survive",
+			);
+		});
 	});
 
 	describe("parseDiscoveryResponse", () => {
