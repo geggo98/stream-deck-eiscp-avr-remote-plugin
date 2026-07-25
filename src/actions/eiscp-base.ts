@@ -117,13 +117,27 @@ export function getToggleColor(command: string, isOn: boolean): string {
 }
 
 /**
+ * Longest display text decoded from an FLD parameter.
+ *
+ * A receiver's display is a couple of dozen characters; the cap exists because
+ * the parameter itself is unbounded network data, and the decoded text is fed to
+ * the name store's regex-based cleanup. Bounding it here keeps that cleanup
+ * cheap no matter what arrives — the trailing-run regexes in `stripVolume` are
+ * anchored and would otherwise backtrack quadratically on a long crafted string.
+ */
+export const MAX_DISPLAY_TEXT_LENGTH = 128;
+
+/**
  * Decode the receiver's display-field (FLD) parameter — hex-encoded ASCII — into
  * readable text, e.g. "20445453204E657572616C3A5820" -> "DTS Neural:X".
  * Matches the client's FLD decoding.
  */
 export function decodeDisplayText(hex: string): string {
 	try {
-		return Buffer.from(hex, "hex").toString("ascii").trim();
+		// Two hex characters per byte; slice before decoding so an oversized
+		// parameter never allocates a large buffer or string.
+		const bounded = hex.length > MAX_DISPLAY_TEXT_LENGTH * 2 ? hex.slice(0, MAX_DISPLAY_TEXT_LENGTH * 2) : hex;
+		return Buffer.from(bounded, "hex").toString("ascii").trim();
 	} catch {
 		// Defensive only: Buffer.from(..., "hex") never throws
 		// (invalid input yields a truncated/empty buffer).

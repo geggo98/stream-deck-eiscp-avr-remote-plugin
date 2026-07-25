@@ -34,6 +34,38 @@ const LMD_WINDOW_MS = 2500;
 const SLI_PAIR_MS = 3000;
 const PERSIST_DEBOUNCE_MS = 1500;
 
+// Everything learned here comes from the receiver's display field: untrusted
+// network data that is persisted into Stream Deck's global settings and rendered
+// as button titles. A hostile or malfunctioning device could otherwise grow the
+// store without limit along three axes — one entry per distinct code it reports,
+// unbounded name length, and one top-level key per host — and the whole blob is
+// re-serialised and pushed to Stream Deck on every debounce window.
+/** Longest learned name kept. Real input/mode labels are well under this. */
+const MAX_NAME_LENGTH = 48;
+/** Longest wire code accepted as a map key (real ones are 2-3 characters). */
+const MAX_CODE_LENGTH = 8;
+/** Entries per host per command. The largest real receivers expose ~50 inputs. */
+const MAX_ENTRIES_PER_COMMAND = 128;
+/** Hosts tracked at once. */
+const MAX_HOSTS = 32;
+
+/**
+ * Strip control characters and clamp length.
+ *
+ * `decodeDisplayText` decodes the FLD hex as ASCII, which masks the high bit
+ * rather than rejecting, so control bytes reach here intact and would otherwise
+ * be persisted and pushed into Stream Deck titles.
+ */
+function sanitiseLearned(value: string, maxLength: number): string {
+	let out = "";
+	for (const ch of value) {
+		const code = ch.codePointAt(0)!;
+		if (code >= 0x20 && code !== 0x7f) out += ch;
+		if (out.length >= maxLength) break;
+	}
+	return out.trim();
+}
+
 interface HostState {
 	names: Record<TrackedCommand, Map<string, string>>;
 	lmdPending?: { code: string; until: number };
@@ -46,6 +78,13 @@ const STATE = new Map<string, HostState>();
 function hostState(host: string): HostState {
 	let s = STATE.get(host);
 	if (!s) {
+		if (STATE.size >= MAX_HOSTS) {
+			// Evict the oldest tracked host rather than refusing to learn for the
+			// new one: hosts are configured by the user, so the newest is the one
+			// they are most likely looking at.
+			const oldest = STATE.keys().next();
+			if (!oldest.done) STATE.delete(oldest.value);
+		}
 		s = { names: { LMD: new Map(), SLI: new Map() } };
 		STATE.set(host, s);
 	}
@@ -65,10 +104,16 @@ function stripVolume(text: string): string {
 		.trim();
 }
 
-function learn(host: string, command: TrackedCommand, code: string, name: string): boolean {
+function learn(host: string, command: TrackedCommand, rawCode: string, rawName: string): boolean {
+	const code = sanitiseLearned(rawCode, MAX_CODE_LENGTH);
+	const name = sanitiseLearned(rawName, MAX_NAME_LENGTH);
 	if (!code || !name) return false;
 	const map = hostState(host).names[command];
 	if (map.get(code) === name) return false;
+	// Cap distinct codes per command: a device reporting ever-changing values
+	// would otherwise add an entry forever. Updating an existing code is always
+	// allowed, so a full store still tracks changes to what it already knows.
+	if (!map.has(code) && map.size >= MAX_ENTRIES_PER_COMMAND) return false;
 	map.set(code, name);
 	markDirty();
 	return true;
@@ -147,16 +192,29 @@ export function nameFor(host: string, command: TrackedCommand, code: string | un
 let dirty = false;
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Merge previously-persisted names into the in-memory cache (runtime wins). */
+/**
+ * Merge previously-persisted names into the in-memory cache (runtime wins).
+ *
+ * Applies the same validation as `learn`: this data was persisted by an earlier
+ * version with no caps at all, and it is device-supplied either way, so it is
+ * not trusted just because it round-tripped through global settings.
+ */
 export function load(serialized: SerializedNames | undefined): void {
 	if (!serialized) return;
 	for (const [host, byCommand] of Object.entries(serialized)) {
+		if (STATE.size >= MAX_HOSTS && !STATE.has(host)) continue;
 		const s = hostState(host);
 		for (const command of TRACKED) {
 			const entries = byCommand?.[command];
 			if (!entries) continue;
-			for (const [code, name] of Object.entries(entries)) {
-				if (!s.names[command].has(code)) s.names[command].set(code, name);
+			for (const [rawCode, rawName] of Object.entries(entries)) {
+				if (typeof rawName !== "string") continue;
+				const code = sanitiseLearned(rawCode, MAX_CODE_LENGTH);
+				const name = sanitiseLearned(rawName, MAX_NAME_LENGTH);
+				if (!code || !name) continue;
+				if (s.names[command].has(code)) continue;
+				if (s.names[command].size >= MAX_ENTRIES_PER_COMMAND) break;
+				s.names[command].set(code, name);
 			}
 		}
 	}

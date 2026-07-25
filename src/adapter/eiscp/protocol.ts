@@ -13,6 +13,7 @@
  * - Terminator (1 byte): 0x0D (CR)
  */
 
+import { truncateForLog } from "../logging.ts";
 import { PacketHeader, Terminator, type Terminator as TerminatorType } from "./enums.ts";
 
 /**
@@ -191,7 +192,9 @@ export function decodePacket(buffer: Buffer): EiscpPacket {
 
 	const header = buffer.subarray(0, 4).toString("ascii");
 	if (header !== PacketHeader.MAGIC) {
-		throw new Error(`Invalid packet header: ${header} (expected ${PacketHeader.MAGIC})`);
+		throw new Error(
+			`Invalid packet header: ${truncateForLog(header)} (expected ${PacketHeader.MAGIC})`,
+		);
 	}
 
 	const headerSize = buffer.readUInt32BE(4);
@@ -243,11 +246,11 @@ export function parseIscpMessage(message: string): IscpMessage {
 	const trimmed = stripTerminators(message.trim());
 
 	if (trimmed.length < 5) {
-		throw new Error(`ISCP message too short: ${trimmed}`);
+		throw new Error(`ISCP message too short: ${truncateForLog(trimmed)}`);
 	}
 
 	if (!trimmed.startsWith("!")) {
-		throw new Error(`ISCP message must start with '!': ${trimmed}`);
+		throw new Error(`ISCP message must start with '!': ${truncateForLog(trimmed)}`);
 	}
 
 	const unit = trimmed.charAt(1);

@@ -9,6 +9,29 @@
  * logger at startup, everything else falls back to the console.
  */
 
+/**
+ * Make an untrusted string safe to put in a log line.
+ *
+ * Parse errors used to embed the peer's bytes verbatim (`ISCP message too
+ * short: ${trimmed}`), so a peer controlled both the content and the volume of
+ * the plugin's log files — up to 10x50 MB on disk, and control characters
+ * (including ANSI escapes, since ASCII decoding masks the high bit rather than
+ * rejecting) went straight into a file a maintainer later opens in a terminal.
+ *
+ * @param value - Untrusted text.
+ * @param maxLength - Characters kept before eliding the rest.
+ */
+export function truncateForLog(value: string, maxLength = 120): string {
+	let out = "";
+	for (const ch of value) {
+		if (out.length >= maxLength) return `${out}… (${value.length} chars total)`;
+		const code = ch.codePointAt(0)!;
+		// Escape rather than drop, so the log still shows that something was there.
+		out += code < 0x20 || code === 0x7f ? `\\x${code.toString(16).padStart(2, "0")}` : ch;
+	}
+	return out;
+}
+
 /** Minimal logger contract shared by `console` and the SDK logger. */
 export interface AdapterLogger {
 	debug(message: string): void;

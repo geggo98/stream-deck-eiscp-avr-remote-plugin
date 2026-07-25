@@ -5,10 +5,19 @@
  * command interface for the universal Stream Deck actions.
  */
 
-import { scopedLogger } from "../logging.ts";
+import { scopedLogger, truncateForLog } from "../logging.ts";
 import { EiscpClient, createClient, type DecodedMessage } from "./client.ts";
 
 const logger = scopedLogger("ConnectionManager");
+
+/**
+ * Distinct commands cached per host.
+ *
+ * The generated registry has 23 commands and a receiver emits a bounded set of
+ * status updates, so this is far above real usage; it exists because the cache
+ * key is unvalidated wire data.
+ */
+const MAX_CACHED_COMMANDS_PER_HOST = 256;
 
 type CommandCallback = (rawValue: string) => void;
 
@@ -128,18 +137,22 @@ export class ConnectionManager {
 		return client;
 	}
 
+	// These ran at INFO, which the SDK writes in every configuration — so a LAN IP
+	// plus every command and value the user sent landed on disk during normal use.
+	// DEBUG keeps them for troubleshooting without making the log a usage record,
+	// and device-supplied results are truncated and escaped.
 	async sendCommand(host: string, command: string, parameter: string): Promise<void> {
-		logger.info(`sendCommand: ${command} ${parameter} -> ${host}`);
+		logger.debug(`sendCommand: ${command} ${parameter} -> ${host}`);
 		const client = await this.ensureConnected(host);
 		await client.send(command, parameter);
 		logger.debug(`sendCommand: ${command} ${parameter} sent successfully`);
 	}
 
 	async queryCommand(host: string, command: string): Promise<string> {
-		logger.info(`queryCommand: ${command} -> ${host}`);
+		logger.debug(`queryCommand: ${command} -> ${host}`);
 		const client = await this.ensureConnected(host);
 		const result = await client.query(command);
-		logger.info(`queryCommand: ${command} -> ${result}`);
+		logger.debug(`queryCommand: ${command} -> ${truncateForLog(result)}`);
 		return result;
 	}
 
@@ -211,10 +224,21 @@ export class ConnectionManager {
 		const command = msg.command;
 		const parameter = msg.parameter;
 
-		// Update cache
+		// Update cache. The command name is 3 arbitrary characters straight off the
+		// wire (parseIscpMessage validates neither the unit nor the command), so a
+		// device emitting varying names would otherwise add a key per name and hold
+		// them until the host is evicted. Refuse new keys past the cap but keep
+		// updating ones already tracked, so the actions in use stay current.
 		const hostCache = this.stateCache.get(host);
 		if (hostCache) {
-			hostCache.set(command, parameter);
+			if (hostCache.has(command) || hostCache.size < MAX_CACHED_COMMANDS_PER_HOST) {
+				hostCache.set(command, parameter);
+			} else {
+				logger.debug(
+					`state cache for ${host} is full (${MAX_CACHED_COMMANDS_PER_HOST} commands); ` +
+						`ignoring ${truncateForLog(command, 8)}`,
+				);
+			}
 		}
 
 		// Notify subscribers; a throwing callback (e.g. a render error in an

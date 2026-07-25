@@ -153,8 +153,10 @@ describe("eISCP listen mode tests", () => {
 			for (const msg of volumeMessages) {
 				assert.equal(msg.type, "volume");
 				assert.equal(msg.command, "MVL");
+				// `level` is optional now (an unparseable MVL yields undefined rather
+				// than NaN), but every message in this captured fixture is parseable.
 				assert.equal(typeof msg.level, "number");
-				assert.ok(msg.level >= 0 && msg.level <= 255);
+				assert.ok(msg.level !== undefined && msg.level >= 0 && msg.level <= 255);
 				assert.equal(typeof msg.percent, "number");
 			}
 		});

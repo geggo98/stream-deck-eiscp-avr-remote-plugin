@@ -86,7 +86,13 @@ export interface VolumeMessage {
 	type: "volume";
 	command: "MVL";
 	parameter: string;
-	level: number; // Raw volume level (0-max)
+	/**
+	 * Raw volume level (0-max), or undefined when the parameter was not a
+	 * parseable hex level. Optional rather than a fabricated 0/NaN: a receiver
+	 * can report "N/A", and NaN used to reach Stream Deck as a JSON indicator
+	 * value. `parameter` always carries the value as received.
+	 */
+	level?: number;
 	percent?: number; // Percentage (if max is known)
 	raw: string;
 }
@@ -463,10 +469,14 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 				changes.rawPower = message.parameter;
 				break;
 
-			case IscpCommand.VOLUME:
-				changes.volume = this.parseVolume(message.parameter);
+			case IscpCommand.VOLUME: {
+				// Keep the last good level rather than clobbering it with NaN when
+				// the receiver reports something unparseable (e.g. "N/A").
+				const level = this.parseVolume(message.parameter);
+				if (level !== undefined) changes.volume = level;
 				changes.rawVolume = message.parameter;
 				break;
+			}
 
 			case IscpCommand.MUTE:
 				changes.muted = message.parameter === MuteState.ON;
@@ -512,13 +522,20 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 			}
 
 			case IscpCommand.VOLUME: {
-				const level = parseInt(message.parameter, 16);
+				// Unlike SLI/LMD below, this had no NaN guard: "N/A" yielded NaN and
+				// "FFFFFFFFFF" yielded ~1.1e12, both of which flowed into `level`,
+				// `percent` and from there into `setFeedback({ indicator: { value } })`
+				// as a JSON NaN. Clamp to the configured range instead.
+				const parsed = Number.parseInt(message.parameter, 16);
+				const level = Number.isNaN(parsed)
+					? undefined
+					: Math.min(Math.max(parsed, 0), this.volumeConfig.max);
 				return {
 					type: "volume",
 					command: "MVL",
 					parameter: message.parameter,
 					level,
-					percent: (level / this.volumeConfig.max) * 100,
+					percent: level === undefined ? undefined : (level / this.volumeConfig.max) * 100,
 					raw,
 				};
 			}
@@ -719,8 +736,12 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	/**
 	 * Parse volume from hex string
 	 */
-	private parseVolume(hex: string): number {
-		return parseInt(hex, 16);
+	private parseVolume(hex: string): number | undefined {
+		const parsed = Number.parseInt(hex, 16);
+		if (Number.isNaN(parsed)) return undefined;
+		// A receiver reporting an out-of-range level (or a peer injecting one)
+		// must not push absurd values into state and on into UI indicators.
+		return Math.min(Math.max(parsed, 0), this.volumeConfig.max);
 	}
 
 	/**
@@ -788,7 +809,13 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 	 */
 	async queryVolume(): Promise<number> {
 		const response = await this.sendCommand(IscpCommand.VOLUME, "QSTN");
-		return this.parseVolume(response);
+		const level = this.parseVolume(response);
+		if (level === undefined) {
+			// Rejecting beats resolving to NaN: callers already handle a failed
+			// query, and NaN would silently propagate into UI indicators.
+			throw new Error(`Receiver reported an unparseable volume level: ${JSON.stringify(response)}`);
+		}
+		return level;
 	}
 
 	/**

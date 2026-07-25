@@ -104,3 +104,84 @@ describe("name-store persistence", () => {
 		assert.equal(nameFor(host, "LMD", "82"), "DTS Neural:X");
 	});
 });
+
+// Everything the store learns is device-supplied: it is persisted into Stream
+// Deck's global settings and rendered as button titles, so a hostile or
+// malfunctioning receiver must not be able to grow it without limit.
+describe("name-store input hardening", () => {
+	it("caps a long learned name", () => {
+		const host = "ns-longname";
+		noteChange(host, "LMD", "82");
+		noteFld(host, hex("N".repeat(500)));
+		const learned = nameFor(host, "LMD", "82");
+		assert.ok(learned, "an over-long name should still be learned, just clamped");
+		assert.ok(learned.length <= 48, `name length ${learned.length} should be clamped`);
+	});
+
+	it("strips control characters from learned names", () => {
+		const host = "ns-ctrl";
+		noteChange(host, "LMD", "82");
+		// ASCII decoding masks the high bit rather than rejecting, so control bytes
+		// genuinely reach the store; an ANSI escape would otherwise be persisted
+		// and rendered.
+		noteFld(host, hex("Pure\x1b[31m\x00Audio"));
+		const learned = nameFor(host, "LMD", "82");
+		assert.equal(learned, "Pure[31mAudio");
+		assert.ok(!/[\x00-\x1f\x7f]/.test(learned!), "no control characters may survive");
+	});
+
+	it("bounds the decoded display text regardless of parameter length", () => {
+		// The FLD parameter is unbounded network data; decoding must not allocate
+		// proportionally to it.
+		const decoded = decodeDisplayText(hex("A".repeat(100_000)));
+		assert.ok(decoded.length <= 128, `decoded length ${decoded.length} should be bounded`);
+	});
+
+	it("caps distinct codes per command but keeps updating known ones", () => {
+		const host = "ns-cap";
+		// A device reporting ever-changing SLI codes would otherwise add an entry
+		// forever. 128 is the cap.
+		for (let i = 0; i < 300; i++) {
+			recordSli(host, `C${i}`, hex(`Input ${i}`));
+		}
+		const stored = serialize()[host]?.SLI ?? {};
+		assert.equal(Object.keys(stored).length, 128);
+
+		// A code already tracked must still accept a new name.
+		const known = Object.keys(stored)[0]!;
+		assert.equal(recordSli(host, known, hex("Renamed")), true);
+		assert.equal(nameFor(host, "SLI", known), "Renamed");
+	});
+
+	it("rejects empty names and codes", () => {
+		const host = "ns-empty";
+		assert.equal(recordSli(host, "", hex("Something")), false);
+		assert.equal(recordSli(host, "10", hex("")), false);
+		assert.equal(recordSli(host, "10", hex("   ")), false);
+		assert.equal(recordSli(host, "10", hex("\x00\x01")), false);
+	});
+
+	it("load() applies the same validation to previously persisted data", () => {
+		// Data persisted by an earlier version had no caps at all, and it is
+		// device-supplied either way — round-tripping through global settings does
+		// not make it trusted.
+		// Asserted against serialize() rather than nameFor, which would mask a
+		// rejected entry behind its registry-name / raw-code display fallback.
+		load({
+			"ns-loadhard": {
+				LMD: { Z1: "x".repeat(500), Z2: "Pure\x00Audio", Z3: "" },
+			},
+		});
+		const stored = serialize()["ns-loadhard"]!.LMD!;
+		assert.ok(stored["Z1"]!.length <= 48, "over-long persisted name should be clamped");
+		assert.equal(stored["Z2"], "PureAudio");
+		assert.equal("Z3" in stored, false, "empty persisted name should not be stored");
+	});
+
+	it("load() ignores non-string persisted names", () => {
+		load({ "ns-loadtype": { LMD: { Z1: 42 as never, Z2: "Fine" } } });
+		const stored = serialize()["ns-loadtype"]!.LMD!;
+		assert.equal("Z1" in stored, false, "non-string persisted name should be ignored");
+		assert.equal(stored["Z2"], "Fine");
+	});
+});
