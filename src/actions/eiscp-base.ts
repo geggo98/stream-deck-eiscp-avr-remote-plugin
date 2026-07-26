@@ -17,6 +17,15 @@ export interface EiscpActionSettings {
 	command?: string;
 	/** Configurable dial press action key (see resolveDialPress / ui/dial-*.html). */
 	pressAction?: string;
+	/**
+	 * Briefly replace this element's face with the now-playing metadata when the
+	 * track changes. Declared here rather than per action because every Property
+	 * Inspector offers it — see `track-overlay.ts` for the semantics. Off by default:
+	 * it changes what an unrelated key looks like.
+	 */
+	showOnTrackChange?: boolean;
+	/** How long that replacement stays up; clamped by `trackOverlaySeconds`. */
+	trackChangeSeconds?: number;
 	// JsonValue (not any) keeps SDK compatibility while forcing every access
 	// to an undeclared key through a real type check — the get*Config hooks
 	// are the parse/validate boundary for the untyped PI JSON.

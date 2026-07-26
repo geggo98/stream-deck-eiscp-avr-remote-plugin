@@ -29,7 +29,17 @@ import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import { getDeviceStatusTracker, type DeviceStatus } from "../adapter/eiscp/device-status.ts";
+import { getNowPlayingTracker } from "../adapter/eiscp/now-playing.ts";
 import { BindCoordinator, REBIND_DEBOUNCE_MS } from "./bind-coordinator.ts";
+import { STRIP_HEIGHT, STRIP_SEGMENT_WIDTH } from "./cover-image.ts";
+import {
+	buildOverlayFace,
+	overlayIsActive,
+	trackOverlayEnabled,
+	trackOverlaySeconds,
+	type OverlayFace,
+	type OverlayFaceOptions,
+} from "./track-overlay.ts";
 import { handleDeviceListMessage, rememberDevice } from "./pi-devices.ts";
 import { handleWakeSettingMessage } from "./pi-wake.ts";
 import {
@@ -108,6 +118,17 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 * keeps a rotation from also sending a `setImage` frame per tick.
 	 */
 	private readonly paintedImages = new Map<string, string>();
+	/**
+	 * The short "what just started playing" face, per action, while it is up.
+	 *
+	 * Held as state rather than written directly, because the display must be a
+	 * *function of the current state inside the normal render* rather than a second
+	 * writer. Two stuck-title regressions in this repo (`3e0b685`) came from a
+	 * separate write path that needed its own clearing path; here an expired overlay
+	 * cannot leave anything behind, because the next render simply stops finding one.
+	 */
+	private readonly overlays = new Map<string, { face: OverlayFace; until: number }>();
+	private readonly overlayTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 	// Explicit scope string (class names are mangled by terser in release builds).
 	constructor(scope: string) {
@@ -239,6 +260,84 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	}
 
 	/**
+	 * Show the now-playing metadata briefly when the track changes, if this action
+	 * is configured to.
+	 *
+	 * Called from the bind funnels next to `watchStatus`, and it subscribes **only**
+	 * when enabled: the tracker treats a subscription as the declaration of interest,
+	 * and during a cover transfer the receiver pushes ~1 800 frames per second. Off
+	 * means genuinely free.
+	 *
+	 * `repaint` is the same closure `watchStatus` uses — it re-renders from the
+	 * ConnectionManager's cache — so the fall-back at the end of the window goes
+	 * through the ordinary path and cannot leave a stale face behind.
+	 */
+	protected watchTrackChanges(
+		actionId: string,
+		host: string,
+		settings: TSettings,
+		repaint: () => void,
+		faceOptions: OverlayFaceOptions = {},
+	): void {
+		if (!trackOverlayEnabled(settings)) return;
+		const tracker = getNowPlayingTracker();
+		const seconds = trackOverlaySeconds(settings);
+
+		this.trackSub(
+			actionId,
+			tracker.onTrackChange(host, (state) => {
+				const face = buildOverlayFace(state, faceOptions);
+				// Nothing worth showing: leave the element's own content alone rather
+				// than hiding it behind an empty box.
+				if (!face) return;
+				this.overlays.set(actionId, { face, until: Date.now() + seconds * 1000 });
+				this.armOverlayTimer(actionId, seconds * 1000, repaint);
+				repaint();
+			}),
+		);
+		// A pre-fill so the very first change has a track title and a cover to show;
+		// failures are ignored (see NowPlayingTracker.prime).
+		void tracker.prime(host);
+	}
+
+	private armOverlayTimer(actionId: string, ms: number, repaint: () => void): void {
+		clearTimeout(this.overlayTimers.get(actionId));
+		const timer = setTimeout(() => {
+			this.overlayTimers.delete(actionId);
+			this.overlays.delete(actionId);
+			repaint();
+		}, ms);
+		timer.unref?.();
+		this.overlayTimers.set(actionId, timer);
+	}
+
+	/**
+	 * The overlay face to draw instead of this action's own, or `undefined`.
+	 *
+	 * **Status beats metadata.** An unreachable receiver must still say `Offline`, and
+	 * nothing is playing in standby, so the overlay only applies while the receiver is
+	 * actually on. Checked here rather than at trigger time so a receiver that goes
+	 * away mid-overlay stops showing it immediately.
+	 */
+	protected overlayFace(actionId: string): OverlayFace | undefined {
+		const active = this.overlays.get(actionId);
+		if (!active) return undefined;
+		const now = Date.now();
+		// Expired: drop it so a later render need not re-check the clock.
+		if (now >= active.until) {
+			this.overlays.delete(actionId);
+			return undefined;
+		}
+		return overlayIsActive(active.until, now, this.statusFor(actionId)) ? active.face : undefined;
+	}
+
+	private clearOverlay(actionId: string): void {
+		clearTimeout(this.overlayTimers.get(actionId));
+		this.overlayTimers.delete(actionId);
+		this.overlays.delete(actionId);
+	}
+
+	/**
 	 * Power the receiver on if this command would otherwise be slept through.
 	 *
 	 * A receiver in standby drops most sets without a word (measured; see
@@ -291,8 +390,11 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 */
 	protected paintKeyImage(action: KeyAction<TSettings>, command: string | undefined, states: readonly (0 | 1)[]): void {
 		const status = this.statusFor(action.id);
+		const overlay = this.overlayFace(action.id);
 		for (const state of states) {
-			const image = keyImageFor(this.manifestId, status, command, state);
+			// While the short track-change display is up it replaces the picture for
+			// every state, so switching state underneath it cannot reveal the normal one.
+			const image = overlay ? overlay.image : keyImageFor(this.manifestId, status, command, state);
 			const key = `${action.id}:${state}`;
 			// "" stands for the manifest image, so "no image yet" and "back to the
 			// manifest image" are distinguishable.
@@ -305,7 +407,9 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 
 	/** A key's title, with the "Offline" decoration applied. */
 	protected paintKeyTitle(action: KeyAction<TSettings>, base: string | undefined): void {
-		fireAndLog(action.setTitle(statusTitle(base, this.statusFor(action.id))), this.logger, "setTitle");
+		const overlay = this.overlayFace(action.id);
+		const text = overlay ? overlay.keyTitle : statusTitle(base, this.statusFor(action.id));
+		fireAndLog(action.setTitle(text), this.logger, "setTitle");
 	}
 
 	override async onWillDisappear(ev: WillDisappearEvent<TSettings>): Promise<void> {
@@ -315,6 +419,7 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 		forgetActionSettings(ev.action.id);
 		this.hosts.delete(ev.action.id);
 		this.forgetPaintedImages(ev.action.id);
+		this.clearOverlay(ev.action.id);
 	}
 
 	/**
@@ -355,6 +460,12 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 	 */
 	private paintToggleImage(action: KeyAction<TSettings>, cfg: ToggleConfig, isOn: boolean): void {
 		const status = this.statusFor(action.id);
+		// The coloured-background branch writes setImage itself, so it has to ask about
+		// the overlay too; paintKeyImage already does.
+		if (this.overlayFace(action.id)) {
+			this.paintKeyImage(action, cfg.command, [0, 1]);
+			return;
+		}
 		if (this.coloredBackground) {
 			const color = getToggleColor(cfg.command, isOn);
 			fireAndLog(action.setImage(generateColoredBg(color, status, cfg.command)), this.logger, "setImage");
@@ -420,11 +531,15 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 		);
 		// Re-paint on a power/reachability change, from the cached value: the status
 		// changed, the value did not, and querying an offline receiver only stalls.
-		this.watchStatus(action.id, host, () => {
+		const repaint = (): void => {
 			const cached = mgr.getCachedValue(host, cfg.command);
 			if (cached !== undefined) this.render(action, cfg, cached);
 			else this.renderWithoutValue(action, cfg);
-		});
+		};
+		this.watchStatus(action.id, host, repaint);
+		// Same closure for the short track-change display, so its fall-back goes
+		// through the ordinary render rather than a second writer.
+		this.watchTrackChanges(action.id, host, settings, repaint);
 
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
@@ -560,6 +675,7 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 				this.paintKeyTitle(action, this.statelessTitle(settings));
 			};
 			this.watchStatus(action.id, host, paint);
+			this.watchTrackChanges(action.id, host, settings, paint);
 			paint();
 			return settings;
 		}
@@ -570,11 +686,13 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			mgr.onCommandUpdate(host, cfg.command, (raw) => this.render(action, cfg, raw)),
 		);
 		// See ToggleActionBase.bindKey: re-paint from the cache, never re-query.
-		this.watchStatus(action.id, host, () => {
+		const repaint = (): void => {
 			const cached = mgr.getCachedValue(host, cfg.command);
 			if (cached !== undefined) this.render(action, cfg, cached);
 			else this.renderWithoutValue(action, cfg);
-		});
+		};
+		this.watchStatus(action.id, host, repaint);
+		this.watchTrackChanges(action.id, host, settings, repaint);
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
 			if (!fresh()) return settings; // a newer bind owns the key now
@@ -648,9 +766,31 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 	 */
 	protected sendFeedback(action: DialAction<TSettings>, cfg: DialConfig, payload: FeedbackPayload): void {
 		const { opacity, title } = feedbackStatusStyle(this.statusFor(action.id), cfg.command);
-		const decorated: FeedbackPayload = { ...payload, icon: { opacity } };
+		const overlay = this.overlayFace(action.id);
+		// The short track-change display works inside whatever layout the dial already
+		// has: $A1 gives icon/title/value, $B1 adds the bar. Deliberately no
+		// setFeedbackLayout here — swapping layouts once per track change would flicker.
+		const effective: FeedbackPayload = overlay
+			? {
+					...payload,
+					title: overlay.primary,
+					value: overlay.time ?? overlay.secondary,
+					// Only touch the bar on a layout that has one ($B1), and only with the
+					// value at the moment of the change: this is a snapshot, so it does not
+					// creep forward while it is up.
+					...(overlay.progress !== undefined && payload["indicator"] !== undefined
+						? { indicator: { value: Math.round(overlay.progress * 100) } }
+						: {}),
+				}
+			: payload;
+		// The icon slot carries the overlay's picture when there is one; otherwise only
+		// its opacity is adjusted and the image stays whatever the layout supplies.
+		const decorated: FeedbackPayload = {
+			...effective,
+			icon: overlay?.image ? { value: overlay.image, opacity } : { opacity },
+		};
 		for (const key of ["title", "value"] as const) {
-			const item = payload[key];
+			const item = effective[key];
 			// The five implementations all pass plain strings; wrap them so the opacity
 			// can ride along, and let "Offline" take over the title. An item that is
 			// already an object keeps its other properties.
@@ -658,7 +798,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			const override = key === "title" && title !== undefined ? { value: title } : {};
 			decorated[key] = { ...base, ...override, opacity };
 		}
-		const indicator = payload["indicator"];
+		const indicator = effective["indicator"];
 		if (indicator !== undefined && typeof indicator === "object") {
 			decorated["indicator"] = { ...indicator, opacity };
 		}
@@ -735,10 +875,17 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 
 		this.trackSub(actionId, mgr.onCommandUpdate(host, cfg.command, rerender));
 		// Power/reachability changed: redraw from the cached value (see the key bases).
-		this.watchStatus(actionId, host, () => {
+		const repaint = (): void => {
 			const cached = mgr.getCachedValue(host, cfg.command);
 			if (cached !== undefined) rerender(cached);
 			else this.sendFeedback(action, cfg, { title: "?", value: "" });
+		};
+		this.watchStatus(actionId, host, repaint);
+		// The strip is 200x100, so the overlay composes at that size rather than at
+		// the key's 144x144.
+		this.watchTrackChanges(actionId, host, settings, repaint, {
+			width: STRIP_SEGMENT_WIDTH,
+			height: STRIP_HEIGHT,
 		});
 
 		// Learned-name dials redraw when an FLD name event arrives, even though the
