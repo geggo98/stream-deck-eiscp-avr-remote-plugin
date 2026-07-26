@@ -362,7 +362,33 @@
 					status.textContent = "Discovering… " + p.done + ": " + (p.current || "");
 				} else if (p.phase === "done") {
 					stopWatchdog();
-					status.textContent = "Done — discovered " + (p.count || 0) + " names. Re-open the action to see them.";
+					// `count` is steps, `named` is options that came back with a name.
+					// They are not the same number: a sweep against a receiver in
+					// standby walks a few steps and learns nothing, and reporting the
+					// steps as "names" claimed a success that had not happened.
+					//
+					// A MISSING `named` is not zero. PI files reload on their own while
+					// the plugin only picks up changes on a restart (see CLAUDE.md), so
+					// this panel can be newer than the plugin answering it — and then
+					// claiming "no names" would be the same lie in the other direction.
+					// And the denominator is the options reached, never the steps: a step
+					// whose code broadcast misses its window adds a step without adding an
+					// option (the recorded LMD sweep is 9 steps over 8 modes), which would
+					// have reported a flawless run as "8 of 9 named".
+					const steps = p.count || 0;
+					const named = typeof p.named === "number" ? p.named : undefined;
+					const options = typeof p.options === "number" ? p.options : undefined;
+					if (named === undefined) {
+						status.textContent = "Done — " + steps + " steps. Re-open the action to see the names.";
+					} else if (named > 0) {
+						status.textContent =
+							options === undefined
+								? "Done — " + named + " options named in " + steps + " steps. Re-open the action to see them."
+								: "Done — " + named + " of " + options + " options named. Re-open the action to see them.";
+					} else {
+						status.textContent =
+							"Done, but no names were read in " + steps + " steps — is the receiver switched on?";
+					}
 					show(btn, true);
 				} else if (p.phase === "error") {
 					stopWatchdog();

@@ -16,6 +16,7 @@ import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
 import { type EiscpActionSettings, fireAndLog, resolveDeviceIp } from "../eiscp-base.ts";
 import {
+	hasLearnedName,
 	nameFor,
 	noteChange,
 	noteDisplayChange,
@@ -62,6 +63,7 @@ function realSweepDeps(): SweepDeps {
 		sleep,
 		nameFor,
 		recordSli,
+		hasLearnedName,
 		setSliSweeping,
 		log: logger,
 	};
@@ -100,7 +102,7 @@ export async function runSweep(
 	host: string,
 	command: TrackedCommand,
 	onProgress?: (p: SweepProgress) => void,
-): Promise<{ count: number }> {
+): Promise<{ count: number; options: number; named: number }> {
 	const key = `${host}:${command}`;
 	if (activeSweeps.has(key)) throw new SweepInProgressError(host, command);
 	activeSweeps.add(key);
@@ -153,10 +155,15 @@ export async function handleDiscoverMessage(
 
 	send({ event: "discover", phase: "start", command });
 	try {
-		const { count } = await runSweep(host, command, (p) =>
+		const { count, options, named } = await runSweep(host, command, (p) =>
 			send({ event: "discover", phase: "progress", done: p.done, current: p.current }),
 		);
-		send({ event: "discover", phase: "done", count });
+		// Three different numbers, and conflating any two of them misreports the run:
+		// `count` is steps taken, `options` is distinct options reached, `named` is how
+		// many of those came back with a name. Steps exceed options whenever a code
+		// broadcast misses its window — the recorded LMD sweep is 9 steps over 8 modes —
+		// so the step count must not serve as the denominator either.
+		send({ event: "discover", phase: "done", count, options, named });
 		// showOk is Keypad-only; dials report status via the PI messages.
 		if (action.isKey()) fireAndLog(action.showOk(), log, "showOk");
 	} catch (err) {

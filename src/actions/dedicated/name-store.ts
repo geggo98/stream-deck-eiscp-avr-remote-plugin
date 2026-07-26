@@ -283,6 +283,18 @@ export function noteFld(host: string, hex: string): boolean {
 	return learn(host, "LMD", pending.code, text);
 }
 
+/**
+ * Whether this code has a name the receiver told us, as opposed to the registry
+ * fallback `nameFor` would show.
+ *
+ * The sweep uses it to report how many options it actually came back with — a
+ * sweep that achieved nothing (the receiver was asleep, so `UP` never moved) used
+ * to be reported as a success with its step count relabelled as "names".
+ */
+export function hasLearnedName(host: string, command: TrackedCommand, code: string): boolean {
+	return hostState(host).names[command].has(code);
+}
+
 /** Best display name for a code: the receiver's learned text, else the registry name. */
 export function nameFor(host: string, command: TrackedCommand, code: string | undefined): string {
 	if (!code) return "";

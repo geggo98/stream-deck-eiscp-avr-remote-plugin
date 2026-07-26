@@ -63,6 +63,8 @@ function capturedCodeOrder(sweep: CapturedSweep, command: string): string[] {
  */
 async function replaySweep(command: TrackedCommand): Promise<{
 	count: number;
+	options: number;
+	named: number;
     visited: string[];
 	names: Record<string, string>;
 	sent: { command: string; parameter: string }[];
@@ -134,18 +136,19 @@ async function replaySweep(command: TrackedCommand): Promise<{
 			// consume exchanges the real device never answered.
 			return "learned";
 		},
+		hasLearnedName: (_h, _cmd, code) => names[code] !== undefined,
 		setSliSweeping: () => {},
 	};
 
 	try {
-		const { count } = await runSweep("127.0.0.1", command, undefined, deps);
+		const { count, options, named } = await runSweep("127.0.0.1", command, undefined, deps);
 		// The restore is a fire-and-forget set: client.send resolves when the local
 		// write completes, which can be before the server has parsed the frame.
 		await waitUntil(() => {
 			const sets = mock.received.filter((m) => m.command === command && m.parameter !== "QSTN");
 			return sets.length > 0 && sets[sets.length - 1]!.parameter !== "UP";
 		});
-		return { count, visited, names, sent: [...mock.received] };
+		return { count, options, named, visited, names, sent: [...mock.received] };
 	} finally {
 		client.disconnect();
 		await mock.close();
@@ -203,5 +206,31 @@ describe(`Auto-Discover sweep against the recorded ${capture.model}`, () => {
 		const sliAt = rest.findIndex((f) => f.dir === "in" && f.command === "SLI");
 		assert.ok(fldAt !== -1 && sliAt !== -1, "the capture must contain both frames");
 		assert.ok(fldAt < sliAt, "the captured FLD name arrives before the SLI code");
+	});
+});
+
+describe(`What the recorded sweep reports back (${capture.model})`, () => {
+	it("counts more steps than options for LMD, because a code broadcast misses its window", async () => {
+		// The reason the PI must not use the step count as the denominator. In this
+		// recording one `LMD UP` gets no code back at all — only the FLD of the mode
+		// already selected — so the poll loop runs its full 3 s and the step advances
+		// nothing. Nine steps, eight modes: reporting "8 of 9 named" would have called
+		// a flawless sweep incomplete.
+		const result = await replaySweep("LMD");
+		// The recorded order is 80 → 82 → 0F → 14 → FF → 01 → 11 → 00 → 80: nine
+		// entries for eight modes, since the sweep ends where it began.
+		const modes = new Set(capturedCodeOrder(capture.sweeps["LMD"]!, "LMD"));
+
+		assert.equal(result.count, capture.sweeps["LMD"]!.steps, "steps as recorded");
+		assert.equal(modes.size, 8, "the captured unit offers eight listening modes");
+		assert.equal(result.options, modes.size, "options = the distinct modes reached");
+		assert.ok(result.count > result.options, `${result.count} steps over ${result.options} options`);
+	});
+
+	it("names every input the SLI sweep reached", async () => {
+		const result = await replaySweep("SLI");
+
+		assert.equal(result.named, result.options, "every option reached came back with a name");
+		assert.equal(result.named, Object.keys(result.names).length, "and that is what was recorded");
 	});
 });

@@ -37,6 +37,8 @@ export interface SweepDeps {
 	/** name-store lookups/recorders (name-store imports the SDK, hence injected). */
 	nameFor(host: string, command: TrackedCommand, code: string | undefined): string;
 	recordSli(host: string, code: string, fldHex: string, options?: { corroborated?: boolean }): SliRecordOutcome;
+	/** Whether this option has a name from the receiver (name-store.hasLearnedName). */
+	hasLearnedName(host: string, command: TrackedCommand, code: string): boolean;
 	setSliSweeping(host: string, on: boolean): void;
 	log?: { info(msg: string): void; debug(msg: string): void; error(msg: string): void };
 }
@@ -98,7 +100,7 @@ export async function runSweep(
 	command: TrackedCommand,
 	onProgress: ((p: SweepProgress) => void) | undefined,
 	deps: SweepDeps,
-): Promise<{ count: number }> {
+): Promise<{ count: number; options: number; named: number }> {
 	const log = deps.log ?? NO_LOG;
 	// This receiver's state events lag the change by ~1.5s, so wait for the code
 	// to actually change rather than guessing a fixed delay.
@@ -111,6 +113,22 @@ export async function runSweep(
 
 	const start = await deps.query(host, command);
 	const visited = new Set<string>([start]);
+	/**
+	 * Options this sweep came back from with a name — SLI from its own FLD query,
+	 * LMD from the passive learner during the settle window. A set, so the wrap step
+	 * onto the start value cannot count it twice.
+	 *
+	 * "Has a name" rather than "was newly learned", and the difference is worth being
+	 * precise about: on a receiver whose names are already known a sweep legitimately
+	 * changes nothing, and reporting 0 there would read as failure. So for a step that
+	 * moved, this reports whether that option *has* a name — which for LMD, where the
+	 * passive learner may simply not have fired, can include one from an earlier run.
+	 *
+	 * What it does guarantee is the case that misled a user: only steps that actually
+	 * moved are counted, so a sweep against a sleeping receiver — where `UP` never
+	 * advances — reports 0 and cannot dress up old names as this run's work.
+	 */
+	const named = new Set<string>();
 	let prev = start;
 	let count = 0;
 	let movedAway = false;
@@ -138,12 +156,15 @@ export async function runSweep(
 			await deps.sleep(NAME_SETTLE_MS); // let the name FLD arrive (LMD: passive window; SLI: query below)
 			count++;
 
-			if (command === "SLI" && current !== prev) {
-				try {
-					await learnInputName(host, current, deps);
-				} catch (err) {
-					log.debug(`sweep SLI name read failed: ${err}`);
+			if (current !== prev) {
+				if (command === "SLI") {
+					try {
+						await learnInputName(host, current, deps);
+					} catch (err) {
+						log.debug(`sweep SLI name read failed: ${err}`);
+					}
 				}
+				if (deps.hasLearnedName(host, command, current)) named.add(current);
 			}
 			onProgress?.({ done: count, current: deps.nameFor(host, command, current) });
 
@@ -165,7 +186,9 @@ export async function runSweep(
 		if (command === "SLI") deps.setSliSweeping(host, false);
 		try {
 			await deps.send(host, command, start); // restore original
-			log.info(`sweep ${command} done (${count} steps), restored ${start}`);
+			log.info(
+				`sweep ${command} done (${count} steps over ${visited.size} options, ${named.size} named), restored ${start}`,
+			);
 		} catch (err) {
 			log.error(`sweep ${command}: failed to restore ${start}: ${err}`);
 			// A failing restore must not mask the sweep's own error — but
@@ -177,5 +200,5 @@ export async function runSweep(
 			}
 		}
 	}
-	return { count };
+	return { count, options: visited.size, named: named.size };
 }

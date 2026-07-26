@@ -175,6 +175,9 @@ async function main(): Promise<void> {
 				// re-measure and the capture would no longer show one FLD per step.
 				return "learned";
 			},
+			// The capture keeps its own map, so "does this code have a name" is simply
+			// whether the sweep already recorded one for it.
+			hasLearnedName: (_h, _cmd, code) => names[code] !== undefined,
 			setSliSweeping: () => {},
 			log: {
 				info: (m) => console.log(`  ${m}`),

@@ -38,6 +38,8 @@ function fakeReceiver(
 		fldSequence?: string[];
 		/** What the store makes of a reading — the trigger for re-measuring. */
 		recordOutcome?: (fldHex: string) => SliRecordOutcome;
+		/** Codes that count as named, overriding what this fake stored. */
+		namedCodes?: string[];
 	} = {},
 ): FakeReceiver {
 	let value = start;
@@ -45,6 +47,8 @@ function fakeReceiver(
 	let fldReads = 0;
 	const sent: string[] = [];
 	const nameEvents: string[] = [];
+	/** Codes a reading was stored for, so hasLearnedName can answer honestly. */
+	const stored = new Set<string>();
 	const deps: SweepDeps = {
 		send: (_host, command, param) => {
 			sent.push(`${command}:${param}`);
@@ -69,8 +73,14 @@ function fakeReceiver(
 		nameFor: (_host, _command, code) => `name:${code}`,
 		recordSli: (_host, code, fldHex, options) => {
 			nameEvents.push(`recordSli:${code}:${fldHex}${options?.corroborated ? ":corroborated" : ""}`);
-			return opts.recordOutcome ? opts.recordOutcome(fldHex) : "learned";
+			const outcome = opts.recordOutcome ? opts.recordOutcome(fldHex) : "learned";
+			// Only these two mean the store kept it; see SliRecordOutcome.
+			if (outcome === "learned" || outcome === "unchanged" || options?.corroborated) stored.add(code);
+			return outcome;
 		},
+		// Mirrors the name store: a code counts as named once a reading was stored
+		// for it. `opts.namedCodes` lets a test say "this option never got a name".
+		hasLearnedName: (_host, _command, code) => (opts.namedCodes ? opts.namedCodes.includes(code) : stored.has(code)),
 		setSliSweeping: (_host, on) => {
 			nameEvents.push(`sweeping:${on ? "on" : "off"}`);
 		},
@@ -120,9 +130,10 @@ describe("runSweep", () => {
 	it("stops when the value returns to an already-seen option that is not the start", async () => {
 		// A -> B -> C -> B: the receiver skips the start and loops B/C.
 		const seq: Record<string, string> = { A: "B", B: "C", C: "B" };
-		const rx = fakeReceiver("A", (c) => seq[c]!);
-		const { count } = await runSweep("h", "LMD", undefined, rx.deps);
+		const rx = fakeReceiver("A", (c) => seq[c]!, { namedCodes: ["B", "C"] });
+		const { count, named } = await runSweep("h", "LMD", undefined, rx.deps);
 		assert.equal(count, 3);
+		assert.equal(named, 2, "B was stepped onto twice but is one option");
 		assert.equal(rx.sent[rx.sent.length - 1], "LMD:A");
 	});
 
@@ -238,5 +249,59 @@ describe("runSweep: re-measuring a doubtful input name", () => {
 		const rx = fakeReceiver("A", ring(["A", "B"]), { fld: "X", recordOutcome: () => "doubtful" });
 		await runSweep("h", "LMD", undefined, rx.deps);
 		assert.deepEqual(reads(rx), []);
+	});
+});
+
+describe("runSweep: what it reports back", () => {
+	it("counts the options that came back with a name, not the steps taken", async () => {
+		const rx = fakeReceiver("10", ring(["10", "11", "12"]), { fld: "4344202020203134" });
+		const { count, named } = await runSweep("h", "SLI", undefined, rx.deps);
+		assert.equal(count, 3, "three steps");
+		assert.equal(named, 3, "and all three options named");
+	});
+
+	it("reports zero names when the receiver never moves — the standby case", async () => {
+		// This is what actually happened: a sweep against a sleeping receiver bailed
+		// after 5 steps having learned nothing, and the PI reported "5 names".
+		const rx = fakeReceiver("10", () => "10", { fld: "4344202020203134" });
+		const { count, named } = await runSweep("h", "SLI", undefined, rx.deps);
+		assert.equal(count, 5, "bails out after five fruitless steps");
+		assert.equal(named, 0, "and says so");
+		assert.deepEqual(
+			rx.nameEvents.filter((e) => e.startsWith("recordSli:")),
+			[],
+			"nothing was even read, so nothing could be named",
+		);
+	});
+
+	it("does not borrow names it did not read this time", async () => {
+		// hasLearnedName is true for everything (names from an earlier sweep), but the
+		// receiver does not move: the count must still be 0 rather than inheriting them.
+		const rx = fakeReceiver("10", () => "10", { namedCodes: ["10", "11", "12"] });
+		const { named } = await runSweep("h", "SLI", undefined, rx.deps);
+		assert.equal(named, 0);
+	});
+
+	it("counts an option whose name the passive learner supplied (LMD)", async () => {
+		// LMD names arrive passively during the settle window, so the sweep only asks
+		// the store afterwards.
+		const rx = fakeReceiver("80", ring(["80", "82"]), { namedCodes: ["82", "80"] });
+		const { count, named } = await runSweep("h", "LMD", undefined, rx.deps);
+		assert.equal(count, 2);
+		assert.equal(named, 2);
+	});
+
+	it("does not count an option that stayed unnamed", async () => {
+		const rx = fakeReceiver("80", ring(["80", "82", "83"]), { namedCodes: ["82"] });
+		const { count, named } = await runSweep("h", "LMD", undefined, rx.deps);
+		assert.equal(count, 3);
+		assert.equal(named, 1, "only the one the store has a name for");
+	});
+
+	it("counts the start option once, not twice, when the sweep wraps onto it", async () => {
+		const rx = fakeReceiver("10", ring(["10", "11"]), { fld: "4344202020203134" });
+		const { count, named } = await runSweep("h", "SLI", undefined, rx.deps);
+		assert.equal(count, 2, "step onto 11, then back onto 10");
+		assert.equal(named, 2, "two distinct options, each counted once");
 	});
 });
