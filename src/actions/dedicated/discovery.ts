@@ -15,7 +15,15 @@ import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
 import { type EiscpActionSettings, fireAndLog, resolveDeviceIp } from "../eiscp-base.ts";
-import { nameFor, noteChange, noteFld, recordSli, setSliSweeping, type TrackedCommand } from "./name-store.ts";
+import {
+	nameFor,
+	noteChange,
+	noteDisplayChange,
+	noteFld,
+	recordSli,
+	setSliSweeping,
+	type TrackedCommand,
+} from "./name-store.ts";
 import { runSweep as runSweepWithDeps, type SweepDeps, type SweepProgress } from "./sweep.ts";
 
 export type { SweepProgress } from "./sweep.ts";
@@ -34,6 +42,11 @@ export function register(mgr: ConnectionManager): void {
 			noteChange(host, command, parameter);
 		} else if (command === "FLD") {
 			noteFld(host, parameter);
+		} else {
+			// Volume, tone, mute and friends push the input readout off the display;
+			// the name store has to know so it does not learn their text as an input
+			// name (see noteDisplayChange).
+			noteDisplayChange(host, command);
 		}
 	});
 	logger.info("passive name discovery registered");

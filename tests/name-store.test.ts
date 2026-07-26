@@ -4,7 +4,15 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { decodeDisplayText } from "../src/actions/eiscp-base.ts";
-import { load, nameFor, noteChange, noteFld, recordSli, serialize } from "../src/actions/dedicated/name-store.ts";
+import {
+	load,
+	nameFor,
+	noteChange,
+	noteDisplayChange,
+	noteFld,
+	recordSli,
+	serialize,
+} from "../src/actions/dedicated/name-store.ts";
 
 // Hex-ASCII helpers for FLD payloads.
 const hex = (s: string) => Buffer.from(s, "ascii").toString("hex");
@@ -183,5 +191,85 @@ describe("name-store input hardening", () => {
 		const stored = serialize()["ns-loadtype"]!.LMD!;
 		assert.equal("Z1" in stored, false, "non-string persisted name should be ignored");
 		assert.equal(stored["Z2"], "Fine");
+	});
+});
+
+// --- the display does not belong to the input alone -------------------------
+
+describe("name-store: readouts that only look like an input", () => {
+	const VOLUME = hex("Volume      14");
+	const BASS = hex("Bass : +2");
+	const BD_DVD = hex("BD/DVD       1");
+	/** Let the millisecond clock move, so "more recently" means something. */
+	const tick = (): Promise<void> =>
+		new Promise((resolve) => {
+			setTimeout(resolve, 5).unref?.();
+		});
+
+	it("does not learn a volume readout as an input name", () => {
+		// Shaped exactly like "<input>  <volume>", which is why it used to be stored:
+		// a real receiver ended up with an input literally called "Volume".
+		const host = "ns-volume";
+		noteChange(host, "SLI", "10");
+		noteDisplayChange(host, "MVL");
+		assert.equal(noteFld(host, VOLUME), false);
+		// Nothing learned at all, so the key falls back to the registry name.
+		assert.equal(serialize()[host], undefined);
+		assert.notEqual(nameFor(host, "SLI", "10"), "Volume");
+	});
+
+	it("does not learn a tone readout as an input name", () => {
+		// The observed defect: input 10 was called "Bass : +" (the trailing digit
+		// stripped, which is also why the sign was provably positive).
+		const host = "ns-bass";
+		noteChange(host, "SLI", "10");
+		noteDisplayChange(host, "TFR");
+		assert.equal(noteFld(host, BASS), false);
+		assert.notEqual(nameFor(host, "SLI", "10"), "Bass : +");
+	});
+
+	it("does not let a stale volume change block a real input name", async () => {
+		// Measured on hardware: the input readout arrives 40 ms after the SLI while
+		// the last volume change is ~800 ms old. Recency decides, not a window — so
+		// the test has to let real time pass between the two, which is the whole
+		// point of the rule.
+		const host = "ns-recency";
+		noteDisplayChange(host, "MVL");
+		await tick();
+		noteChange(host, "SLI", "10"); // input changed *after* the volume
+		assert.equal(noteFld(host, BD_DVD), true);
+		assert.equal(nameFor(host, "SLI", "10"), "BD/DVD");
+	});
+
+	it("keeps learning names when nothing else touched the display", () => {
+		const host = "ns-clean";
+		noteChange(host, "SLI", "23");
+		assert.equal(noteFld(host, CD_VOL), true);
+		assert.equal(nameFor(host, "SLI", "23"), "CD");
+	});
+
+	it("ignores commands that do not own the display", () => {
+		// A veto list: MOT/PCT/NDS and friends broadcast constantly and must not
+		// suppress learning.
+		const host = "ns-unrelated";
+		noteChange(host, "SLI", "23");
+		noteDisplayChange(host, "MOT");
+		noteDisplayChange(host, "NDS");
+		assert.equal(noteFld(host, CD_VOL), true);
+	});
+
+	it("refuses a swept name while another command owns the display", () => {
+		// recordSli is the sweep's deterministic path and had no check at all: its
+		// FLD query is settled by the first FLD to arrive, solicited or not.
+		const host = "ns-sweep";
+		noteDisplayChange(host, "MVL");
+		assert.equal(recordSli(host, "10", VOLUME), false);
+		assert.equal(recordSli(host, "10", BD_DVD), false, "the query answer is suspect either way");
+	});
+
+	it("still records a swept name on a quiet display", () => {
+		const host = "ns-sweep-quiet";
+		assert.equal(recordSli(host, "10", BD_DVD), true);
+		assert.equal(nameFor(host, "SLI", "10"), "BD/DVD");
 	});
 });

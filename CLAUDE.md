@@ -277,6 +277,24 @@ keeps the captured order but drops the captured waits, so CI stays fast).
 - The fixture contains whatever the display showed at capture time, including a
   radio station name where a tuner input was selected — re-capture rather than
   hand-editing if that matters.
+- **The display does not belong to the input alone.** "Volume      14" and
+  "Bass : +2" are shaped exactly like the "<input>  <volume>" readout — label,
+  padding, trailing digits — so `endsWithVolume` cannot tell them apart, and the
+  passive pairer stored them as input names: a real user ended up with an input
+  called "Bass : +", and replaying `standby-behaviour-capture.json` through the
+  store produced three inputs called "Volume". `noteDisplayChange` now records when
+  a command took the display over (`MVL`/`AMT`/`TFR`/…), and `displayIsBusy` gives
+  the display to whichever change was **more recent** — a fixed window cannot
+  separate the two real cases, both measured off the same `SLI 10`:
+  `+40 ms → "BD/DVD       1"` (learn) versus `+1915 ms, but 18 ms after MVL →
+  "Volume      14"` (refuse). A tie counts as busy: a missing name costs one clean
+  input change, a wrong one persists. `tests/name-store-capture.test.ts` replays the
+  recording and fails without the guard.
+- The sweep's `recordSli` had **no** format check at all — its `query("FLD")` is
+  settled by the first FLD to arrive, solicited or not — and is now subject to the
+  same veto. What no format rule can fix is the tuner: with `SLI 24/33` selected the
+  display genuinely shows the station ("FM 87.50MHz", "TEDDY"), so those *are* what
+  the receiver reports for that input.
 - **`npm run capture:standby`** (`scripts/capture-standby-behaviour.ts`) measures
   what a set does in standby versus awake, as `query — set — wait — query`, so
   "the receiver ignored it" is observed rather than assumed. Also state-changing

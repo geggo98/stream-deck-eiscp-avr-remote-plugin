@@ -71,6 +71,64 @@ interface HostState {
 	lmdPending?: { code: string; until: number };
 	sliCode?: { value: string; at: number };
 	sliName?: { value: string; at: number };
+	/** When something other than the input last took over the display; see displayIsBusy. */
+	displayOwnedAt?: number;
+}
+
+/**
+ * Commands whose new value the receiver shows in the display *instead of* the
+ * input readout: "Volume      14", "Bass : +2", and so on.
+ *
+ * The trap they set is that such a readout is shaped exactly like the input one —
+ * a label, padding, and a trailing number — so `endsWithVolume` cannot tell them
+ * apart, and a volume change ended up stored as the name of whatever input was
+ * selected. Two real examples were found in the wild: an input called
+ * "Bass : +" and one called "Volume".
+ *
+ * A veto list, so a command missing from it only means the old behaviour rather
+ * than a new failure. `LMD` is absent on purpose: mode names are the *other*
+ * branch of noteFld and have their own window.
+ */
+const DISPLAY_OWNING_COMMANDS: readonly string[] = ["MVL", "AMT", "TFR", "TFW", "PRS", "CTL", "SWL", "DIM"];
+
+/**
+ * How long such a change is assumed to own the display. The input readout is
+ * persistent, so it comes back on its own; this only has to cover the moment it
+ * is pushed aside (measured at ~0.6-2 s on a VSX-S520D).
+ */
+const DISPLAY_OWNED_MS = 1500;
+
+/**
+ * Whether the display currently belongs to something other than the input.
+ *
+ * Recency decides, not a fixed window — a window cannot separate the two cases
+ * that actually occur (both measured, `tests/fixtures/standby-behaviour-capture.json`,
+ * same `SLI 10` in both):
+ *
+ *   28600 SLI 10 -> 28640 FLD "BD/DVD       1"   input changed 40 ms ago, MVL 814 ms ago
+ *   28600 SLI 10 -> 30515 FLD "Volume      14"   MVL 18 ms ago, input 1915 ms ago
+ *
+ * So: a fresh non-input change wins unless the input changed *strictly* later.
+ * With no input change recorded at all (the sweep suppresses them, and a name can
+ * legitimately arrive before its code) a fresh non-input change simply wins.
+ *
+ * A tie counts as busy on purpose — the two can land in the same millisecond
+ * inside a power-on burst, and not learning a name costs one clean input change,
+ * whereas learning a wrong one persists until something overwrites it.
+ */
+function displayIsBusy(s: HostState, now: number): boolean {
+	const at = s.displayOwnedAt;
+	if (at === undefined || now - at > DISPLAY_OWNED_MS) return false;
+	return !s.sliCode || s.sliCode.at <= at;
+}
+
+/**
+ * Note that a command took the display over. Fed from the same observer as
+ * noteChange/noteFld (see discovery.ts) — unknown commands are ignored.
+ */
+export function noteDisplayChange(host: string, command: string): void {
+	if (!DISPLAY_OWNING_COMMANDS.includes(command)) return;
+	hostState(host).displayOwnedAt = Date.now();
 }
 
 const STATE = new Map<string, HostState>();
@@ -137,10 +195,19 @@ function tryPairSli(host: string): boolean {
 	return learn(host, "SLI", s.sliCode.value, s.sliName.value);
 }
 
-/** Learn an input name directly from a code + its FLD readout (deterministic; used by the sweep). */
+/**
+ * Learn an input name directly from a code + its FLD readout (deterministic; used
+ * by the sweep).
+ *
+ * The sweep queries the display right after selecting an input, so the answer is
+ * *usually* the input readout — but `query("FLD")` is settled by the first FLD
+ * that arrives, solicited or not, so a volume or tone readout can land in its
+ * place. This path had no check at all and would store it verbatim.
+ */
 export function recordSli(host: string, code: string, fldHex: string): boolean {
 	const text = decodeDisplayText(fldHex);
 	if (!text) return false;
+	if (displayIsBusy(hostState(host), Date.now())) return false;
 	return learn(host, "SLI", code, stripVolume(text));
 }
 
@@ -170,7 +237,11 @@ export function noteFld(host: string, hex: string): boolean {
 	if (!text) return false;
 
 	if (endsWithVolume(text)) {
-		hostState(host).sliName = { value: stripVolume(text), at: Date.now() };
+		const now = Date.now();
+		// "Volume      14" and "Bass : +2" are shaped exactly like an input readout.
+		// Whoever wrote the display last owns it.
+		if (displayIsBusy(hostState(host), now)) return false;
+		hostState(host).sliName = { value: stripVolume(text), at: now };
 		return tryPairSli(host);
 	}
 
