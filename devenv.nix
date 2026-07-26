@@ -103,6 +103,45 @@
       pass_filenames = false;
       always_run = true;
     };
+    # A raw control byte in a .ts source silently turns it into a "binary" file for
+    # git: no diff, no review, no blame. It has happened three times in this repo
+    # (a NUL in a test fixture string, a NUL used as a separator, a SUB in a
+    # terminator literal) and each time the only symptom was "Bin 0 -> N bytes" in
+    # the commit stat, which is easy to miss. A unicode escape is always
+    # available, so there is never a reason to embed the raw byte.
+    forbid-control-bytes = {
+      enable = true;
+      name = "forbid raw control bytes in sources";
+      # Python, not grep: `grep -qP '[\x00-\x08…]'` silently fails to match a NUL
+      # (the pattern reaches PCRE as a C string), so the first version of this hook
+      # passed the very file it was written to catch. Verified by probe in both
+      # directions — a file with a NUL is rejected, a clean one is not.
+      entry = "${pkgs.writeShellScript "forbid-control-bytes" ''
+        exec ${pkgs.python3}/bin/python3 - "$@" <<'PY'
+        import subprocess, sys
+        LEGAL = {0x09, 0x0a, 0x0d}  # tab, LF, CR
+        EXT = (".ts", ".js", ".json", ".md", ".html", ".css", ".nix", ".yaml", ".yml")
+        names = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=AM"],
+                               capture_output=True, text=True, check=True).stdout.split()
+        status = 0
+        for name in (n for n in names if n.endswith(EXT)):
+            blob = subprocess.run(["git", "show", f":{name}"], capture_output=True, check=True).stdout
+            offenders = sorted({b for b in blob if b < 0x20 and b not in LEGAL} | ({0x7f} if 0x7f in blob else set()))
+            if offenders:
+                where = blob.find(bytes([offenders[0]]))
+                line = blob[:where].count(b"\n") + 1
+                print(f"ERROR: {name}:{line} contains raw control byte(s) "
+                      f"{', '.join(hex(b) for b in offenders)}; git will treat the file as binary.",
+                      file=sys.stderr)
+                print("       Write them as unicode escapes instead.", file=sys.stderr)
+                status = 1
+        sys.exit(status)
+        PY
+      ''}";
+      language = "system";
+      pass_filenames = false;
+      always_run = true;
+    };
     # Block secrets from being committed (pre-commit).
     gitleaks = {
       enable = true;
