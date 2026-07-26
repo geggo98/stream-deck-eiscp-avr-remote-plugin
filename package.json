@@ -1,6 +1,6 @@
 {
   "name": "eiscp-avr-remote",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Stream Deck plugin to remote-control AV receivers over eISCP (Integra Serial Control Protocol over Ethernet). Compatible with many Pioneer, Onkyo and Integra network receivers. Independent project, not affiliated with or endorsed by these manufacturers.",
   "author": "Stefan Schwetschke <stefan@schwetschke.de>",
   "license": "MIT",
