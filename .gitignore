@@ -157,3 +157,7 @@ node_modules/
 *.streamDeckPlugin
 .claude/settings.local.json
 docs/ISCP_AVR_134.xlsx
+# Office lock files ("owner files") sit next to the document while it is open.
+# The spreadsheet itself is deliberately untracked; its lock file should not show
+# up as the one untracked thing tempting a `git add -A` either.
+~$*.xlsx
