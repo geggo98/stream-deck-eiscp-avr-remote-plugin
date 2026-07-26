@@ -327,9 +327,31 @@ keeps the captured order but drops the captured waits, so CI stays fast).
   "Volume      14"` (refuse). A tie counts as busy: a missing name costs one clean
   input change, a wrong one persists. `tests/name-store-capture.test.ts` replays the
   recording and fails without the guard.
+- **A playing source is not a mode name either.** Same disease on the LMD branch,
+  found in the wild: listening mode `82` was learned as **"...Baby One M"** — a
+  scrolling track title clipped to the display width — while the user had not touched
+  the mode. A mode name is any FLD that does *not* end in digits inside
+  `LMD_WINDOW_MS`, and an `LMD` event is no proof of a user action: the receiver
+  re-broadcasts it on an input change (recorded: `SLI 10` at 28600 ms, `LMD 80` at
+  28640 ms) and switches modes by itself when the source format changes. So
+  `METADATA_COMMANDS` (`NJA`, `NLS`, `NLT`, `NTM`, `NFI`, `NTI`, `NAT`, `NAL`) vetoes
+  the mode branch as well. Three things about that list:
+  - it comes from **what the unit actually sends** during playback (`raw-dump.bin`:
+    NJA 169×, NLS 45×) — this firmware never sends `NTI`/`NAT`/`NAL`, so a
+    spec-derived list would have missed the case completely;
+  - **text, art and time only.** The status flags of the same family (`NDS` "a device
+    is present", `NST` "playing") are excluded: they say nothing about the display,
+    and including `NDS` broke a test that rightly insists an unrelated broadcast must
+    not block learning;
+  - it fires only on the sources that behave this way (DAB, USB, NET) and only while
+    they play, so everything else keeps learning passively.
 - The sweep's `recordSli` had **no** format check at all — its `query("FLD")` is
   settled by the first FLD to arrive, solicited or not — and is now subject to the
-  same veto. What no format rule can fix is the tuner: with `SLI 24/33` selected the
+  volume/tone veto. **Not to the metadata veto**, deliberately: the recorded SLI sweep
+  contains 35 metadata frames because it steps onto NET/USB while they stream, so
+  vetoing there would make those inputs permanently unnameable. The sweep asks the
+  display a question at a moment it chose and has the majority loop behind it; passive
+  learning only overhears and has to be stricter. What no format rule can fix is the tuner: with `SLI 24/33` selected the
   display genuinely shows the station ("FM 87.50MHz", "TEDDY"), so those *are* what
   the receiver reports for that input.
 - **The sweep measures a doubtful reading again** (`learnInputName` in `sweep.ts`).

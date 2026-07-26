@@ -19,6 +19,16 @@ const hex = (s: string) => Buffer.from(s, "ascii").toString("hex");
 const DTS_X = hex("DTS Neural:X"); // mode name (no trailing digits)
 const CD_VOL = hex("CD          14"); // input + volume readout
 
+/**
+ * Let the millisecond clock move on, so "more recently" means something: the store
+ * decides who owns the display by comparing timestamps, and events fired in the same
+ * millisecond are deliberately treated as a tie.
+ */
+const tick = (): Promise<void> =>
+	new Promise((resolve) => {
+		setTimeout(resolve, 5).unref?.();
+	});
+
 describe("decodeDisplayText", () => {
 	it("decodes hex-encoded ASCII", () => {
 		assert.equal(decodeDisplayText(DTS_X), "DTS Neural:X");
@@ -200,11 +210,6 @@ describe("name-store: readouts that only look like an input", () => {
 	const VOLUME = hex("Volume      14");
 	const BASS = hex("Bass : +2");
 	const BD_DVD = hex("BD/DVD       1");
-	/** Let the millisecond clock move, so "more recently" means something. */
-	const tick = (): Promise<void> =>
-		new Promise((resolve) => {
-			setTimeout(resolve, 5).unref?.();
-		});
 
 	it("does not learn a volume readout as an input name", () => {
 		// Shaped exactly like "<input>  <volume>", which is why it used to be stored:
@@ -271,5 +276,57 @@ describe("name-store: readouts that only look like an input", () => {
 		const host = "ns-sweep-quiet";
 		assert.equal(recordSli(host, "10", BD_DVD), "learned");
 		assert.equal(nameFor(host, "SLI", "10"), "BD/DVD");
+	});
+});
+
+describe("name-store: a playing source is not a mode name", () => {
+	// The case found in the wild: listening mode 82 was learned as "...Baby One M",
+	// a scrolling track title clipped to the display width, while the user had not
+	// touched the mode at all.
+	const TITLE = hex("...Baby One M");
+	const MODE = hex("DTS Neural:X");
+
+	it("does not learn a track title as a listening-mode name", async () => {
+		const host = "ns-title";
+		noteChange(host, "LMD", "82"); // the receiver re-broadcasts this by itself
+		await tick();
+		noteDisplayChange(host, "NJA"); // cover art: the source is putting metadata up
+		assert.equal(noteFld(host, TITLE), false);
+		assert.notEqual(nameFor(host, "LMD", "82"), "...Baby One M");
+	});
+
+	it("still learns a mode name when the source is quiet", async () => {
+		// Everything except DAB/USB/NET behaves this way — no metadata, so no veto.
+		const host = "ns-mode-quiet";
+		noteChange(host, "LMD", "82");
+		assert.equal(noteFld(host, MODE), true);
+		assert.equal(nameFor(host, "LMD", "82"), "DTS Neural:X");
+	});
+
+	it("learns a mode name that was changed after the metadata stopped", async () => {
+		// Playback ends, the display returns to the mode: the veto must not linger.
+		const host = "ns-mode-after";
+		noteDisplayChange(host, "NLS");
+		await tick();
+		noteChange(host, "LMD", "80"); // the mode change is the more recent event
+		assert.equal(noteFld(host, hex("Dolby Surr")), true);
+		assert.equal(nameFor(host, "LMD", "80"), "Dolby Surr");
+	});
+
+	it("keeps the sweep able to name a streaming input", async () => {
+		// The recorded SLI sweep contains 35 metadata frames — it steps onto NET/USB
+		// while they stream. If playback metadata vetoed the sweep's own FLD query too,
+		// those inputs could never be named.
+		const host = "ns-sweep-streaming";
+		noteDisplayChange(host, "NJA");
+		assert.notEqual(recordSli(host, "2B", hex("NET          14")), "rejected");
+		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+	});
+
+	it("still refuses a swept name while the volume is on the display", async () => {
+		// The other family is unchanged: that one does block the sweep.
+		const host = "ns-sweep-volume";
+		noteDisplayChange(host, "MVL");
+		assert.equal(recordSli(host, "2B", hex("Volume      14")), "rejected");
 	});
 });

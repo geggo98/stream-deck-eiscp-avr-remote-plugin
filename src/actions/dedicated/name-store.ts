@@ -81,11 +81,13 @@ function sanitiseLearned(value: string, maxLength: number): string {
 
 interface HostState {
 	names: Record<TrackedCommand, Map<string, string>>;
-	lmdPending?: { code: string; until: number };
+	lmdPending?: { code: string; at: number };
 	sliCode?: { value: string; at: number };
 	sliName?: { value: string; at: number };
 	/** When something other than the input last took over the display; see displayIsBusy. */
 	displayOwnedAt?: number;
+	/** When the source last pushed playback metadata (a title, a station, cover art). */
+	metadataAt?: number;
 }
 
 /**
@@ -103,6 +105,35 @@ interface HostState {
  * branch of noteFld and have their own window.
  */
 const DISPLAY_OWNING_COMMANDS: readonly string[] = ["MVL", "AMT", "TFR", "TFW", "PRS", "CTL", "SWL", "DIM"];
+
+/**
+ * Commands that mean "this source is streaming something and putting its metadata on
+ * the display" — a track title, a station name, cover art.
+ *
+ * A different problem from the list above, and it caught a real one: listening mode
+ * `82` was learned as **"...Baby One M"**, a scrolling track title clipped to the
+ * display width, without the user touching the mode. A mode name is any FLD that does
+ * *not* end in digits and arrives inside the `LMD_WINDOW_MS` window — and an `LMD`
+ * event is not proof of a user action: the receiver re-broadcasts it on an input change
+ * (recorded: `SLI 10` at 28600 ms, `LMD 80` at 28640 ms) and switches modes by itself
+ * when the source format changes.
+ *
+ * Taken from what the reference unit actually sends during playback
+ * (`tests/fixtures/raw-dump.bin`: NJA 169x cover art, NLS 45x and NLT list text, NTM
+ * elapsed time, NFI file info) rather than from the spec — this firmware never sends
+ * `NTI`/`NAT`/`NAL`, so a spec-derived list would have missed the case entirely. Those
+ * three are included anyway as same-family siblings; an entry that never arrives costs
+ * nothing.
+ *
+ * Deliberately **text, art and time only**. The status flags of the same family — `NDS`
+ * (a device is present), `NST` (playing/paused) — are not here: they say nothing about
+ * what is on the display, and treating them as metadata would block learning on a
+ * source that is merely connected.
+ *
+ * This only fires on the sources that behave this way (DAB, USB, NET), and only while
+ * they are playing: the metadata stream stops, and learning resumes.
+ */
+const METADATA_COMMANDS: readonly string[] = ["NJA", "NLS", "NLT", "NTM", "NFI", "NTI", "NAT", "NAL"];
 
 /**
  * How long such a change is assumed to own the display. The input readout is
@@ -129,19 +160,30 @@ const DISPLAY_OWNED_MS = 1500;
  * inside a power-on burst, and not learning a name costs one clean input change,
  * whereas learning a wrong one persists until something overwrites it.
  */
-function displayIsBusy(s: HostState, now: number): boolean {
-	const at = s.displayOwnedAt;
-	if (at === undefined || now - at > DISPLAY_OWNED_MS) return false;
-	return !s.sliCode || s.sliCode.at <= at;
+function displayIsBusy(
+	s: HostState,
+	now: number,
+	ownChangeAt: number | undefined,
+	options: { includeMetadata: boolean },
+): boolean {
+	const candidates = [s.displayOwnedAt];
+	if (options.includeMetadata) candidates.push(s.metadataAt);
+	const at = Math.max(...candidates.map((value) => value ?? -Infinity));
+	if (!Number.isFinite(at) || now - at > DISPLAY_OWNED_MS) return false;
+	return ownChangeAt === undefined || ownChangeAt <= at;
 }
 
 /**
  * Note that a command took the display over. Fed from the same observer as
  * noteChange/noteFld (see discovery.ts) — unknown commands are ignored.
+ *
+ * The two families are tracked apart because they are trusted apart: the sweep asks
+ * the display a question at a moment it chose and may ignore playback metadata, while
+ * passive learning only overhears the display and has to respect both.
  */
 export function noteDisplayChange(host: string, command: string): void {
-	if (!DISPLAY_OWNING_COMMANDS.includes(command)) return;
-	hostState(host).displayOwnedAt = Date.now();
+	if (DISPLAY_OWNING_COMMANDS.includes(command)) hostState(host).displayOwnedAt = Date.now();
+	else if (METADATA_COMMANDS.includes(command)) hostState(host).metadataAt = Date.now();
 }
 
 const STATE = new Map<string, HostState>();
@@ -233,7 +275,8 @@ export function recordSli(
 	// `corroborated` means the caller established the reading some other way — the
 	// sweep re-measures and takes a majority, and a text that stays on the display
 	// across several samples is better evidence than either check below can give.
-	if (!options.corroborated && displayIsBusy(hostState(host), Date.now())) return "rejected";
+	if (!options.corroborated && displayIsBusy(hostState(host), Date.now(), undefined, { includeMetadata: false }))
+		return "rejected";
 	const stored = learn(host, "SLI", code, name) ? "learned" : "unchanged";
 	// The protocol spec knows what this input is called. A mismatch vetoes nothing —
 	// receivers relabel inputs ("BT AUDIO" where the spec says "BLUETOOTH"), so the
@@ -251,7 +294,7 @@ export function recordSli(
 export function noteChange(host: string, command: TrackedCommand, code: string): void {
 	const s = hostState(host);
 	if (command === "LMD") {
-		s.lmdPending = { code, until: Date.now() + LMD_WINDOW_MS };
+		s.lmdPending = { code, at: Date.now() };
 	} else if (command === "SLI") {
 		if (sliSweeping.has(host)) return;
 		s.sliCode = { value: code, at: Date.now() };
@@ -268,18 +311,23 @@ export function noteFld(host: string, hex: string): boolean {
 	const text = decodeDisplayText(hex);
 	if (!text) return false;
 
+	const s = hostState(host);
+	const now = Date.now();
+
 	if (endsWithVolume(text)) {
-		const now = Date.now();
 		// "Volume      14" and "Bass : +2" are shaped exactly like an input readout.
 		// Whoever wrote the display last owns it.
-		if (displayIsBusy(hostState(host), now)) return false;
-		hostState(host).sliName = { value: stripVolume(text), at: now };
+		if (displayIsBusy(s, now, s.sliCode?.at, { includeMetadata: true })) return false;
+		s.sliName = { value: stripVolume(text), at: now };
 		return tryPairSli(host);
 	}
 
-	// Transient mode-name readout -> the listening-mode name.
-	const pending = hostState(host).lmdPending;
-	if (!pending || Date.now() > pending.until) return false;
+	// Transient mode-name readout -> the listening-mode name. Same rule as above, and
+	// it belongs here just as much: a scrolling track title is not a mode name, and an
+	// LMD event is no proof of a user action (see METADATA_COMMANDS).
+	const pending = s.lmdPending;
+	if (!pending || now - pending.at > LMD_WINDOW_MS) return false;
+	if (displayIsBusy(s, now, pending.at, { includeMetadata: true })) return false;
 	return learn(host, "LMD", pending.code, text);
 }
 
