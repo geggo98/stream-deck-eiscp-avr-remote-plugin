@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.1](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.0...v1.0.1) (2026-07-26)
+
+
+### Build System
+
+* **deps:** pull in the dependency updates, minus TypeScript 7 ([a33401c](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/a33401c531b5d2721771b3603ab8fa59256df500))
+
+
+### Chores
+
+* release 1.0.1 ([5a03fd0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/5a03fd0902bc795a889be4050845070c747d2162))
+
 ## [1.0.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v0.3.0...v1.0.0) (2026-07-26)
 
 
