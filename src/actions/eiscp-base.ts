@@ -24,9 +24,17 @@ export interface EiscpActionSettings {
 /** Learned option names, persisted in global settings: host -> command -> code -> name. */
 export type SerializedNames = { [host: string]: { [command: string]: { [code: string]: string } } };
 
+/** A receiver remembered across sessions, so a new action can adopt it. */
+export interface LastDevice {
+	host: string;
+	model: string;
+}
+
 /** Plugin-wide persisted settings (Stream Deck global settings). */
 export interface GlobalSettings {
 	deviceIp?: string;
+	/** The receiver most recently picked in any PI; pre-fills freshly added actions. */
+	lastDevice?: { host?: string; model?: string };
 	names?: SerializedNames;
 	[key: string]: JsonValue;
 }
@@ -39,6 +47,151 @@ export function setCachedGlobalSettings(settings: GlobalSettings | undefined): v
 }
 export function getCachedGlobalSettings(): GlobalSettings {
 	return cachedGlobalSettings;
+}
+
+/**
+ * Gate for code that *writes* the global settings.
+ *
+ * Writers merge over the cached snapshot (`{...getCachedGlobalSettings(), …}`),
+ * and that snapshot is empty until the initial load lands — which happens after
+ * `connect()`, i.e. after the first actions have already appeared and bound.
+ * Writing in that window persists a settings object with everything else
+ * missing; it cost a real user their whole learned-name map once.
+ *
+ * Resolved by plugin.ts once, and deliberately only on a *successful* load: if
+ * we could not read the settings we do not know what is in them, so overwriting
+ * them is worse than not remembering anything this session.
+ */
+let markLoaded: () => void;
+let settingsLoaded = false;
+const globalSettingsLoaded = new Promise<void>((resolve) => {
+	markLoaded = resolve;
+});
+export function markGlobalSettingsLoaded(): void {
+	settingsLoaded = true;
+	markLoaded();
+}
+export function whenGlobalSettingsLoaded(): Promise<void> {
+	return globalSettingsLoaded;
+}
+/** Synchronous form of the gate, for writers that waited with a timeout. */
+export function areGlobalSettingsLoaded(): boolean {
+	return settingsLoaded;
+}
+
+/** How long a bind may wait for the settings load before carrying on without it. */
+export const GLOBAL_SETTINGS_WAIT_MS = 2000;
+
+/**
+ * Bounded wait for the same load, for *readers* that would otherwise decide on an
+ * empty cache. Actions appear immediately after `connect()`, before the settings
+ * arrive, so an action that should adopt the remembered receiver would show
+ * "No IP" until something happened to re-bind it — on every plugin restart.
+ *
+ * Capped rather than open-ended: a load that never completes must cost the
+ * remembered device, not the bind.
+ */
+export function waitForGlobalSettings(timeoutMs: number = GLOBAL_SETTINGS_WAIT_MS): Promise<void> {
+	return Promise.race([
+		globalSettingsLoaded,
+		new Promise<void>((resolve) => {
+			const timer = setTimeout(resolve, timeoutMs);
+			timer.unref?.();
+		}),
+	]);
+}
+
+/**
+ * Persist the global settings. Injected by plugin.ts so this module stays
+ * SDK-free (importing @elgato/streamdeck rotates its log files as a side effect).
+ */
+export type GlobalSettingsWriter = (settings: GlobalSettings) => Promise<void>;
+
+let globalSettingsWriter: GlobalSettingsWriter | undefined;
+export function setGlobalSettingsWriter(write: GlobalSettingsWriter | undefined): void {
+	globalSettingsWriter = write;
+}
+
+let globalWriteQueue: Promise<void> = Promise.resolve();
+
+/**
+ * The **only** way to write the global settings.
+ *
+ * Stream Deck stores them as one object shared by unrelated subsystems (the
+ * learned-name map, the remembered device). Every writer therefore has to merge
+ * over the others' values, and two independent writers merging over their own
+ * stale idea of that object is how data disappears here:
+ *
+ * - Writing before the initial load persists a snapshot with everything else
+ *   missing. That wiped a real user's learned names once, hence the gate.
+ * - Writing over `getCachedGlobalSettings()` without putting the result *back*
+ *   into the cache leaves the next writer merging over a superseded snapshot,
+ *   silently reverting whatever happened in between. Stream Deck does not echo
+ *   a plugin's own `setGlobalSettings` back as `didReceiveGlobalSettings`, so
+ *   nothing else refreshes that cache during a session.
+ *
+ * So: patches are applied to the live cache, serialised against each other, and
+ * the cache is updated before the round-trip — a queued patch then merges over
+ * the new values even while the write is still in flight. `patch` returns
+ * `undefined` to skip the write entirely.
+ *
+ * A failed write deliberately leaves the cache holding the new values: the next
+ * successful write carries them along, so a transient failure self-heals instead
+ * of resurrecting old data. The rejection is passed to the caller (name-store
+ * retries with backoff).
+ */
+export function updateGlobalSettings(
+	patch: (current: GlobalSettings) => GlobalSettings | undefined,
+	waitMs: number = GLOBAL_SETTINGS_WAIT_MS,
+): Promise<void> {
+	const run = globalWriteQueue.then(async () => {
+		await waitForGlobalSettings(waitMs);
+		if (!areGlobalSettingsLoaded()) {
+			// We do not know what is in there, so we must not replace it.
+			throw new Error("global settings were never loaded — refusing to overwrite them");
+		}
+		if (!globalSettingsWriter) throw new Error("no global-settings writer injected");
+		const next = patch(getCachedGlobalSettings());
+		if (next === undefined) return;
+		setCachedGlobalSettings(next);
+		await globalSettingsWriter(next);
+	});
+	// Keep the chain alive after a rejection; the caller still sees it.
+	globalWriteQueue = run.then(
+		() => {},
+		() => {},
+	);
+	return run;
+}
+
+/**
+ * The settings each action was last seen with, by action id.
+ *
+ * The Device IP dropdown has to pin the asking action's own selection, and
+ * `action.getSettings()` is not a cheap read for that: it is a WebSocket
+ * round-trip whose `didReceiveSettings` reply is also delivered to the action's
+ * own handler, so merely *opening* a PI would re-enter onDidReceiveSettings and
+ * re-bind the action. Actions record what they already have instead.
+ */
+const actionSettings = new Map<string, EiscpActionSettings>();
+/** Bound like every other in-memory map here; ids come from outside. */
+export const MAX_TRACKED_ACTION_SETTINGS = 512;
+
+export function rememberActionSettings(actionId: string, settings: EiscpActionSettings): void {
+	if (!actionSettings.has(actionId) && actionSettings.size >= MAX_TRACKED_ACTION_SETTINGS) {
+		// Map preserves insertion order: drop the oldest entry.
+		const oldest = actionSettings.keys().next().value;
+		if (oldest !== undefined) actionSettings.delete(oldest);
+	}
+	actionSettings.set(actionId, settings);
+}
+
+export function getRememberedActionSettings(actionId: string): EiscpActionSettings | undefined {
+	return actionSettings.get(actionId);
+}
+
+export function forgetActionSettings(actionId: string): void {
+	actionSettings.delete(actionId);
 }
 
 export function resolveParam(value: string | undefined, customValue: string | undefined, fallback: string): string;
@@ -90,6 +243,74 @@ export function resolveDeviceIp(settings: EiscpActionSettings): string | undefin
 		return validDeviceIp(settings.customIp);
 	}
 	return validDeviceIp(getCachedGlobalSettings().deviceIp);
+}
+
+/**
+ * The IP this action selects *on its own*, ignoring the plugin-wide fallback.
+ *
+ * Deliberately a second function rather than a refactor of resolveDeviceIp: that
+ * one falls back to the global setting when `deviceIp` is "custom" and no
+ * `customIp` is set (asserted by tests/actions-logic.test.ts), and folding the
+ * two together would change that precedence. This is the value worth
+ * remembering as "the device the user picked".
+ */
+export function explicitDeviceIp(settings: EiscpActionSettings): string | undefined {
+	if (settings.deviceIp && settings.deviceIp !== "custom") {
+		return validDeviceIp(settings.deviceIp);
+	}
+	if (settings.customIp) {
+		return validDeviceIp(settings.customIp);
+	}
+	return undefined;
+}
+
+/** Longest model name kept in the remembered device (mirrors discovery's cap). */
+export const MAX_REMEMBERED_MODEL_LENGTH = 48;
+
+/**
+ * Read the remembered receiver out of the global settings.
+ *
+ * Everything persisted is re-validated on load: the value round-tripped through
+ * a JSON blob that other tooling can edit, and the host ends up in
+ * `socket.connect()` while the model is rendered in the PI dropdown. Same stance
+ * as name-store.load().
+ */
+export function readLastDevice(gs: GlobalSettings): LastDevice | undefined {
+	const raw = gs.lastDevice;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	const host = validDeviceIp(raw.host);
+	if (!host) return undefined;
+	return { host, model: sanitiseModel(raw.model) };
+}
+
+/** Keep printable ASCII only and clamp; the model name is untrusted wire data. */
+function sanitiseModel(value: JsonValue): string {
+	if (typeof value !== "string") return "";
+	let out = "";
+	for (const ch of value) {
+		const code = ch.codePointAt(0)!;
+		if (code >= 0x20 && code !== 0x7f) out += ch;
+		if (out.length >= MAX_REMEMBERED_MODEL_LENGTH) break;
+	}
+	return out.trim();
+}
+
+/**
+ * The IP a freshly added action should adopt from the remembered device, if any.
+ *
+ * Only actions that were *never* configured qualify: both keys are `undefined`
+ * on an action the user just dropped onto the deck. A deliberately cleared
+ * selection persists as `""` (the dropdown's "(none found)" entry) and must stay
+ * empty — adopting there would silently re-point an action the user emptied on
+ * purpose.
+ */
+export function deviceIpToAdopt(
+	settings: EiscpActionSettings,
+	last: LastDevice | undefined,
+): string | undefined {
+	if (!last) return undefined;
+	if (settings.deviceIp !== undefined || settings.customIp !== undefined) return undefined;
+	return last.host;
 }
 
 /**

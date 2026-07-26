@@ -136,16 +136,21 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 
 	protected override async bindKey(
 		action: KeyAction<EiscpActionSettings>,
-		settings: EiscpActionSettings,
-	): Promise<void> {
+		rawSettings: EiscpActionSettings,
+	): Promise<EiscpActionSettings> {
+		// This bind replaces the base's entirely, so the device memory (adopt on a
+		// freshly added action, remember an explicit pick) has to be synced here too
+		// — and the generation has to predate that await, see KeyActionBase.bindKey.
 		const generation = this.nextBindGeneration(action.id);
 		const fresh = () => this.isCurrentBind(action.id, generation);
+		const settings = await this.syncDeviceMemory(action, rawSettings);
+		if (!fresh()) return settings;
 		this.clearSubs(action.id);
 		const host = resolveDeviceIp(settings);
 		if (!host) {
 			this.logger.warn("bindKey: no device IP configured");
 			fireAndLog(action.setTitle(UNCONFIGURED_TITLE), this.logger, "setTitle");
-			return;
+			return settings;
 		}
 		const command = this.displayCommand();
 		const mgr = ConnectionManager.getInstance();
@@ -162,19 +167,21 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 
 		try {
 			await mgr.queryCommand(host, command);
-			if (!fresh()) return; // a newer bind owns the key now
+			if (!fresh()) return settings; // a newer bind owns the key now
 			refresh();
 		} catch (err) {
 			this.logger.error(`bindKey: query ${command} on ${host} failed: ${err}`);
-			if (!fresh()) return;
-			// Degrade visibly like the other bases: render from the cache if
-			// one exists, otherwise show "?" instead of a stale title.
-			if (mgr.getCachedValue(host, command) !== undefined) {
-				refresh();
-			} else {
-				fireAndLog(action.setTitle("?"), this.logger, "setTitle");
+			if (fresh()) {
+				// Degrade visibly like the other bases: render from the cache if
+				// one exists, otherwise show "?" instead of a stale title.
+				if (mgr.getCachedValue(host, command) !== undefined) {
+					refresh();
+				} else {
+					fireAndLog(action.setTitle("?"), this.logger, "setTitle");
+				}
 			}
 		}
+		return settings;
 	}
 
 	/** PI "Auto-Discover" button → sweep all options; also serve the device list (super). */
@@ -307,11 +314,15 @@ export class TransportAction extends KeyActionBase<TransportSettings> {
 	protected override async bindKey(
 		action: KeyAction<TransportSettings>,
 		settings: TransportSettings,
-	): Promise<void> {
-		await super.bindKey(action, settings);
-		if (resolveDeviceIp(settings)) {
-			this.setTransportTitle(action, settings);
+	): Promise<TransportSettings> {
+		// Reason about what the base actually bound with, not the raw settings: on a
+		// freshly dropped key the base adopts the remembered receiver, and judging
+		// the raw settings would leave that key without its transport label.
+		const bound = await super.bindKey(action, settings);
+		if (resolveDeviceIp(bound)) {
+			this.setTransportTitle(action, bound);
 		}
+		return bound;
 	}
 }
 

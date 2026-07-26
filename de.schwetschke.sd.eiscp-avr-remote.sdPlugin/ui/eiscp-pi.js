@@ -94,6 +94,9 @@
 			'  <sdpi-select setting="deviceIp" placeholder="Select device"' +
 			'    datasource="getDevices" loading="Scanning the network…" hot-reload></sdpi-select>' +
 			"</sdpi-item>" +
+			'<div id="deviceIpScanning" class="pi-hint" style="display:none;">' +
+			"  Scanning for more devices…" +
+			"</div>" +
 			'<div class="sdpi-item" id="deviceIpFallback" style="display:none; margin:2px 4px 6px;">' +
 			'  <span id="deviceIpHint" class="pi-warn"></span>' +
 			"</div>" +
@@ -148,6 +151,11 @@
 			if (refreshCustomVisibility) refreshCustomVisibility();
 		}, DEVICE_LIST_TIMEOUT_MS);
 
+		// The plugin answers immediately from what it already knows (last used
+		// receiver, previous scan) and refreshes the list in the background, so the
+		// reply carries a `scanning` flag: say that more devices may still turn up
+		// instead of leaving a short list looking complete.
+		const scanning = c.querySelector("#deviceIpScanning");
 		try {
 			SDPIComponents.streamDeckClient.sendToPropertyInspector.subscribe((ev) => {
 				const p = ev && ev.payload ? ev.payload : ev;
@@ -155,6 +163,10 @@
 				answered = true;
 				clearTimeout(watchdog);
 				if (fallback) fallback.style.display = "none";
+				if (scanning) scanning.style.display = p.scanning ? "block" : "none";
+				// An adopted or pre-selected IP arrives with the list; the
+				// Auto-Discover button has to notice it.
+				setTimeout(notifyIpChanged, 0);
 			});
 		} catch (e) {
 			/* sdpi client not ready; the watchdog still offers the manual field */

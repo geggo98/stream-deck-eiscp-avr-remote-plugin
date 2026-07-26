@@ -6,14 +6,24 @@
 import { strict as assert } from "node:assert";
 import { afterEach, describe, it } from "node:test";
 import {
+	deviceIpToAdopt,
+	explicitDeviceIp,
+	forgetActionSettings,
 	formatCommandValue,
+	getRememberedActionSettings,
+	markGlobalSettingsLoaded,
+	MAX_REMEMBERED_MODEL_LENGTH,
+	MAX_TRACKED_ACTION_SETTINGS,
 	nextToggleValue,
 	parseTone,
 	presetLabel,
+	readLastDevice,
+	rememberActionSettings,
 	resolveDeviceIp,
 	resolveParam,
 	setCachedGlobalSettings,
 	toneFeedback,
+	whenGlobalSettingsLoaded,
 } from "../src/actions/eiscp-base.ts";
 
 describe("resolveDeviceIp", () => {
@@ -81,6 +91,151 @@ describe("resolveDeviceIp", () => {
 		setCachedGlobalSettings({ deviceIp: "3.3.3.3" });
 		assert.equal(resolveDeviceIp({ deviceIp: "not-an-ip" }), undefined);
 		assert.equal(resolveDeviceIp({ deviceIp: "custom", customIp: "also-not-an-ip" }), undefined);
+	});
+});
+
+describe("explicitDeviceIp", () => {
+	afterEach(() => setCachedGlobalSettings(undefined));
+
+	it("returns the address the action selected itself", () => {
+		assert.equal(explicitDeviceIp({ deviceIp: "1.1.1.1" }), "1.1.1.1");
+		assert.equal(explicitDeviceIp({ deviceIp: "custom", customIp: "2.2.2.2" }), "2.2.2.2");
+		assert.equal(explicitDeviceIp({ customIp: "2.2.2.2" }), "2.2.2.2");
+	});
+
+	it("never falls back to the plugin-wide setting — that is not the user's pick", () => {
+		setCachedGlobalSettings({ deviceIp: "3.3.3.3" });
+		assert.equal(explicitDeviceIp({}), undefined);
+		assert.equal(explicitDeviceIp({ deviceIp: "custom" }), undefined);
+		assert.equal(explicitDeviceIp({ deviceIp: "" }), undefined);
+	});
+
+	it("applies the same validation as resolveDeviceIp", () => {
+		assert.equal(explicitDeviceIp({ deviceIp: "receiver.local" }), undefined);
+		assert.equal(explicitDeviceIp({ deviceIp: 42 as never }), undefined);
+		assert.equal(explicitDeviceIp({ deviceIp: " 10.2.0.32 " }), "10.2.0.32");
+	});
+});
+
+describe("readLastDevice", () => {
+	it("reads a remembered receiver back", () => {
+		assert.deepEqual(readLastDevice({ lastDevice: { host: "10.2.0.32", model: "VSX-S520D" } }), {
+			host: "10.2.0.32",
+			model: "VSX-S520D",
+		});
+	});
+
+	it("tolerates a missing model", () => {
+		assert.deepEqual(readLastDevice({ lastDevice: { host: "10.2.0.32" } }), { host: "10.2.0.32", model: "" });
+	});
+
+	it("returns undefined when nothing is remembered", () => {
+		assert.equal(readLastDevice({}), undefined);
+		assert.equal(readLastDevice({ lastDevice: {} }), undefined);
+	});
+
+	it("rejects a host that is not an IP literal — persisted values are re-validated", () => {
+		// The global settings blob round-trips through disk and is editable; a
+		// hostname here would make the plugin resolve whatever it names.
+		assert.equal(readLastDevice({ lastDevice: { host: "receiver.local" } }), undefined);
+		assert.equal(readLastDevice({ lastDevice: { host: "" } }), undefined);
+		for (const value of [42, true, ["10.2.0.32"], { host: "10.2.0.32" }, null]) {
+			assert.equal(
+				readLastDevice({ lastDevice: { host: value as never } }),
+				undefined,
+				`${JSON.stringify(value)} must not be accepted as a host`,
+			);
+		}
+	});
+
+	it("rejects a lastDevice that is not an object", () => {
+		for (const value of ["10.2.0.32", 42, [{ host: "10.2.0.32" }], null]) {
+			assert.equal(readLastDevice({ lastDevice: value as never }), undefined);
+		}
+	});
+
+	it("strips control characters from the model and clamps its length", () => {
+		// The model name originally came off the wire (ECN response) and is rendered
+		// in the PI dropdown; NUL padding and escape sequences genuinely arrive.
+		const dirty = readLastDevice({ lastDevice: { host: "10.2.0.32", model: "VSX\u0000-S520\u001b[31mD" } });
+		assert.equal(dirty?.model, "VSX-S520[31mD");
+		const long = readLastDevice({ lastDevice: { host: "10.2.0.32", model: "M".repeat(500) } });
+		assert.equal(long?.model.length, MAX_REMEMBERED_MODEL_LENGTH);
+	});
+
+	it("ignores a non-string model instead of rejecting the device", () => {
+		assert.deepEqual(readLastDevice({ lastDevice: { host: "10.2.0.32", model: 42 as never } }), {
+			host: "10.2.0.32",
+			model: "",
+		});
+	});
+});
+
+describe("global-settings write gate", () => {
+	it("stays closed until the initial load is reported", async () => {
+		// Writers merge over the cached snapshot, and that cache is empty until the
+		// initial load lands — which happens after connect(), i.e. after the first
+		// actions have bound. Writing in that window persisted a settings object
+		// with every other key missing and destroyed a real learned-name map.
+		// A timer, not Promise.resolve(): an already-settled promise always wins the
+		// race and would report "closed" even for an open gate.
+		const soon = (): Promise<string> =>
+			new Promise((resolve) => {
+				setTimeout(() => resolve("closed"), 20).unref?.();
+			});
+		assert.equal(
+			await Promise.race([whenGlobalSettingsLoaded().then(() => "open"), soon()]),
+			"closed",
+			"the gate must not be open before markGlobalSettingsLoaded()",
+		);
+		markGlobalSettingsLoaded();
+		assert.equal(await Promise.race([whenGlobalSettingsLoaded().then(() => "open"), soon()]), "open");
+	});
+});
+
+describe("remembered action settings", () => {
+	// The Device IP dropdown pins the asking action's own selection from this map
+	// instead of calling action.getSettings(): that round trip is delivered to the
+	// action's own onDidReceiveSettings as well, so opening a PI would re-bind it.
+	it("hands back what an action last recorded, and forgets it on disappear", () => {
+		rememberActionSettings("key-1", { deviceIp: "10.2.0.32" });
+		assert.deepEqual(getRememberedActionSettings("key-1"), { deviceIp: "10.2.0.32" });
+		forgetActionSettings("key-1");
+		assert.equal(getRememberedActionSettings("key-1"), undefined);
+	});
+
+	it("stays bounded, dropping the oldest entry first", () => {
+		for (let i = 0; i < MAX_TRACKED_ACTION_SETTINGS + 5; i++) {
+			rememberActionSettings(`bounded-${i}`, { deviceIp: "10.2.0.32" });
+		}
+		assert.equal(getRememberedActionSettings("bounded-0"), undefined, "the oldest entry must be evicted");
+		assert.deepEqual(getRememberedActionSettings(`bounded-${MAX_TRACKED_ACTION_SETTINGS + 4}`), {
+			deviceIp: "10.2.0.32",
+		});
+	});
+});
+
+describe("deviceIpToAdopt", () => {
+	const last = { host: "10.2.0.32", model: "VSX-S520D" };
+
+	it("adopts the remembered device for a never-configured action", () => {
+		assert.equal(deviceIpToAdopt({}, last), "10.2.0.32");
+	});
+
+	it("leaves a deliberately emptied selection alone", () => {
+		// "" is what the dropdown's "(none found)" entry persists; re-pointing that
+		// action at a receiver would undo an explicit choice.
+		assert.equal(deviceIpToAdopt({ deviceIp: "" }, last), undefined);
+		assert.equal(deviceIpToAdopt({ customIp: "" }, last), undefined);
+	});
+
+	it("never overrides an existing selection", () => {
+		assert.equal(deviceIpToAdopt({ deviceIp: "1.1.1.1" }, last), undefined);
+		assert.equal(deviceIpToAdopt({ deviceIp: "custom", customIp: "2.2.2.2" }, last), undefined);
+	});
+
+	it("adopts nothing when no device is remembered yet", () => {
+		assert.equal(deviceIpToAdopt({}, undefined), undefined);
 	});
 });
 

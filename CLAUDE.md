@@ -100,6 +100,43 @@ only accepts known catalog ids, so typos fail to compile).
 - **No default device IP:** `resolveDeviceIp` returns `undefined` when neither
   the action settings nor the global settings carry an IP; actions then show
   "No IP" / alert and send nothing. There is deliberately no baked-in fallback.
+  The *last used* receiver is remembered (`GlobalSettings.lastDevice`, written by
+  `rememberDevice` when an action binds to an IP it chose itself) and pre-fills a
+  freshly added action — but only into **that action's own** `deviceIp`
+  (`deviceIpToAdopt` / `EiscpActionBase.syncDeviceMemory`), so the dropdown shows
+  what the action actually steers. Adoption happens only while both `deviceIp`
+  and `customIp` are `undefined` ("never touched"); a deliberately emptied
+  selection is `""` and stays empty. The plugin-wide `deviceIp` fallback that
+  `resolveDeviceIp` still honours is read-only — nothing writes it.
+- **Global settings are one shared object — write them only through
+  `updateGlobalSettings`** (`eiscp-base.ts`). `names` (learned names) and
+  `lastDevice` live side by side, so every writer merges over the others' values,
+  and both ways of getting that merge wrong have already destroyed data:
+  - Writing **before the initial load** persists a snapshot with everything else
+    missing. The cache is empty until `getGlobalSettings()` resolves, which is
+    after `connect()`, i.e. after the first action binds. This wiped a real
+    user's learned-name map. Hence the gate, which `plugin.ts` opens **only on a
+    successful load** — if we could not read the settings we must not replace
+    them.
+  - Writing over `getCachedGlobalSettings()` **without putting the result back**
+    leaves the next writer merging over a superseded snapshot. Stream Deck does
+    not echo the plugin's own `setGlobalSettings` back as
+    `didReceiveGlobalSettings`, so nothing else refreshes that cache during a
+    session: `name-store.persist()` wrote `names`, and the next `lastDevice`
+    write then rolled the session's learned names back.
+
+  The funnel closes both: it waits for the gate, serialises all writers against
+  each other, applies the patch to the live cache and updates the cache *before*
+  the round trip. `tests/global-settings.test.ts` asserts the semantics **and**
+  greps `src/` to keep `plugin.ts` the only direct `setGlobalSettings` caller.
+  Readers use the bounded `waitForGlobalSettings()`, so a failed load costs a
+  pre-fill, not the bind.
+- **Never call `action.getSettings()` to service a PI request.** It is a
+  WebSocket round trip whose `didReceiveSettings` reply also reaches the action's
+  own handler, so merely opening a PI would re-enter `onDidReceiveSettings` and
+  re-bind. Actions record what they already have
+  (`rememberActionSettings`/`getRememberedActionSettings`, cleared on
+  `onWillDisappear`) and the Device IP handler pins from that.
 - **Adapter layer must not import `@elgato/streamdeck`:** importing the SDK
   rotates its log files as a module side effect, which races between parallel
   test processes. `src/adapter/**` logs via `src/adapter/logging.ts`
@@ -153,6 +190,29 @@ real device; echoes sets with UP/DOWN/TG semantics). Transport, client, and
 ConnectionManager behaviour tests run against it — prefer it over ad-hoc
 `net.createServer` mocks.
 
+For behaviour the synthetic echo cannot express, the mock also **replays recorded
+wire traffic**: `startMockReceiver({ replay, replayTimeScale })` groups a captured
+frame list into request/response exchanges and answers each repetition of a
+request with what the real device said *that* time round (`replayTimeScale: 0`
+keeps the captured order but drops the captured waits, so CI stays fast).
+
+- **`npm run capture:names`** (`scripts/capture-name-discovery.ts`) records both
+  Auto-Discover sweeps into `tests/fixtures/name-discovery-capture.json`. Unlike
+  `capture:responses` it **changes receiver state** (it cycles every input and
+  listening mode), so it snapshots/restores power, input, mode and refuses to run
+  without `EISCP_ALLOW_STATE_CHANGES=1`. Stop the plugin first — the receiver
+  allows a single connection. The sweep is driven by the plugin's own `runSweep`,
+  so the recording is what production sends, not an imitation.
+- `tests/sweep-capture.test.ts` runs `runSweep` against that recording. It covers
+  what no synthetic mock reproduces: `UP` walks the receiver's own input order
+  (`10 → 01 → 02 → 11 …`, not a numeric sequence), the input **name (FLD) arrives
+  ~1 s before the code** (the reason SLI names are queried instead of learned
+  passively, and why the sweep suppresses passive SLI learning), unrelated
+  commands broadcast mid-step, and the listening-mode name *lags* its code.
+- The fixture contains whatever the display showed at capture time, including a
+  radio station name where a tuner input was selected — re-capture rather than
+  hand-editing if that matters.
+
 ## Property Inspector (PI) notes
 
 PIs are static HTML in `*.sdPlugin/ui/` using SDPI Components v4
@@ -177,13 +237,26 @@ PIs are static HTML in `*.sdPlugin/ui/` using SDPI Components v4
 - The **Device IP** dropdown is a datasource:
   `<sdpi-select setting="deviceIp" datasource="getDevices" hot-reload>`. The plugin
   answers via `handleDeviceListMessage` (`src/actions/pi-devices.ts`, pure logic
-  in `pi-device-list.ts`), which runs eISCP discovery and replies
-  `{ event: "getDevices", items: [...] }` (items are grouped
-  `{label, children:[{label,value}]}` or flat `{label,value}`). It always
-  includes the globally configured IP (if any) + a "Custom IP…" entry, and a
-  blocked discovery (e.g. the macOS local-network firewall) is labelled
-  "Discovery failed — check Local Network permission" instead of pretending
-  the LAN is empty.
+  in `pi-device-list.ts`) and replies `{ event: "getDevices", items: [...] }`
+  (items are grouped `{label, children:[{label,value}]}` or flat
+  `{label,value}`). The list always carries the remembered receiver, the asking
+  action's own selection (`pinned` — a value missing from the items renders as an
+  empty field) and a "Custom IP…" entry; a blocked discovery (e.g. the macOS
+  local-network firewall) is labelled "Discovery failed — check Local Network
+  permission" instead of pretending the LAN is empty.
+- **The reply is immediate; the scan pushes afterwards.** `planDeviceListReply`
+  answers from the cache plus `pinned` right away (stale-while-revalidate) and
+  only then starts the 2.5 s broadcast, whose result is pushed as a second
+  `getDevices` message — `hot-reload` makes `sdpi-select` re-render it *without* a
+  new request. Awaiting discovery first was the reason every action added after
+  the 8 s cache TTL expired opened its PI on "Scanning the network…" (that TTL is
+  always cold by the time a user drags in the next key). The loading text is left
+  for the genuine cold start, where there is nothing to show.
+- **A `getDevices` message without `items` blanks the dropdown.** The hot-reload
+  subscriber renders `payload.items` from *any* message whose `event` matches the
+  datasource name, so status must ride on the items message as an extra field
+  (`{event, items, scanning}`), never as a separate event. `ui/eiscp-pi.js` reads
+  `scanning` to show the "Scanning for more devices…" hint.
 - The handler is served from the shared `EiscpActionBase.onSendToPlugin`, so every
   action's PI gets it. Actions that override `onSendToPlugin` (the learned-name
   cyclers/dials, for Auto-Discover) **must call `super.onSendToPlugin`**.

@@ -5,7 +5,12 @@ import { EiscpToggleAction } from "./actions/eiscp-toggle";
 import { EiscpDialAction } from "./actions/eiscp-dial";
 import { EiscpDialIndicatorAction } from "./actions/eiscp-dial-indicator";
 import { DEDICATED_ACTIONS } from "./actions/dedicated/index";
-import { type GlobalSettings, setCachedGlobalSettings } from "./actions/eiscp-base";
+import {
+	type GlobalSettings,
+	markGlobalSettingsLoaded,
+	setCachedGlobalSettings,
+	setGlobalSettingsWriter,
+} from "./actions/eiscp-base";
 import * as nameStore from "./actions/dedicated/name-store";
 import { register as registerDiscovery } from "./actions/dedicated/discovery";
 import { ConnectionManager } from "./adapter/eiscp/connection-manager";
@@ -49,6 +54,9 @@ for (const dedicated of DEDICATED_ACTIONS) {
 
 // Keep the cached global settings fresh (used by resolveDeviceIp + name persistence).
 streamDeck.settings.onDidReceiveGlobalSettings<GlobalSettings>((ev) => setCachedGlobalSettings(ev.settings));
+// The SDK binding for the shared write funnel (updateGlobalSettings); injected so
+// the settings module itself stays SDK-free.
+setGlobalSettingsWriter((gs) => streamDeck.settings.setGlobalSettings(gs));
 
 // Always-on passive name discovery (learns option names from the receiver's display).
 registerDiscovery(ConnectionManager.getInstance());
@@ -61,5 +69,8 @@ streamDeck.settings
 	.then((gs) => {
 		setCachedGlobalSettings(gs);
 		nameStore.load(gs.names);
+		// Only now may anything write the global settings back: until this point
+		// the cache every writer merges over is empty (see whenGlobalSettingsLoaded).
+		markGlobalSettingsLoaded();
 	})
 	.catch((err) => streamDeck.logger.error(`Failed to load global settings: ${err}`));

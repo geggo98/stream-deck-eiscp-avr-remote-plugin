@@ -21,7 +21,7 @@ import { streamDeck } from "@elgato/streamdeck";
 import {
 	decodeDisplayText,
 	formatCommandValue,
-	getCachedGlobalSettings,
+	updateGlobalSettings,
 	type SerializedNames,
 } from "../eiscp-base.ts";
 
@@ -246,7 +246,10 @@ async function persist(): Promise<void> {
 	if (!dirty) return;
 	dirty = false;
 	try {
-		await streamDeck.settings.setGlobalSettings({ ...getCachedGlobalSettings(), names: serialize() });
+		// Through the shared funnel: it holds the write until the initial load has
+		// landed and serialises against the other writer (the remembered device),
+		// so neither can persist a snapshot that is missing the other's key.
+		await updateGlobalSettings((current) => ({ ...current, names: serialize() }));
 		persistRetries = 0;
 	} catch (err) {
 		// Re-arm the timer with backoff; without it the learned names would sit

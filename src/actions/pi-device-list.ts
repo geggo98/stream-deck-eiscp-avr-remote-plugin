@@ -6,6 +6,7 @@
  * Everything testable — item building, caching, refresh and fallback — lives
  * here (see tests/pi-device-list.test.ts).
  */
+import { isIP } from "node:net";
 
 /** A receiver as offered in the Device IP dropdown. */
 export interface Device {
@@ -42,25 +43,35 @@ export const DISCOVERY_TIMEOUT_MS = 2500;
 /** Serve a recent result so switching between actions doesn't re-broadcast each time. */
 export const CACHE_TTL_MS = 8000;
 
-/** Build the sdpi-components item list (grouped) from discovered devices. */
+/**
+ * Build the sdpi-components item list (grouped) from discovered devices.
+ *
+ * `pinned` are entries that must appear even though this discovery did not find
+ * them: the remembered receiver, and the asking action's own current selection.
+ * The latter matters because sdpi-select renders a value that is missing from
+ * its items as an empty field — a switched-off receiver would look unconfigured.
+ */
 export function buildItems(
 	devices: Device[],
-	opts: { discoveryFailed?: boolean; configuredIp?: string } = {},
+	opts: { discoveryFailed?: boolean; pinned?: Device[] } = {},
 ): DeviceListItem[] {
 	const seen = new Set<string>();
 	const children: DeviceListEntry[] = [];
-	for (const d of devices) {
-		if (seen.has(d.host)) continue;
+	const add = (d: Device): void => {
+		// Only literal addresses become entries. Discovered hosts are IPs by
+		// construction, but pinned ones come from persisted settings that other
+		// tooling (or an older build) may have written, and both the label and the
+		// value end up in the PI and eventually in socket.connect().
+		if (!d.host || isIP(d.host) === 0 || seen.has(d.host)) return;
 		seen.add(d.host);
 		children.push({ label: d.model ? `${d.model} (${d.host})` : d.host, value: d.host });
-	}
+	};
+	devices.forEach(add);
 	const discoveredCount = children.length;
-	// Offer the plugin-wide configured IP (if any) so the dropdown still works
-	// when discovery is blocked (e.g. the macOS local-network firewall).
-	const configured = opts.configuredIp;
-	if (configured && !seen.has(configured)) {
-		children.push({ label: `Configured (${configured})`, value: configured });
-	}
+	// Keep the dropdown usable when discovery finds nothing — blocked broadcast
+	// (macOS local-network permission), receiver asleep, or simply not scanned yet.
+	(opts.pinned ?? []).forEach(add);
+	const pinnedCount = children.length - discoveredCount;
 	if (children.length === 0) {
 		// Keep the group visible (it carries the failure label) but make the
 		// placeholder harmless: selecting it leaves the action unconfigured.
@@ -72,11 +83,49 @@ export function buildItems(
 		? "Discovery failed — check Local Network permission"
 		: discoveredCount > 0
 			? "Discovered"
-			: "Pre-configured";
+			: pinnedCount > 0
+				? "Last used"
+				: "Pre-configured";
 	return [
 		{ label: groupLabel, children },
 		{ label: "Custom IP…", value: "custom" },
 	];
+}
+
+/** What to answer right now, and whether a discovery still has to run. */
+export interface DeviceListPlan {
+	/**
+	 * Items to send immediately. `undefined` means there is nothing worth
+	 * showing yet, so the caller must wait for the scan — the only case where
+	 * the dropdown's "Scanning the network…" text is honest. Implies `scan`.
+	 */
+	items?: DeviceListItem[];
+	/** Run discovery (in the background when `items` is set). */
+	scan: boolean;
+}
+
+/**
+ * Stale-while-revalidate for the Device IP dropdown.
+ *
+ * Waiting for a 2.5 s broadcast before answering meant every action added after
+ * the 8 s cache TTL expired — i.e. every real-world one — opened its PI on
+ * "Scanning the network…". Anything already known (last discovery, remembered
+ * receiver, the action's own selection) is answered instantly instead; the scan
+ * then refreshes the list through the select's `hot-reload` push.
+ */
+export function planDeviceListReply(args: {
+	isRefresh: boolean;
+	now: () => number;
+	cache: DeviceCache | undefined;
+	pinned: Device[];
+}): DeviceListPlan {
+	const { isRefresh, now, cache, pinned } = args;
+	const known = cache?.devices ?? [];
+	const usable = pinned.filter((d) => d.host);
+	const scan = isRefresh || cache === undefined || now() - cache.at >= CACHE_TTL_MS;
+	// Nothing to show and a scan on the way: let the loading text stand.
+	if (known.length === 0 && usable.length === 0 && scan) return { scan };
+	return { items: buildItems(known, { pinned: usable }), scan };
 }
 
 export interface ResolveDeviceListArgs {
@@ -86,14 +135,18 @@ export interface ResolveDeviceListArgs {
 	now: () => number;
 	/** Previous cache state; the caller keeps the returned one for the next call. */
 	cache: DeviceCache | undefined;
-	/** Plugin-wide configured device IP (global settings), if any. */
-	configuredIp?: string | undefined;
 	/** Run eISCP broadcast discovery (real: discoverEiscpDevicesStreaming). */
 	discover: () => Promise<DiscoverResult>;
 }
 
 export interface ResolvedDeviceList {
-	items: DeviceListItem[];
+	/**
+	 * The devices to render: the fresh result, or the preserved cache when
+	 * discovery was blocked or threw. Rendering is left to the caller (via
+	 * buildItems) because each PI pins its own selection into the list, and one
+	 * scan is shared between concurrent callers.
+	 */
+	devices: Device[];
 	/** New cache state — the caller must store it for the next call. */
 	cache: DeviceCache | undefined;
 	/** True when the reply carries the failure group label. */
@@ -110,10 +163,10 @@ export interface ResolvedDeviceList {
  * with the failure label — and never overwrite the cache with emptiness.
  */
 export async function resolveDeviceList(args: ResolveDeviceListArgs): Promise<ResolvedDeviceList> {
-	const { isRefresh, now, cache, configuredIp, discover } = args;
+	const { isRefresh, now, cache, discover } = args;
 	// Serve a fresh-enough cache unless the user explicitly asked to refresh.
 	if (!isRefresh && cache && now() - cache.at < CACHE_TTL_MS) {
-		return { items: buildItems(cache.devices, { configuredIp }), cache, failed: false };
+		return { devices: cache.devices, cache, failed: false };
 	}
 	try {
 		const result = await discover();
@@ -121,17 +174,17 @@ export async function resolveDeviceList(args: ResolveDeviceListArgs): Promise<Re
 		if (blocked) {
 			// Keep any previously discovered devices instead of caching emptiness.
 			return {
-				items: buildItems(cache?.devices ?? [], { discoveryFailed: true, configuredIp }),
+				devices: cache?.devices ?? [],
 				cache,
 				failed: true,
 				blockedErrors: result.errors,
 			};
 		}
 		const fresh = { at: now(), devices: result.devices };
-		return { items: buildItems(result.devices, { configuredIp }), cache: fresh, failed: false };
+		return { devices: result.devices, cache: fresh, failed: false };
 	} catch (err) {
 		return {
-			items: buildItems(cache?.devices ?? [], { discoveryFailed: true, configuredIp }),
+			devices: cache?.devices ?? [],
 			cache,
 			failed: true,
 			error: err,

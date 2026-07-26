@@ -28,16 +28,23 @@ import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import { BindCoordinator, REBIND_DEBOUNCE_MS } from "./bind-coordinator.ts";
-import { handleDeviceListMessage } from "./pi-devices.ts";
+import { handleDeviceListMessage, rememberDevice } from "./pi-devices.ts";
 import {
+	deviceIpToAdopt,
 	type EiscpActionSettings,
+	explicitDeviceIp,
 	fireAndLog,
+	forgetActionSettings,
+	getCachedGlobalSettings,
 	nextToggleValue,
+	readLastDevice,
+	rememberActionSettings,
 	resolveDeviceIp,
 	formatCommandValue,
 	generateColoredBg,
 	getToggleColor,
 	UNCONFIGURED_TITLE,
+	waitForGlobalSettings,
 } from "./eiscp-base.ts";
 
 /** Behavior for a two-state on/off command (power, mute, ...). */
@@ -119,10 +126,66 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 		this.binds.scheduleRebind(actionId, run, (err) => this.logger.error(`re-bind failed: ${err}`));
 	}
 
+	/**
+	 * Keep the "last used receiver" memory and this action in step. Called first
+	 * in every bind funnel, which is where both appear and settings changes land.
+	 *
+	 * A freshly dropped action adopts the remembered receiver into its *own*
+	 * settings, so the key works right away and the PI's Device IP dropdown shows
+	 * which device it talks to. Anything the user configured explicitly is left
+	 * alone and instead becomes the new memory.
+	 *
+	 * @returns The settings to bind with — the adopted IP is returned directly
+	 * rather than waited for via onDidReceiveSettings, so the key never flashes
+	 * "No IP" first.
+	 */
+	protected async syncDeviceMemory(
+		action: KeyAction<TSettings> | DialAction<TSettings>,
+		settings: TSettings,
+	): Promise<TSettings> {
+		// Recorded before the first await: the PI can ask for the device list while
+		// this bind is still waiting, and it pins the action's own selection from here.
+		rememberActionSettings(action.id, settings);
+		// Binds start before the initial settings load; without this wait a freshly
+		// added action would decide "nothing remembered" on an empty cache and stay
+		// on "No IP" until it was re-bound. Bounded, so a failed load cannot stall it.
+		await waitForGlobalSettings();
+		const last = readLastDevice(getCachedGlobalSettings());
+		const adopt = deviceIpToAdopt(settings, last);
+		if (adopt) {
+			const next = { ...settings, deviceIp: adopt };
+			rememberActionSettings(action.id, next);
+			try {
+				await action.setSettings(next);
+			} catch (err) {
+				// Binding with the adopted IP is still right; it just won't persist.
+				this.logger.error(`could not persist the adopted device IP: ${err}`);
+			}
+			this.logger.debug(`adopted remembered device ${adopt}`);
+			return next;
+		}
+		// Bootstrap only. Binds also run on every appear (profile load, deck
+		// reconnect), so writing here unconditionally would leave the memory
+		// pointing at whichever action happened to bind last rather than at the
+		// device the user actually picked — noticeable with two receivers.
+		if (!last) this.noteDevicePick(settings);
+		return settings;
+	}
+
+	/**
+	 * A settings change in the PI is a deliberate choice: make it the memory that
+	 * freshly added actions adopt. No-op when the address is unchanged or absent.
+	 */
+	protected noteDevicePick(settings: TSettings): void {
+		const own = explicitDeviceIp(settings);
+		if (own) rememberDevice(own);
+	}
+
 	override async onWillDisappear(ev: WillDisappearEvent<TSettings>): Promise<void> {
 		this.clearSubs(ev.action.id);
 		// Invalidate pending binds and cancel a queued re-bind.
 		this.binds.invalidate(ev.action.id);
+		forgetActionSettings(ev.action.id);
 	}
 
 	/**
@@ -175,17 +238,27 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 		if (!ev.action.isKey()) return;
 		const action = ev.action;
 		const settings = ev.payload.settings;
-		this.scheduleRebind(action.id, () => this.bindKey(action, settings));
+		rememberActionSettings(action.id, settings);
+		this.scheduleRebind(action.id, async () => {
+			this.noteDevicePick(settings);
+			await this.bindKey(action, settings);
+		});
 	}
 
-	private async bindKey(action: KeyAction<TSettings>, settings: TSettings): Promise<void> {
+	private async bindKey(action: KeyAction<TSettings>, rawSettings: TSettings): Promise<void> {
+		// Taken before the first await: syncDeviceMemory waits for the settings
+		// load, and onWillDisappear (page/profile switch) invalidates pending binds
+		// during that window. A generation taken afterwards would survive that
+		// invalidation and subscribe on behalf of a key that is already gone.
+		const generation = this.nextBindGeneration(action.id);
+		const fresh = () => this.isCurrentBind(action.id, generation);
+		const settings = await this.syncDeviceMemory(action, rawSettings);
+		if (!fresh()) return;
 		const cfg = this.getToggleConfig(settings);
 		if (!cfg) {
 			this.logger.warn("bindKey: no command configured, skipping");
 			return;
 		}
-		const generation = this.nextBindGeneration(action.id);
-		const fresh = () => this.isCurrentBind(action.id, generation);
 		// Stream Deck may re-fire onWillAppear without an intervening
 		// onWillDisappear (profile switch, reconnect); drop stale subs first.
 		this.clearSubs(action.id);
@@ -276,18 +349,30 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		if (!ev.action.isKey()) return;
 		const action = ev.action;
 		const settings = ev.payload.settings;
-		this.scheduleRebind(action.id, () => this.bindKey(action, settings));
+		rememberActionSettings(action.id, settings);
+		this.scheduleRebind(action.id, async () => {
+			this.noteDevicePick(settings);
+			await this.bindKey(action, settings);
+		});
 	}
 
-	protected async bindKey(action: KeyAction<TSettings>, settings: TSettings): Promise<void> {
+	/**
+	 * @returns The settings the key was bound with — the same object overrides
+	 * must reason about, since syncDeviceMemory may have adopted an IP that the
+	 * raw settings do not carry yet.
+	 */
+	protected async bindKey(action: KeyAction<TSettings>, rawSettings: TSettings): Promise<TSettings> {
+		// See ToggleActionBase.bindKey: the generation must predate the first await.
+		const generation = this.nextBindGeneration(action.id);
+		const fresh = () => this.isCurrentBind(action.id, generation);
+		const settings = await this.syncDeviceMemory(action, rawSettings);
+		if (!fresh()) return settings;
 		const cfg = this.getKeyConfig(settings);
 		if (!cfg) {
 			this.logger.warn("bindKey: no command configured");
 			fireAndLog(action.setTitle("?"), this.logger, "setTitle");
-			return;
+			return settings;
 		}
-		const generation = this.nextBindGeneration(action.id);
-		const fresh = () => this.isCurrentBind(action.id, generation);
 		this.clearSubs(action.id); // drop stale subs on a repeated bind
 		const host = resolveDeviceIp(settings);
 		if (!host) {
@@ -295,12 +380,12 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			// missing IP; they would otherwise look functional until pressed.
 			this.logger.warn("bindKey: no device IP configured");
 			fireAndLog(action.setTitle(UNCONFIGURED_TITLE), this.logger, "setTitle");
-			return;
+			return settings;
 		}
 		if (!this.showsState) {
 			// Clear a possible lingering "No IP" title now that an IP exists.
 			fireAndLog(action.setTitle(), this.logger, "setTitle");
-			return;
+			return settings;
 		}
 		const mgr = ConnectionManager.getInstance();
 
@@ -310,13 +395,14 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		);
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
-			if (!fresh()) return; // a newer bind owns the key now
+			if (!fresh()) return settings; // a newer bind owns the key now
 			this.render(action, cfg, value);
 		} catch (err) {
 			this.logger.error(`bindKey: query ${cfg.command} failed: ${err}`);
-			if (!fresh()) return;
+			if (!fresh()) return settings;
 			fireAndLog(action.setTitle(cfg.command), this.logger, "setTitle");
 		}
+		return settings;
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<TSettings>): Promise<void> {
@@ -393,19 +479,26 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		if (!ev.action.isDial()) return;
 		const action = ev.action;
 		const settings = ev.payload.settings;
-		this.scheduleRebind(action.id, () => this.bind(action, settings));
+		rememberActionSettings(action.id, settings);
+		this.scheduleRebind(action.id, async () => {
+			this.noteDevicePick(settings);
+			await this.bind(action, settings);
+		});
 	}
 
 	/** Wire up live subscriptions and render the initial value. Idempotent. */
-	private async bind(action: DialAction<TSettings>, settings: TSettings): Promise<void> {
+	private async bind(action: DialAction<TSettings>, rawSettings: TSettings): Promise<void> {
+		const actionId = action.id;
+		// See ToggleActionBase.bindKey: the generation must predate the first await.
+		const generation = this.nextBindGeneration(actionId);
+		const fresh = () => this.isCurrentBind(actionId, generation);
+		const settings = await this.syncDeviceMemory(action, rawSettings);
+		if (!fresh()) return;
 		const cfg = this.getDialConfig(settings);
 		if (!cfg) {
 			this.logger.warn("bind: no command configured, skipping");
 			return;
 		}
-		const actionId = action.id;
-		const generation = this.nextBindGeneration(actionId);
-		const fresh = () => this.isCurrentBind(actionId, generation);
 		const host = resolveDeviceIp(settings);
 		// Drop stale subs/press-state on a repeated bind (no disappear).
 		this.clearSubs(actionId);
