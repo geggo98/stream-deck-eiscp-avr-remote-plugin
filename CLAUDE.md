@@ -155,8 +155,10 @@ only accepts known catalog ids, so typos fail to compile).
   bump** — only `npm run build` does — and 6.0.3 is the last 6.x, so this pin sits on
   a closed line. The removal conditions are written where the rule is
   (`.github/dependabot.yml`). The way out, if it ever gets urgent, is moving the
-  bundle step off the compiler API. Three routes were built and measured; what
-  separates them is **which transpiler**, because the emit semantics are the risk:
+  bundle step off the compiler API. Four routes were built and measured —
+  **`docs/bundler-analysis-2026-07.md`** has the numbers, the two footguns and the
+  recommendation. What separates them is **which transpiler**, because the emit
+  semantics are the risk:
   - **esbuild lineage preserves them** — `rollup-plugin-esbuild` (10 changed lines,
     bundle 1.75 % *smaller*), plain `esbuild` (−9 %), and `bun build` (build ~100×
     faster) all emit standard two-argument decorators and `define` class fields,
@@ -172,6 +174,15 @@ only accepts known catalog ids, so typos fail to compile).
     (`export * as locales`, 114 KB) and `to-json-schema`, which esbuild-style DCE
     cannot drop — the bun bundle is +103 % and plain esbuild needs a `sideEffects`
     override keyed to `@elgato/utils`' internal file paths to avoid 2.19×.
+
+  `tests/bundle-artifact.test.ts` guards the part that no other test could see: the
+  built bundle parses, carries the standard decorator context, and gets far enough to
+  register all 25 actions. Note what it had to work around — `registerAction` throws
+  for a UUID missing from the manifest, but the plugin's `uncaughtException` net
+  swallows that and **still exits 0**, so the exit code is not a signal; the log line
+  `passive name discovery registered` is, because `plugin.ts` only reaches it after
+  every registration. One of its four cases exists solely to prove the others can
+  fail.
 
 ## Receiver power state on the deck
 
