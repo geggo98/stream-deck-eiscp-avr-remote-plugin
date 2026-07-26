@@ -155,10 +155,23 @@ only accepts known catalog ids, so typos fail to compile).
   bump** — only `npm run build` does — and 6.0.3 is the last 6.x, so this pin sits on
   a closed line. The removal conditions are written where the rule is
   (`.github/dependabot.yml`). The way out, if it ever gets urgent, is moving the
-  bundle step off the compiler API (`rollup-plugin-esbuild` is the only candidate
-  that preserves this repo's decorator and class-field semantics; every swc/oxc
-  variant silently emits *legacy* decorators, which the 25 `@action` classes would
-  notice at runtime and no test would).
+  bundle step off the compiler API. Three routes were built and measured; what
+  separates them is **which transpiler**, because the emit semantics are the risk:
+  - **esbuild lineage preserves them** — `rollup-plugin-esbuild` (10 changed lines,
+    bundle 1.75 % *smaller*), plain `esbuild` (−9 %), and `bun build` (build ~100×
+    faster) all emit standard two-argument decorators and `define` class fields,
+    verified by runtime probe against `tsc`, and all three build byte-identically
+    under typescript 6 and 7.
+  - **oxc and swc do not.** Vite 8 transpiles with oxc, which has no TC39
+    standard-decorator transform at all: its default output is raw `@action(…) class`
+    syntax that Node cannot parse, emitted with exit code 0 and no warning, and its
+    only knob (`decorator.legacy`) gives one-argument calls with no context object.
+    Every swc variant does the same. That would break the 25 `@action` classes at
+    runtime, and **no test would notice** — nothing here ever looks at the bundle.
+  - Leaving Rollup costs more than the config: it tree-shakes `zod`'s locale barrel
+    (`export * as locales`, 114 KB) and `to-json-schema`, which esbuild-style DCE
+    cannot drop — the bun bundle is +103 % and plain esbuild needs a `sideEffects`
+    override keyed to `@elgato/utils`' internal file paths to avoid 2.19×.
 
 ## Receiver power state on the deck
 
