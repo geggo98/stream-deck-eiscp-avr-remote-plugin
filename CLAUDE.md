@@ -146,6 +146,19 @@ only accepts known catalog ids, so typos fail to compile).
   exist for exactly this).
 - **Typecheck surface:** `npm run typecheck` uses `tsconfig.typecheck.json`
   (src + tests + scripts); the build's `tsconfig.json` covers src only.
+- **Toolchain pins:** `typescript` stays on **6.x** and Dependabot is told to skip its
+  majors. TypeScript 7 type-checks this project cleanly and every test passes under
+  it — and the build still breaks, because typescript@7 exports no compiler API from
+  its package root (only `./unstable/*`) while `@rollup/plugin-typescript`
+  destructures `ModuleKind` from a bare import at module scope. Two consequences
+  worth remembering: **a green `npm run typecheck` says nothing about a compiler
+  bump** — only `npm run build` does — and 6.0.3 is the last 6.x, so this pin sits on
+  a closed line. The removal conditions are written where the rule is
+  (`.github/dependabot.yml`). The way out, if it ever gets urgent, is moving the
+  bundle step off the compiler API (`rollup-plugin-esbuild` is the only candidate
+  that preserves this repo's decorator and class-field semantics; every swc/oxc
+  variant silently emits *legacy* decorators, which the 25 `@action` classes would
+  notice at runtime and no test would).
 
 ## Receiver power state on the deck
 

@@ -35,6 +35,33 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 type-checks this project cleanly and all tests pass under it,
+      # but `rollup -c` dies in @rollup/plugin-typescript with "Cannot read
+      # properties of undefined (reading 'ES2015')". That is not a plugin bug with a
+      # fix around the corner: typescript@7 exports no compiler API from its package
+      # root at all (only `./unstable/*` subpaths), while the plugin destructures
+      # `ModuleKind` & friends from a bare `import ... from "typescript"` at module
+      # scope — which is also why its documented `typescript:` option cannot work
+      # around it. Microsoft's own 7.0 announcement says 7 ships without an API and
+      # only *expects* one in 7.1; rollup/plugins#2016 has had no maintainer response
+      # and there is no PR or branch. So the weekly proposal is unmergeable.
+      #
+      # REMOVE THIS RULE when either of these is observably true — not on a date:
+      #   * `npm view @rollup/plugin-typescript version` returns anything other than
+      #     12.3.0 (that release is from 2025-10-23 and the package has never shipped
+      #     a prerelease, so any change at all is the signal), or
+      #   * rollup.config.mjs no longer mentions @rollup/plugin-typescript, i.e. the
+      #     bundle step moved to a transpiler that does not use the compiler API.
+      # Do NOT use the plugin's peer range as the signal: `typescript: ">=3.7.0"`
+      # already admits 7.x while the plugin crashes on import.
+      #
+      # Then verify with `npm run build`, NOT `npm run typecheck` — the type check was
+      # green throughout this whole outage, so it proves nothing here.
+      #
+      # Known cost of this rule: it pins us to a closed line (6.0.3 is the last 6.x)
+      # and would swallow a future TypeScript 8 too. See "Toolchain pins" in CLAUDE.md.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     # One combined PR per run instead of one per package. Security updates are
     # not grouped (groups apply to version updates), so fixes still arrive
     # individually and promptly.
