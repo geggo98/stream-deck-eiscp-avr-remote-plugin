@@ -44,7 +44,8 @@ describe("cover image: the encoding the hardware accepts", () => {
 		// the key showing its manifest icon — no error, no log line. The SDK docs claim
 		// a plain SVG string works; for a composed image it does not.
 		const uri = composeCoverImage({ art: art(), glyph: "music" });
-		assert.ok(uri?.startsWith("data:image/svg+xml;base64,"));
+		assert.ok(uri, "a small cover must compose");
+		assert.ok(uri.startsWith("data:image/svg+xml;base64,"));
 		assert.ok(!uri.includes("<svg"), "the markup must not be sent unwrapped");
 	});
 
