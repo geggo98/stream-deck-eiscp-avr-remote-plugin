@@ -37,7 +37,8 @@
     "generate:manifest": "tsx scripts/generate-manifest.ts",
     "generate": "npm run generate:commands && npm run generate:icons && npm run generate:manifest",
     "capture:responses": "tsx scripts/capture-command-responses.ts",
-    "capture:names": "tsx scripts/capture-name-discovery.ts"
+    "capture:names": "tsx scripts/capture-name-discovery.ts",
+    "capture:standby": "tsx scripts/capture-standby-behaviour.ts"
   },
   "type": "module",
   "devDependencies": {

@@ -1,0 +1,1489 @@
+{
+	"capturedAt": "2026-07-26T10:57:46.185Z",
+	"host": "10.2.0.32",
+	"port": 60128,
+	"model": "VSX-S520D",
+	"note": "Wire-level recording of how the receiver treats SET commands in network standby versus awake. Each probe is query-set-wait-query, so `changed` is measured, not assumed, and `answered` records whether the device echoed a set it ignored. State-changing capture: snapshot/restore included, volume capped at 2, receiver kept muted while awake. Replayed by tests/helpers/mock-receiver.ts.",
+	"volumeCap": 2,
+	"snapshot": {
+		"PWR": "00",
+		"SLI": "10",
+		"LMD": "80",
+		"AMT": "00",
+		"MVL": "0E"
+	},
+	"verify": {
+		"PWR": "00",
+		"SLI": "10",
+		"LMD": "80",
+		"AMT": "00",
+		"MVL": "0E"
+	},
+	"phases": {
+		"standby": {
+			"power": "00",
+			"probes": [
+				{
+					"command": "SLI",
+					"before": "10",
+					"sent": "02",
+					"answered": [
+						"!1SLI02",
+						"!1PWR01",
+						"!1SLI02",
+						"!1DIM00",
+						"!1AMT00",
+						"!1LMD00",
+						"!1MOT00",
+						"!1RAS00",
+						"!1TFRB+2T00",
+						"!1PCT01",
+						"!1ITV000",
+						"!1NDSW-x",
+						"!1FLD47414D4520202020202020203134"
+					],
+					"after": "02",
+					"changed": true,
+					"powerBefore": "00",
+					"powerAfter": "01",
+					"wokeDevice": true
+				},
+				{
+					"command": "LMD",
+					"before": "N/A",
+					"sent": "00",
+					"answered": [],
+					"after": "N/A",
+					"changed": false,
+					"powerBefore": "00",
+					"powerAfter": "00",
+					"wokeDevice": false
+				},
+				{
+					"command": "AMT",
+					"before": "00",
+					"sent": "01",
+					"answered": [],
+					"after": "00",
+					"changed": false,
+					"powerBefore": "00",
+					"powerAfter": "00",
+					"wokeDevice": false
+				},
+				{
+					"command": "MVL",
+					"before": "0E",
+					"sent": "02",
+					"answered": [],
+					"after": "0E",
+					"changed": false,
+					"powerBefore": "00",
+					"powerAfter": "00",
+					"wokeDevice": false
+				}
+			]
+		},
+		"awake": {
+			"power": "01",
+			"probes": [
+				{
+					"command": "SLI",
+					"before": "02",
+					"sent": "01",
+					"answered": [
+						"!1SLI01",
+						"!1LMD80",
+						"!1FLD43424C2F53415420202020202032"
+					],
+					"after": "01",
+					"changed": true,
+					"powerBefore": "01",
+					"powerAfter": "01",
+					"wokeDevice": false
+				},
+				{
+					"command": "LMD",
+					"before": "80",
+					"sent": "00",
+					"answered": [
+						"!1LMD00",
+						"!1FLD2020202053746572656F20202020"
+					],
+					"after": "00",
+					"changed": true,
+					"powerBefore": "01",
+					"powerAfter": "01",
+					"wokeDevice": false
+				},
+				{
+					"command": "AMT",
+					"before": "00",
+					"sent": "01",
+					"answered": [
+						"!1AMT01",
+						"!1FLD43424C2F53415420202020202032",
+						"!1UPDFF"
+					],
+					"after": "01",
+					"changed": true,
+					"powerBefore": "01",
+					"powerAfter": "01",
+					"wokeDevice": false
+				},
+				{
+					"command": "MVL",
+					"before": "02",
+					"sent": "01",
+					"answered": [
+						"!1AMT00",
+						"!1MVL01",
+						"!1FLD566F6C756D652020202020202031"
+					],
+					"after": "01",
+					"changed": true,
+					"powerBefore": "01",
+					"powerAfter": "01",
+					"wokeDevice": false
+				}
+			]
+		}
+	},
+	"frames": [
+		{
+			"dir": "out",
+			"ms": 11,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 340,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 341,
+			"iscp": "!1SLIQSTN",
+			"command": "SLI",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131534c495153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 483,
+			"iscp": "!1SLI10",
+			"command": "SLI",
+			"parameter": "10",
+			"hex": "2131534c4931301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 483,
+			"iscp": "!1LMDQSTN",
+			"command": "LMD",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 553,
+			"iscp": "!1LMD80",
+			"command": "LMD",
+			"parameter": "80",
+			"hex": "21314c4d4438301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 553,
+			"iscp": "!1AMTQSTN",
+			"command": "AMT",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131414d545153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 624,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 624,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 697,
+			"iscp": "!1MVL0E",
+			"command": "MVL",
+			"parameter": "0E",
+			"hex": "21314d564c30451a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 699,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 769,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 771,
+			"iscp": "!1SLIQSTN",
+			"command": "SLI",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131534c495153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 839,
+			"iscp": "!1SLI10",
+			"command": "SLI",
+			"parameter": "10",
+			"hex": "2131534c4931301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 840,
+			"iscp": "!1SLI02",
+			"command": "SLI",
+			"parameter": "02",
+			"hex": "495343500000001000000008010000002131534c4930320d"
+		},
+		{
+			"dir": "in",
+			"ms": 1587,
+			"iscp": "!1SLI02",
+			"command": "SLI",
+			"parameter": "02",
+			"hex": "2131534c4930321a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1596,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1609,
+			"iscp": "!1SLI02",
+			"command": "SLI",
+			"parameter": "02",
+			"hex": "2131534c4930321a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1609,
+			"iscp": "!1DIM00",
+			"command": "DIM",
+			"parameter": "00",
+			"hex": "213144494d30301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1609,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1623,
+			"iscp": "!1LMD00",
+			"command": "LMD",
+			"parameter": "00",
+			"hex": "21314c4d4430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1623,
+			"iscp": "!1MOT00",
+			"command": "MOT",
+			"parameter": "00",
+			"hex": "21314d4f5430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1633,
+			"iscp": "!1RAS00",
+			"command": "RAS",
+			"parameter": "00",
+			"hex": "213152415330301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1633,
+			"iscp": "!1TFRB+2T00",
+			"command": "TFR",
+			"parameter": "B+2T00",
+			"hex": "2131544652422b325430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1633,
+			"iscp": "!1PCT01",
+			"command": "PCT",
+			"parameter": "01",
+			"hex": "213150435430311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1633,
+			"iscp": "!1ITV000",
+			"command": "ITV",
+			"parameter": "000",
+			"hex": "21314954563030301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 1762,
+			"iscp": "!1NDSW-x",
+			"command": "NDS",
+			"parameter": "W-x",
+			"hex": "21314e4453572d781a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 2581,
+			"iscp": "!1FLD47414D4520202020202020203134",
+			"command": "FLD",
+			"parameter": "47414D4520202020202020203134",
+			"hex": "2131464c44343734313444343532303230323032303230323032303230333133341a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 2841,
+			"iscp": "!1SLIQSTN",
+			"command": "SLI",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131534c495153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 2914,
+			"iscp": "!1SLI02",
+			"command": "SLI",
+			"parameter": "02",
+			"hex": "2131534c4930321a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 2915,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 3117,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 3117,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 3191,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 3191,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "49534350000000100000000801000000213150575230300d"
+		},
+		{
+			"dir": "in",
+			"ms": 4355,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 4418,
+			"iscp": "!1AEQ01",
+			"command": "AEQ",
+			"parameter": "01",
+			"hex": "213141455130311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 4418,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 5192,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 5301,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 5301,
+			"iscp": "!1LMDQSTN",
+			"command": "LMD",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 5401,
+			"iscp": "!1LMDN/A",
+			"command": "LMD",
+			"parameter": "N/A",
+			"hex": "21314c4d444e2f411a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 5401,
+			"iscp": "!1LMD00",
+			"command": "LMD",
+			"parameter": "00",
+			"hex": "4953435000000010000000080100000021314c4d4430300d"
+		},
+		{
+			"dir": "out",
+			"ms": 7402,
+			"iscp": "!1LMDQSTN",
+			"command": "LMD",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 7476,
+			"iscp": "!1LMDN/A",
+			"command": "LMD",
+			"parameter": "N/A",
+			"hex": "21314c4d444e2f411a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 7477,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 7550,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 7550,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 7621,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 7621,
+			"iscp": "!1AMTQSTN",
+			"command": "AMT",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131414d545153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 7690,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 7691,
+			"iscp": "!1AMT01",
+			"command": "AMT",
+			"parameter": "01",
+			"hex": "495343500000001000000008010000002131414d5430310d"
+		},
+		{
+			"dir": "out",
+			"ms": 9693,
+			"iscp": "!1AMTQSTN",
+			"command": "AMT",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131414d545153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 9761,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 9761,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 9921,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 9921,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 9993,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 9994,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 10069,
+			"iscp": "!1MVL0E",
+			"command": "MVL",
+			"parameter": "0E",
+			"hex": "21314d564c30451a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 10069,
+			"iscp": "!1MVL02",
+			"command": "MVL",
+			"parameter": "02",
+			"hex": "4953435000000010000000080100000021314d564c30320d"
+		},
+		{
+			"dir": "out",
+			"ms": 12070,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 12157,
+			"iscp": "!1MVL0E",
+			"command": "MVL",
+			"parameter": "0E",
+			"hex": "21314d564c30451a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 12157,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 12298,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 12298,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 12408,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 12408,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "49534350000000100000000801000000213150575230310d"
+		},
+		{
+			"dir": "in",
+			"ms": 12716,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13494,
+			"iscp": "!1SLI02",
+			"command": "SLI",
+			"parameter": "02",
+			"hex": "2131534c4930321a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13601,
+			"iscp": "!1DIM00",
+			"command": "DIM",
+			"parameter": "00",
+			"hex": "213144494d30301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13601,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1MOT00",
+			"command": "MOT",
+			"parameter": "00",
+			"hex": "21314d4f5430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1RAS00",
+			"command": "RAS",
+			"parameter": "00",
+			"hex": "213152415330301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1TFRB+2T00",
+			"command": "TFR",
+			"parameter": "B+2T00",
+			"hex": "2131544652422b325430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1PCT01",
+			"command": "PCT",
+			"parameter": "01",
+			"hex": "213150435430311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1ITV000",
+			"command": "ITV",
+			"parameter": "000",
+			"hex": "21314954563030301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1NDSW-x",
+			"command": "NDS",
+			"parameter": "W-x",
+			"hex": "21314e4453572d781a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1UPDFF",
+			"command": "UPD",
+			"parameter": "FF",
+			"hex": "213155504446461a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 13602,
+			"iscp": "!1UPDFF",
+			"command": "UPD",
+			"parameter": "FF",
+			"hex": "213155504446461a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 14166,
+			"iscp": "!1FLD566F6C756D652020202020203134",
+			"command": "FLD",
+			"parameter": "566F6C756D652020202020203134",
+			"hex": "2131464c44353636463643373536443635323032303230323032303230333133341a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 16409,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 16471,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 16471,
+			"iscp": "!1MVL02",
+			"command": "MVL",
+			"parameter": "02",
+			"hex": "4953435000000010000000080100000021314d564c30320d"
+		},
+		{
+			"dir": "in",
+			"ms": 16565,
+			"iscp": "!1MVL02",
+			"command": "MVL",
+			"parameter": "02",
+			"hex": "21314d564c30321a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 16591,
+			"iscp": "!1FLD566F6C756D652020202020202032",
+			"command": "FLD",
+			"parameter": "566F6C756D652020202020202032",
+			"hex": "2131464c44353636463643373536443635323032303230323032303230323033321a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 18473,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 18564,
+			"iscp": "!1MVL02",
+			"command": "MVL",
+			"parameter": "02",
+			"hex": "21314d564c30321a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 18564,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 18625,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 18625,
+			"iscp": "!1SLIQSTN",
+			"command": "SLI",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131534c495153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 18689,
+			"iscp": "!1SLI02",
+			"command": "SLI",
+			"parameter": "02",
+			"hex": "2131534c4930321a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 18690,
+			"iscp": "!1SLI01",
+			"command": "SLI",
+			"parameter": "01",
+			"hex": "495343500000001000000008010000002131534c4930310d"
+		},
+		{
+			"dir": "in",
+			"ms": 18844,
+			"iscp": "!1SLI01",
+			"command": "SLI",
+			"parameter": "01",
+			"hex": "2131534c4930311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 19181,
+			"iscp": "!1LMD80",
+			"command": "LMD",
+			"parameter": "80",
+			"hex": "21314c4d4438301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 19241,
+			"iscp": "!1FLD43424C2F53415420202020202032",
+			"command": "FLD",
+			"parameter": "43424C2F53415420202020202032",
+			"hex": "2131464c44343334323443324635333431353432303230323032303230323033321a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 20691,
+			"iscp": "!1SLIQSTN",
+			"command": "SLI",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131534c495153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 20775,
+			"iscp": "!1SLI01",
+			"command": "SLI",
+			"parameter": "01",
+			"hex": "2131534c4930311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 20775,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 20940,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 20940,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 21021,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 21021,
+			"iscp": "!1LMDQSTN",
+			"command": "LMD",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 21112,
+			"iscp": "!1LMD80",
+			"command": "LMD",
+			"parameter": "80",
+			"hex": "21314c4d4438301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 21112,
+			"iscp": "!1LMD00",
+			"command": "LMD",
+			"parameter": "00",
+			"hex": "4953435000000010000000080100000021314c4d4430300d"
+		},
+		{
+			"dir": "in",
+			"ms": 21254,
+			"iscp": "!1LMD00",
+			"command": "LMD",
+			"parameter": "00",
+			"hex": "21314c4d4430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 21274,
+			"iscp": "!1FLD2020202053746572656F20202020",
+			"command": "FLD",
+			"parameter": "2020202053746572656F20202020",
+			"hex": "2131464c44323032303230323035333734363537323635364632303230323032301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 23113,
+			"iscp": "!1LMDQSTN",
+			"command": "LMD",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 23187,
+			"iscp": "!1LMD00",
+			"command": "LMD",
+			"parameter": "00",
+			"hex": "21314c4d4430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 23188,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 23250,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 23250,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 23306,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 23306,
+			"iscp": "!1AMTQSTN",
+			"command": "AMT",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131414d545153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 23367,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 23367,
+			"iscp": "!1AMT01",
+			"command": "AMT",
+			"parameter": "01",
+			"hex": "495343500000001000000008010000002131414d5430310d"
+		},
+		{
+			"dir": "in",
+			"ms": 23555,
+			"iscp": "!1AMT01",
+			"command": "AMT",
+			"parameter": "01",
+			"hex": "2131414d5430311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 23562,
+			"iscp": "!1FLD43424C2F53415420202020202032",
+			"command": "FLD",
+			"parameter": "43424C2F53415420202020202032",
+			"hex": "2131464c44343334323443324635333431353432303230323032303230323033321a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 24602,
+			"iscp": "!1UPDFF",
+			"command": "UPD",
+			"parameter": "FF",
+			"hex": "213155504446461a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 25367,
+			"iscp": "!1AMTQSTN",
+			"command": "AMT",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131414d545153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 25426,
+			"iscp": "!1AMT01",
+			"command": "AMT",
+			"parameter": "01",
+			"hex": "2131414d5430311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 25426,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 25482,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 25483,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 25534,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 25534,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 25651,
+			"iscp": "!1MVL02",
+			"command": "MVL",
+			"parameter": "02",
+			"hex": "21314d564c30321a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 25651,
+			"iscp": "!1MVL01",
+			"command": "MVL",
+			"parameter": "01",
+			"hex": "4953435000000010000000080100000021314d564c30310d"
+		},
+		{
+			"dir": "in",
+			"ms": 25772,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 25811,
+			"iscp": "!1MVL01",
+			"command": "MVL",
+			"parameter": "01",
+			"hex": "21314d564c30311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 25842,
+			"iscp": "!1FLD566F6C756D652020202020202031",
+			"command": "FLD",
+			"parameter": "566F6C756D652020202020202031",
+			"hex": "2131464c44353636463643373536443635323032303230323032303230323033311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 27653,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 27826,
+			"iscp": "!1MVL01",
+			"command": "MVL",
+			"parameter": "01",
+			"hex": "21314d564c30311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 27826,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 27932,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 27933,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 28009,
+			"iscp": "!1PWR01",
+			"command": "PWR",
+			"parameter": "01",
+			"hex": "213150575230311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 28009,
+			"iscp": "!1SLIQSTN",
+			"command": "SLI",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131534c495153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 28112,
+			"iscp": "!1SLI01",
+			"command": "SLI",
+			"parameter": "01",
+			"hex": "2131534c4930311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 28112,
+			"iscp": "!1SLI10",
+			"command": "SLI",
+			"parameter": "10",
+			"hex": "495343500000001000000008010000002131534c4931300d"
+		},
+		{
+			"dir": "in",
+			"ms": 28600,
+			"iscp": "!1SLI10",
+			"command": "SLI",
+			"parameter": "10",
+			"hex": "2131534c4931301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 28640,
+			"iscp": "!1LMD80",
+			"command": "LMD",
+			"parameter": "80",
+			"hex": "21314c4d4438301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 28640,
+			"iscp": "!1MOT01",
+			"command": "MOT",
+			"parameter": "01",
+			"hex": "21314d4f5430311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 28640,
+			"iscp": "!1FLD42442F4456442020202020202031",
+			"command": "FLD",
+			"parameter": "42442F4456442020202020202031",
+			"hex": "2131464c44343234343246343435363434323032303230323032303230323033311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 30114,
+			"iscp": "!1LMDQSTN",
+			"command": "LMD",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 30179,
+			"iscp": "!1LMD80",
+			"command": "LMD",
+			"parameter": "80",
+			"hex": "21314c4d4438301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 30179,
+			"iscp": "!1AMTQSTN",
+			"command": "AMT",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131414d545153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 30237,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 30237,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 30373,
+			"iscp": "!1MVL01",
+			"command": "MVL",
+			"parameter": "01",
+			"hex": "21314d564c30311a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 30373,
+			"iscp": "!1MVL0E",
+			"command": "MVL",
+			"parameter": "0E",
+			"hex": "4953435000000010000000080100000021314d564c30450d"
+		},
+		{
+			"dir": "in",
+			"ms": 30497,
+			"iscp": "!1MVL0E",
+			"command": "MVL",
+			"parameter": "0E",
+			"hex": "21314d564c30451a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 30515,
+			"iscp": "!1FLD566F6C756D652020202020203134",
+			"command": "FLD",
+			"parameter": "566F6C756D652020202020203134",
+			"hex": "2131464c44353636463643373536443635323032303230323032303230333133341a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 32374,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "49534350000000100000000801000000213150575230300d"
+		},
+		{
+			"dir": "in",
+			"ms": 33524,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 33558,
+			"iscp": "!1AEQ01",
+			"command": "AEQ",
+			"parameter": "01",
+			"hex": "213141455130311a0d0a"
+		},
+		{
+			"dir": "in",
+			"ms": 33558,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 34375,
+			"iscp": "!1PWRQSTN",
+			"command": "PWR",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021315057525153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 34465,
+			"iscp": "!1PWR00",
+			"command": "PWR",
+			"parameter": "00",
+			"hex": "213150575230301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 34465,
+			"iscp": "!1SLIQSTN",
+			"command": "SLI",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131534c495153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 34585,
+			"iscp": "!1SLI10",
+			"command": "SLI",
+			"parameter": "10",
+			"hex": "2131534c4931301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 34585,
+			"iscp": "!1LMDQSTN",
+			"command": "LMD",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 34678,
+			"iscp": "!1LMD80",
+			"command": "LMD",
+			"parameter": "80",
+			"hex": "21314c4d4438301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 34678,
+			"iscp": "!1AMTQSTN",
+			"command": "AMT",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a010000002131414d545153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 34821,
+			"iscp": "!1AMT00",
+			"command": "AMT",
+			"parameter": "00",
+			"hex": "2131414d5430301a0d0a"
+		},
+		{
+			"dir": "out",
+			"ms": 34821,
+			"iscp": "!1MVLQSTN",
+			"command": "MVL",
+			"parameter": "QSTN",
+			"hex": "49534350000000100000000a0100000021314d564c5153544e0d"
+		},
+		{
+			"dir": "in",
+			"ms": 34908,
+			"iscp": "!1MVL0E",
+			"command": "MVL",
+			"parameter": "0E",
+			"hex": "21314d564c30451a0d0a"
+		}
+	]
+}

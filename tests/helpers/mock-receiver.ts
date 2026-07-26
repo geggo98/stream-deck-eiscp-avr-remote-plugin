@@ -11,6 +11,19 @@
  *  - replies use the exact wire format of the captured device:
  *    eISCP frame around `!1<CMD><VALUE>\x1a\r\n`
  *
+ * **Power state matters.** Measured on the real unit
+ * (`tests/fixtures/standby-behaviour-capture.json`): in network standby it still
+ * answers every query, but a SET is dropped *silently* — no echo, no state
+ * change — except `SLI`, which powers it on. `power`/`standbySets`/
+ * `standbyWakeCommands` model that, and both device variants (drops sets vs.
+ * honours them) are selectable, because not every receiver behaves alike.
+ *
+ * The default is a receiver that is **on**, so a test that just wants to exercise
+ * set commands does not have to know any of this. Note the captured response map
+ * was recorded in standby (its `PWR` is `00`), which is why `power` overrides it
+ * rather than following it — a double that answers "standby" while honouring
+ * every set would be a receiver that does not exist.
+ *
  * Shared by the transport/client/connection-manager behaviour tests.
  */
 
@@ -24,6 +37,34 @@ export interface MockReceiverOptions {
 	ignore?: readonly string[];
 	/** Echo set commands back as state broadcasts (default true). */
 	echoSets?: boolean;
+	/**
+	 * Power state the mock starts in (default "on"). Overrides `PWR` in the
+	 * response map. `PWR` sets always take effect, so a test can wake it.
+	 */
+	power?: "on" | "standby";
+	/**
+	 * What a SET (other than `PWR`) does while the mock is in standby:
+	 *  - `"ignore"` (default): dropped in silence — the measured VSX-S520D
+	 *  - `"echo"`: answered with the *unchanged* value, i.e. acknowledged but not applied
+	 *  - `"accept"`: applied and echoed as if the unit were awake
+	 */
+	standbySets?: "ignore" | "echo" | "accept";
+	/**
+	 * Commands whose SET powers the unit on out of standby and is then applied.
+	 * Defaults to `["SLI"]`, which is what the real unit does (input selection
+	 * wakes it; the capture shows `!1SLI02` followed by `!1PWR01`).
+	 */
+	standbyWakeCommands?: readonly string[];
+	/**
+	 * Accept connections and never answer anything — the half-open receiver that
+	 * looks alive to TCP while every query times out.
+	 */
+	silent?: boolean;
+	/**
+	 * Hand out a port with nothing listening on it, so connects fail fast with
+	 * ECONNREFUSED. The handle still works; it just has no server behind it.
+	 */
+	refuseConnections?: boolean;
 	/** Artificial delay before every reply, in ms. */
 	replyDelayMs?: number;
 	/**
@@ -167,6 +208,11 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 	const state: Record<string, string> = { ...(options.responses ?? loadCapturedResponses()) };
 	const ignore = new Set(options.ignore ?? ["SPA", "SPB", "DIR"]);
 	const echoSets = options.echoSets ?? true;
+	// The captured map was recorded in standby; the power state is an explicit
+	// choice here, not an accident of the fixture.
+	state["PWR"] = options.power === "standby" ? "00" : "01";
+	const standbySets = options.standbySets ?? "ignore";
+	const standbyWake = new Set(options.standbyWakeCommands ?? ["SLI"]);
 	const received: ReceivedMessage[] = [];
 	const sockets = new Set<Socket>();
 
@@ -204,10 +250,14 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 	const handleMessage = (socket: Socket, command: string, parameter: string) => {
 		received.push({ command, parameter });
 		if (ignore.has(command)) return;
+		// A dead-but-connected receiver: recorded, never answered.
+		if (options.silent) return;
 		// Replay wins where a recording exists; anything not recorded falls through
 		// to the synthetic behaviour, so a replaying mock is still a usable receiver.
 		if (replayNext(socket, command, parameter)) return;
 
+		// Queries are answered in standby too — which is exactly why a query is the
+		// only reliable way to find out whether a set took effect.
 		if (parameter === "QSTN") {
 			const value = state[command];
 			if (value !== undefined) reply(socket, command, value);
@@ -225,6 +275,26 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		} else if (parameter === "TG") {
 			next = current === "01" ? "00" : "01";
 		}
+
+		// Standby: PWR still works (that is how the unit is woken), a wake command
+		// works *and* powers it on, everything else is subject to standbySets.
+		if (state["PWR"] === "00" && command !== "PWR") {
+			if (standbyWake.has(command)) {
+				state[command] = next;
+				reply(socket, command, next);
+				// The real unit reports the value first, then the power change.
+				state["PWR"] = "01";
+				reply(socket, "PWR", "01");
+				return;
+			}
+			if (standbySets === "ignore") return;
+			if (standbySets === "echo") {
+				// Acknowledged but not applied: the state stays where it was.
+				if (current !== undefined) reply(socket, command, current);
+				return;
+			}
+		}
+
 		state[command] = next;
 		reply(socket, command, next);
 	};
@@ -263,6 +333,11 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const port = (server.address() as { port: number }).port;
+	// Bind first so the port is a real, unused one, then let it go: connects to it
+	// fail immediately with ECONNREFUSED instead of hanging for the OS timeout.
+	if (options.refuseConnections) {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
 
 	return {
 		port,
@@ -314,6 +389,8 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		async close() {
 			for (const socket of sockets) socket.destroy();
 			sockets.clear();
+			// Already closed when handing out a refusing port; closing twice errors.
+			if (options.refuseConnections) return;
 			await new Promise<void>((resolve) => server.close(() => resolve()));
 		},
 	};

@@ -183,8 +183,9 @@ describe("ConnectionManager", () => {
 				const second = await mgr.ensureConnected(host, mock.port);
 				assert.strictEqual(second, first, "the pooled client is reused");
 				assert.ok(second.isConnected(), "and reconnected");
-				// The revived connection actually works end to end.
-				assert.equal(await mgr.queryCommand(host, "PWR"), "00");
+				// The revived connection actually works end to end ("01" = the mock's
+				// default awake state).
+				assert.equal(await mgr.queryCommand(host, "PWR"), "01");
 				second.disconnect();
 			} finally {
 				await mock.close();

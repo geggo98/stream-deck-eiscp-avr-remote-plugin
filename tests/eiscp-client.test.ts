@@ -38,7 +38,9 @@ function pendingQueryCount(client: EiscpClient): number {
 describe("EiscpClient queries", () => {
 	it("resolves a query with the answered parameter", async () => {
 		await withClient({}, async (client) => {
-			assert.equal(await client.query("PWR"), "00");
+			// The mock is an awake receiver by default (see its `power` option); the
+			// other values come from the captured fixture unchanged.
+			assert.equal(await client.query("PWR"), "01");
 			assert.equal(await client.query("MVL"), "0E");
 			assert.equal(pendingQueryCount(client), 0);
 		});
