@@ -115,6 +115,24 @@
 			'<div class="pi-hint">' +
 			"  In standby the receiver ignores everything except power and input selection," +
 			"  so keys are shown dimmed and a press wakes it first." +
+			"</div>" +
+			// Now-playing preview. Bound with plain `setting=` because these are
+			// per-action settings — deliberately NOT sdpi's `global` attribute, which
+			// keeps a snapshot of the whole settings object taken when the panel opened
+			// and writes all of it back; that is how a PI left open during name
+			// discovery once reverted the learned names.
+			'<sdpi-item label="Now playing">' +
+			'  <sdpi-checkbox setting="showOnTrackChange"' +
+			'    label="Show briefly when the track changes"></sdpi-checkbox>' +
+			"</sdpi-item>" +
+			'<sdpi-item label="Show for" id="trackChangeSecondsItem" style="display:none;">' +
+			'  <sdpi-range setting="trackChangeSeconds" min="1" max="30" step="1"' +
+			'    default="5" showlabels></sdpi-range>' +
+			"</sdpi-item>" +
+			'<div class="pi-hint">' +
+			"  Replaces this element's own face with the title, artist and cover art for a" +
+			"  few seconds, then puts it back. Only on a track change — not while the" +
+			"  time counts up." +
 			"</div>";
 
 		// The manual field must be reachable *without* the plugin: it used to appear
@@ -165,6 +183,27 @@
 			} catch (e) {
 				/* sdpi client not ready; the checkbox stays at its default */
 			}
+		}
+
+		// Only offer the duration once the preview is switched on: an inert slider
+		// invites the reading that it does something on its own.
+		const trackToggle = c.querySelector('[setting="showOnTrackChange"]');
+		const secondsItem = c.querySelector("#trackChangeSecondsItem");
+		if (trackToggle && secondsItem) {
+			const sync = () => {
+				// The value arrives late (settings are fetched after the upgrade), so read
+				// the property rather than the attribute and re-check on every change.
+				const on = trackToggle.value === true || trackToggle.value === "true";
+				secondsItem.style.display = on ? "" : "none";
+			};
+			trackToggle.addEventListener("valuechange", sync);
+			// Settings land asynchronously; poll briefly rather than guess a delay.
+			let tries = 0;
+			const settle = setInterval(() => {
+				sync();
+				if (++tries > 20) clearInterval(settle);
+			}, 100);
+			sync();
 		}
 
 		// Keep dependent UI (the Auto-Discover button) in step with either input.

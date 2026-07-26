@@ -253,6 +253,11 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 		);
 	}
 
+	/** The receiver this action is bound to, if it has bound to one yet. */
+	protected hostFor(actionId: string): string | undefined {
+		return this.hosts.get(actionId);
+	}
+
 	/** Current status of the receiver this action is bound to. */
 	protected statusFor(actionId: string): DeviceStatus {
 		const host = this.hosts.get(actionId);
@@ -395,14 +400,26 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 			// While the short track-change display is up it replaces the picture for
 			// every state, so switching state underneath it cannot reveal the normal one.
 			const image = overlay ? overlay.image : keyImageFor(this.manifestId, status, command, state);
-			const key = `${action.id}:${state}`;
-			// "" stands for the manifest image, so "no image yet" and "back to the
-			// manifest image" are distinguishable.
-			if (this.paintedImages.get(key) === (image ?? "")) continue;
-			this.paintedImages.set(key, image ?? "");
-			// undefined restores the manifest image, i.e. the normal, lit look.
-			fireAndLog(action.setImage(image, { state }), this.logger, "setImage");
+			this.writeKeyImage(action, image, state);
 		}
+	}
+
+	/**
+	 * Write one key image, skipping an unchanged one.
+	 *
+	 * Separate from `paintKeyImage` so subclasses that compute their own picture (the
+	 * now-playing key composes a cover) get the same de-duplication. Renders run on
+	 * every value update, and a ~173 KB composed cover re-sent per update would be
+	 * expensive for nothing.
+	 */
+	protected writeKeyImage(action: KeyAction<TSettings>, image: string | undefined, state: 0 | 1): void {
+		const key = `${action.id}:${state}`;
+		// "" stands for the manifest image, so "no image yet" and "back to the
+		// manifest image" are distinguishable.
+		if (this.paintedImages.get(key) === (image ?? "")) return;
+		this.paintedImages.set(key, image ?? "");
+		// undefined restores the manifest image, i.e. the normal, lit look.
+		fireAndLog(action.setImage(image, { state }), this.logger, "setImage");
 	}
 
 	/** A key's title, with the "Offline" decoration applied. */

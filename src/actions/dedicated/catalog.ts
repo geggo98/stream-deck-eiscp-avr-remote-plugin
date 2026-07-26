@@ -129,6 +129,16 @@ export const DEDICATED_SPECS = [
 		states: 1, icon: { primary: "play" },
 	},
 	{
+		// Shows the cover art and the track as a key. Pressing it play/pauses, which is
+		// the one action a "what is playing" key should have. `showsState: false`
+		// because NTC has no readable value — the picture comes from the metadata
+		// tracker, not from a command's state.
+		id: "now-playing", name: "Now Playing",
+		tooltip: "Show the current cover art, title and artist; press to play/pause.",
+		kind: "key", controller: "Keypad", command: "NTC", parameter: "P/P", showsState: false,
+		states: 1, icon: { primary: "music" },
+	},
+	{
 		id: "bass-up", name: "Bass +", tooltip: "Increase front bass (TFR BUP).",
 		kind: "key", controller: "Keypad", command: "TFR", parameter: "BUP", showsState: false,
 		states: 1, icon: { primary: "sliders-horizontal", badge: "plus" },
@@ -249,6 +259,7 @@ export type GenericId = (typeof GENERIC_SPECS)[number]["id"];
 /** Property Inspector path for a dedicated action. */
 export function dedicatedPropertyInspector(spec: DedicatedSpec): string {
 	if (spec.id === "transport") return "ui/transport.html";
+	if (spec.id === "now-playing") return "ui/now-playing.html";
 	// Learned-name dials: Auto-Discover + configurable press dropdown.
 	if (["input-dial", "mode-dial"].includes(spec.id)) return "ui/dial-discover.html";
 	// Tone dials: configurable press dropdown.
