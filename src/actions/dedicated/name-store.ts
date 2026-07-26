@@ -18,7 +18,7 @@
  * global settings, merged so the device IP is never clobbered.
  */
 import { streamDeck } from "@elgato/streamdeck";
-import { matchesSpecValue } from "../../adapter/eiscp/command-registry.ts";
+import { matchesSpecValue } from "../../adapter/eiscp/spec-labels.ts";
 import { sanitiseDeviceText } from "../../adapter/eiscp/device-text.ts";
 import {
 	decodeDisplayText,
