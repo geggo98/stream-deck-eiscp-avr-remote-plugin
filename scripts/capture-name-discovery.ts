@@ -170,6 +170,10 @@ async function main(): Promise<void> {
 				// The plugin decodes this FLD payload into a display string; here the
 				// raw hex is the interesting part for a test double.
 				names[code] = fldHex;
+				// "learned" on purpose: the recording is meant to capture what a single
+				// reading returns. Reporting anything else would make the sweep
+				// re-measure and the capture would no longer show one FLD per step.
+				return "learned";
 			},
 			setSliSweeping: () => {},
 			log: {

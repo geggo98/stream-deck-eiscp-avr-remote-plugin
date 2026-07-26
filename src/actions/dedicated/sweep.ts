@@ -7,7 +7,18 @@
  * logging — come in through SweepDeps, so tests can drive the machine with a
  * fake receiver; discovery.ts supplies the real implementations.
  */
-import type { TrackedCommand } from "./name-store.ts";
+import type { SliRecordOutcome, TrackedCommand } from "./name-store.ts";
+
+/** FLD readings per input before giving up on its name. */
+export const MAX_NAME_SAMPLES = 5;
+/** From this many readings on, the most frequent text wins. */
+export const MAJORITY_AT = 3;
+/**
+ * Gap between readings. Deliberately longer than the ~1.5 s a volume or tone
+ * readout occupies the display, so three readings outlast one transient instead of
+ * all three catching it.
+ */
+export const RESAMPLE_MS = 800;
 
 export interface SweepProgress {
 	done: number;
@@ -25,12 +36,57 @@ export interface SweepDeps {
 	sleep(ms: number): Promise<void>;
 	/** name-store lookups/recorders (name-store imports the SDK, hence injected). */
 	nameFor(host: string, command: TrackedCommand, code: string | undefined): string;
-	recordSli(host: string, code: string, fldHex: string): unknown;
+	recordSli(host: string, code: string, fldHex: string, options?: { corroborated?: boolean }): SliRecordOutcome;
 	setSliSweeping(host: string, on: boolean): void;
 	log?: { info(msg: string): void; debug(msg: string): void; error(msg: string): void };
 }
 
 const NO_LOG: NonNullable<SweepDeps["log"]> = { info() {}, debug() {}, error() {} };
+
+/**
+ * Read one input's name off the display, measuring again when the reading is
+ * doubtful.
+ *
+ * A single reading is enough when it is trustworthy, which is the normal case and
+ * costs one query. When the store refuses it — something else owned the display,
+ * or the text is not what the spec calls this input — the reading is repeated, and
+ * from `MAJORITY_AT` readings on the most frequent text wins, up to
+ * `MAX_NAME_SAMPLES`. That works because the input readout is the *persistent* one:
+ * a volume or tone readout pushes it aside for a moment, so the text that keeps
+ * coming back is the input's.
+ *
+ * A majority is stronger evidence than either check the store applies, so the
+ * winner is recorded even if it still disagrees with the spec — that is how an
+ * honest relabel ("BT AUDIO" where the spec says "BLUETOOTH") and a tuner showing
+ * its station survive. Only a genuine tie is dropped, because there is nothing to
+ * prefer. Limitation worth knowing: if something rewrites the display for the whole
+ * sampling window — the volume being turned *during* a sweep — the transient can
+ * win, and re-running Auto-Discover on a quiet receiver is the cure.
+ */
+async function learnInputName(host: string, code: string, deps: SweepDeps): Promise<void> {
+	const log = deps.log ?? NO_LOG;
+	const votes = new Map<string, number>();
+	for (let sample = 1; sample <= MAX_NAME_SAMPLES; sample++) {
+		const hex = await deps.query(host, "FLD");
+		const outcome = deps.recordSli(host, code, hex);
+		if (outcome === "learned" || outcome === "unchanged") return;
+		if (hex) votes.set(hex, (votes.get(hex) ?? 0) + 1);
+
+		const total = [...votes.values()].reduce((sum, n) => sum + n, 0);
+		if (total >= MAJORITY_AT) {
+			const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+			const [best, bestCount] = ranked[0]!;
+			const runnerUp = ranked[1]?.[1] ?? 0;
+			if (bestCount > runnerUp) {
+				log.debug(`sweep SLI ${code}: taking the majority reading (${bestCount}/${total})`);
+				deps.recordSli(host, code, best, { corroborated: true });
+				return;
+			}
+		}
+		if (sample < MAX_NAME_SAMPLES) await deps.sleep(RESAMPLE_MS);
+	}
+	log.debug(`sweep SLI ${code}: no reading won a majority in ${MAX_NAME_SAMPLES} tries; leaving it unnamed`);
+}
 
 /**
  * Cycle `command` with UP until it returns to the start (or a safety cap),
@@ -84,7 +140,7 @@ export async function runSweep(
 
 			if (command === "SLI" && current !== prev) {
 				try {
-					deps.recordSli(host, current, await deps.query(host, "FLD"));
+					await learnInputName(host, current, deps);
 				} catch (err) {
 					log.debug(`sweep SLI name read failed: ${err}`);
 				}

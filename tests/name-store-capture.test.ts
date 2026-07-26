@@ -109,7 +109,7 @@ describe("name store against recorded traffic", () => {
 			Date.now = () => 30_497; // the recording's MVL 0E
 			noteDisplayChange(host, "MVL");
 			Date.now = () => 30_515; // the FLD 18 ms later
-			assert.equal(recordSli(host, "10", Buffer.from("Volume      14", "ascii").toString("hex")), false);
+			assert.equal(recordSli(host, "10", Buffer.from("Volume      14", "ascii").toString("hex")), "rejected");
 		} finally {
 			Date.now = realNow;
 		}

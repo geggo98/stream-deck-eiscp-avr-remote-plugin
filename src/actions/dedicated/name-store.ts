@@ -18,6 +18,7 @@
  * global settings, merged so the device IP is never clobbered.
  */
 import { streamDeck } from "@elgato/streamdeck";
+import { matchesSpecValue } from "../../adapter/eiscp/command-registry.ts";
 import {
 	decodeDisplayText,
 	formatCommandValue,
@@ -26,6 +27,18 @@ import {
 } from "../eiscp-base.ts";
 
 export type TrackedCommand = "LMD" | "SLI";
+
+/**
+ * What became of an attempt to record an input name.
+ *
+ * - `learned` / `unchanged` — stored, and trustworthy.
+ * - `doubtful` — stored, but the text is not what the spec calls this input, so a
+ *   second reading is worth taking (see runSweep). Stored anyway, because a
+ *   receiver is allowed to relabel its inputs and a name is better than none.
+ * - `rejected` — **not** stored: another command owned the display, so the text
+ *   describes that command, not the input.
+ */
+export type SliRecordOutcome = "learned" | "unchanged" | "doubtful" | "rejected";
 const TRACKED: TrackedCommand[] = ["LMD", "SLI"];
 const LMD_WINDOW_MS = 2500;
 // The SLI code event and its input-name FLD can arrive in EITHER order and up to
@@ -204,11 +217,30 @@ function tryPairSli(host: string): boolean {
  * that arrives, solicited or not, so a volume or tone readout can land in its
  * place. This path had no check at all and would store it verbatim.
  */
-export function recordSli(host: string, code: string, fldHex: string): boolean {
+export function recordSli(
+	host: string,
+	code: string,
+	fldHex: string,
+	options: { corroborated?: boolean } = {},
+): SliRecordOutcome {
 	const text = decodeDisplayText(fldHex);
-	if (!text) return false;
-	if (displayIsBusy(hostState(host), Date.now())) return false;
-	return learn(host, "SLI", code, stripVolume(text));
+	if (!text) return "rejected";
+	const name = stripVolume(text);
+	// Nothing to store and nothing a second reading would fix. Sanitised the way
+	// `learn` will sanitise it, so "rejected" means the same thing at both ends —
+	// a name of nothing but control characters does not survive either.
+	if (!sanitiseLearned(name, MAX_NAME_LENGTH) || !sanitiseLearned(code, MAX_CODE_LENGTH)) return "rejected";
+	// `corroborated` means the caller established the reading some other way — the
+	// sweep re-measures and takes a majority, and a text that stays on the display
+	// across several samples is better evidence than either check below can give.
+	if (!options.corroborated && displayIsBusy(hostState(host), Date.now())) return "rejected";
+	const stored = learn(host, "SLI", code, name) ? "learned" : "unchanged";
+	// The protocol spec knows what this input is called. A mismatch vetoes nothing —
+	// receivers relabel inputs ("BT AUDIO" where the spec says "BLUETOOTH"), so the
+	// name is kept — it only reports that the reading is worth taking again. The
+	// sweep does exactly that and replaces it with the majority if one emerges.
+	if (!options.corroborated && !matchesSpecValue("SLI", code, name)) return "doubtful";
+	return stored;
 }
 
 /**

@@ -4,7 +4,13 @@
  */
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { runSweep, type SweepDeps, type SweepProgress } from "../src/actions/dedicated/sweep.ts";
+import {
+	MAX_NAME_SAMPLES,
+	runSweep,
+	type SweepDeps,
+	type SweepProgress,
+} from "../src/actions/dedicated/sweep.ts";
+import type { SliRecordOutcome } from "../src/actions/dedicated/name-store.ts";
 
 interface FakeReceiver {
 	deps: SweepDeps;
@@ -24,10 +30,19 @@ interface FakeReceiver {
 function fakeReceiver(
 	start: string,
 	advance: (current: string) => string,
-	opts: { failUpAt?: number; failRestore?: boolean; fld?: string } = {},
+	opts: {
+		failUpAt?: number;
+		failRestore?: boolean;
+		fld?: string;
+		/** Successive FLD readings, cycled; models a display that changes under us. */
+		fldSequence?: string[];
+		/** What the store makes of a reading — the trigger for re-measuring. */
+		recordOutcome?: (fldHex: string) => SliRecordOutcome;
+	} = {},
 ): FakeReceiver {
 	let value = start;
 	let ups = 0;
+	let fldReads = 0;
 	const sent: string[] = [];
 	const nameEvents: string[] = [];
 	const deps: SweepDeps = {
@@ -43,13 +58,18 @@ function fakeReceiver(
 			}
 			return Promise.resolve();
 		},
-		query: (_host, command) => Promise.resolve(command === "FLD" ? (opts.fld ?? "00") : value),
+		query: (_host, command) => {
+			if (command !== "FLD") return Promise.resolve(value);
+			const sequence = opts.fldSequence;
+			if (!sequence || sequence.length === 0) return Promise.resolve(opts.fld ?? "00");
+			return Promise.resolve(sequence[Math.min(fldReads++, sequence.length - 1)]!);
+		},
 		getCached: () => value,
 		sleep: () => Promise.resolve(),
 		nameFor: (_host, _command, code) => `name:${code}`,
-		recordSli: (_host, code, fldHex) => {
-			nameEvents.push(`recordSli:${code}:${fldHex}`);
-			return true;
+		recordSli: (_host, code, fldHex, options) => {
+			nameEvents.push(`recordSli:${code}:${fldHex}${options?.corroborated ? ":corroborated" : ""}`);
+			return opts.recordOutcome ? opts.recordOutcome(fldHex) : "learned";
 		},
 		setSliSweeping: (_host, on) => {
 			nameEvents.push(`sweeping:${on ? "on" : "off"}`);
@@ -148,5 +168,75 @@ describe("runSweep", () => {
 		await assert.rejects(runSweep("h", "SLI", undefined, rx.deps), /boom/);
 		assert.deepEqual(rx.nameEvents, ["sweeping:on", "sweeping:off"]);
 		assert.equal(rx.sent[rx.sent.length - 1], "SLI:10");
+	});
+});
+
+describe("runSweep: re-measuring a doubtful input name", () => {
+	// A -> B, then B -> A: the wrap step records the start code too (see the
+	// suppression test above), so the assertions below look at code B alone.
+	const oneStep = (opts: Parameters<typeof fakeReceiver>[2]) => fakeReceiver("A", ring(["A", "B"]), opts);
+	const reads = (rx: FakeReceiver) => rx.nameEvents.filter((e) => e.startsWith("recordSli:B:"));
+
+	it("takes a trustworthy reading once", async () => {
+		// The normal case must not get slower: one query, one record.
+		const rx = oneStep({ fld: "GOOD", recordOutcome: () => "learned" });
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.deepEqual(reads(rx), ["recordSli:B:GOOD"]);
+	});
+
+	it("measures again when the store refuses the reading, and keeps the good one", async () => {
+		// First reading caught a transient readout (volume/tone), the display then
+		// returns to the input — which is why re-measuring works at all.
+		const rx = oneStep({
+			fldSequence: ["TRANSIENT", "PERSISTENT", "PERSISTENT"],
+			recordOutcome: (fld) => (fld === "TRANSIENT" ? "rejected" : "learned"),
+		});
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.deepEqual(reads(rx), ["recordSli:B:TRANSIENT", "recordSli:B:PERSISTENT"]);
+	});
+
+	it("accepts a stable reading the spec disagrees with, once it wins a majority", async () => {
+		// The "BT AUDIO where the spec says BLUETOOTH" case: doubtful every time, but
+		// it is what the receiver actually shows, so it must survive.
+		const rx = oneStep({ fld: "RELABELLED", recordOutcome: () => "doubtful" });
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.deepEqual(reads(rx), [
+			"recordSli:B:RELABELLED",
+			"recordSli:B:RELABELLED",
+			"recordSli:B:RELABELLED",
+			"recordSli:B:RELABELLED:corroborated",
+		]);
+	});
+
+	it("decides by majority rather than by the last reading", async () => {
+		// 2 of 3 for GOOD; NOISE must not win just by arriving last.
+		const rx = oneStep({
+			fldSequence: ["GOOD", "NOISE", "GOOD"],
+			recordOutcome: () => "doubtful",
+		});
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.equal(reads(rx).at(-1), "recordSli:B:GOOD:corroborated");
+	});
+
+	it("gives up after the sample cap when nothing repeats", async () => {
+		const rx = oneStep({
+			fldSequence: ["A1", "B2", "C3", "D4", "E5"],
+			recordOutcome: () => "doubtful",
+		});
+		await runSweep("h", "SLI", undefined, rx.deps);
+		const attempts = reads(rx);
+		assert.equal(attempts.length, MAX_NAME_SAMPLES, `capped at ${MAX_NAME_SAMPLES} readings`);
+		assert.equal(
+			attempts.filter((e) => e.endsWith(":corroborated")).length,
+			0,
+			"a tie decides nothing, so no name is stored",
+		);
+	});
+
+	it("does not re-measure while sweeping listening modes", async () => {
+		// LMD names arrive passively; there is no FLD query to repeat.
+		const rx = fakeReceiver("A", ring(["A", "B"]), { fld: "X", recordOutcome: () => "doubtful" });
+		await runSweep("h", "LMD", undefined, rx.deps);
+		assert.deepEqual(reads(rx), []);
 	});
 });

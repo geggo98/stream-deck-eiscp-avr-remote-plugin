@@ -295,6 +295,28 @@ keeps the captured order but drops the captured waits, so CI stays fast).
   same veto. What no format rule can fix is the tuner: with `SLI 24/33` selected the
   display genuinely shows the station ("FM 87.50MHz", "TEDDY"), so those *are* what
   the receiver reports for that input.
+- **The sweep measures a doubtful reading again** (`learnInputName` in `sweep.ts`).
+  A trustworthy reading is taken once — the normal case, one query. Otherwise it
+  re-reads, and from `MAJORITY_AT` (3) readings on the most frequent text wins, up
+  to `MAX_NAME_SAMPLES` (5), `RESAMPLE_MS` (800 ms) apart. That works because the
+  input readout is the **persistent** one: a transient pushes it aside for ~1.5 s,
+  so three readings outlast one transient rather than all three catching it. A
+  majority is stronger evidence than either check the store applies, so the winner
+  is stored `{ corroborated: true }` even if it still disagrees with the spec — a
+  tie stores nothing. Limitation: something rewriting the display for the *whole*
+  window (a volume dial turned during a sweep) can win, and re-running Auto-Discover
+  on a quiet receiver is the cure.
+- **What counts as doubtful comes out of the protocol spec, not out of guesses.**
+  `specValueLabels` / `matchesSpecValue` (`command-registry.ts`) read the labels
+  from the generated registry — the *description* is the useful field, since
+  `SLI 10` is `name: "dvd"` but `description: "sets DVD, BD/DVD"`, and "BD/DVD" is
+  exactly what the panel shows. Measured against the real unit it accepts nine of
+  twelve inputs outright (including "CBL/SAT" for "CBL, SAT" and "FM 87.50MHz" for
+  "FM") and flags three: the corrupted name, the DAB input showing a station, and
+  one honest relabel ("BT AUDIO" where the spec says "BLUETOOTH"). Two of three
+  flags are worth a second look and the third costs one reading — which is why a
+  mismatch **never vetoes**, it only asks for corroboration. `recordSli` returns
+  `doubtful` in that case and still stores the name.
 - **`npm run capture:standby`** (`scripts/capture-standby-behaviour.ts`) measures
   what a set does in standby versus awake, as `query — set — wait — query`, so
   "the receiver ignored it" is observed rather than assumed. Also state-changing

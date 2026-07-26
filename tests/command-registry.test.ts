@@ -9,6 +9,8 @@ import {
 	getCommandDef,
 	getCommandsByType,
 	getValueName,
+	matchesSpecValue,
+	specValueLabels,
 } from "../src/adapter/eiscp/command-registry.ts";
 
 describe("command registry", () => {
@@ -218,5 +220,61 @@ describe("command registry", () => {
 				assert.ok(cmd.hasUpDown, `${cmd.code} stepper should have hasUpDown=true`);
 			}
 		});
+	});
+});
+
+describe("spec labels for a value", () => {
+	it("takes the labels out of the spec description, not just the short name", () => {
+		// SLI 10 is name "dvd" but description "sets DVD, BD/DVD" — and "BD/DVD" is
+		// what the receiver actually displays, so the description is the useful part.
+		const labels = specValueLabels("SLI", "10");
+		assert.ok(labels.includes("BDDVD"), `expected BD/DVD among ${labels.join(",")}`);
+		assert.ok(labels.includes("DVD"));
+	});
+
+	it("accepts the labels a real VSX-S520D displays", () => {
+		// Measured against the receiver: these nine are the ones the spec covers.
+		const accepted: Record<string, string> = {
+			"10": "BD/DVD",
+			"11": "STRM BOX",
+			"12": "TV",
+			"22": "PHONO",
+			"23": "CD",
+			"24": "FM 87.50MHz", // the tuner appends its frequency; "FM" still matches
+			"29": "USB",
+			"01": "CBL/SAT", // spec: "VIDEO2, CBL/SAT"
+			"02": "GAME", // spec: "VIDEO3, GAME/TV, GAME, GAME1"
+			"2B": "NET",
+		};
+		for (const [param, label] of Object.entries(accepted)) {
+			assert.equal(matchesSpecValue("SLI", param, label), true, `${param} "${label}" should match`);
+		}
+	});
+
+	it("flags a corrupted name — the reason this exists", () => {
+		// A tone readout that was learned as the name of the DVD input.
+		assert.equal(matchesSpecValue("SLI", "10", "Bass : +"), false);
+		assert.equal(matchesSpecValue("SLI", "10", "Volume"), false);
+	});
+
+	it("also flags honest relabels, which is why it must never veto", () => {
+		// The receiver calls 2E "BT AUDIO" where the spec says "BLUETOOTH", and shows
+		// a station name for the DAB input. Both are real and must survive; they are
+		// only worth a second reading (see runSweep).
+		assert.equal(matchesSpecValue("SLI", "2E", "BT AUDIO"), false);
+		assert.equal(matchesSpecValue("SLI", "33", "TEDDY"), false);
+	});
+
+	it("says nothing about a value the spec does not know", () => {
+		assert.deepEqual(specValueLabels("SLI", "ZZ"), []);
+		assert.equal(matchesSpecValue("SLI", "ZZ", "anything"), false);
+		assert.equal(matchesSpecValue("NOPE", "10", "anything"), false);
+		assert.equal(matchesSpecValue("SLI", "10", ""), false);
+	});
+
+	it("compares case- and punctuation-insensitively", () => {
+		assert.equal(matchesSpecValue("SLI", "10", "bd/dvd"), true);
+		assert.equal(matchesSpecValue("SLI", "10", "BD-DVD"), true);
+		assert.equal(matchesSpecValue("SLI", "11", "strm box"), true);
 	});
 });

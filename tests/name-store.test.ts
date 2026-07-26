@@ -157,16 +157,16 @@ describe("name-store input hardening", () => {
 
 		// A code already tracked must still accept a new name.
 		const known = Object.keys(stored)[0]!;
-		assert.equal(recordSli(host, known, hex("Renamed")), true);
+		assert.equal(recordSli(host, known, hex("Renamed")), "doubtful", "stored, but worth a second reading");
 		assert.equal(nameFor(host, "SLI", known), "Renamed");
 	});
 
 	it("rejects empty names and codes", () => {
 		const host = "ns-empty";
-		assert.equal(recordSli(host, "", hex("Something")), false);
-		assert.equal(recordSli(host, "10", hex("")), false);
-		assert.equal(recordSli(host, "10", hex("   ")), false);
-		assert.equal(recordSli(host, "10", hex("\x00\x01")), false);
+		assert.equal(recordSli(host, "", hex("Something")), "rejected", "an empty code stores nothing");
+		assert.equal(recordSli(host, "10", hex("")), "rejected");
+		assert.equal(recordSli(host, "10", hex("   ")), "rejected");
+		assert.equal(recordSli(host, "10", hex("\x00\x01")), "rejected");
 	});
 
 	it("load() applies the same validation to previously persisted data", () => {
@@ -263,13 +263,13 @@ describe("name-store: readouts that only look like an input", () => {
 		// FLD query is settled by the first FLD to arrive, solicited or not.
 		const host = "ns-sweep";
 		noteDisplayChange(host, "MVL");
-		assert.equal(recordSli(host, "10", VOLUME), false);
-		assert.equal(recordSli(host, "10", BD_DVD), false, "the query answer is suspect either way");
+		assert.equal(recordSli(host, "10", VOLUME), "rejected");
+		assert.equal(recordSli(host, "10", BD_DVD), "rejected", "the query answer is suspect either way");
 	});
 
 	it("still records a swept name on a quiet display", () => {
 		const host = "ns-sweep-quiet";
-		assert.equal(recordSli(host, "10", BD_DVD), true);
+		assert.equal(recordSli(host, "10", BD_DVD), "learned");
 		assert.equal(nameFor(host, "SLI", "10"), "BD/DVD");
 	});
 });

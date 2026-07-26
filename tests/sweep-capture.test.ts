@@ -129,6 +129,10 @@ async function replaySweep(command: TrackedCommand): Promise<{
 		nameFor: (_h, _cmd, code) => code ?? "",
 		recordSli: (_h, code, fldHex) => {
 			names[code] = fldHex;
+			// The recording holds one FLD exchange per step, so the reading has to
+			// count as trustworthy here — otherwise the sweep would re-measure and
+			// consume exchanges the real device never answered.
+			return "learned";
 		},
 		setSliSweeping: () => {},
 	};
