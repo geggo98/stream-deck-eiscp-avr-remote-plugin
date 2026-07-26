@@ -4,14 +4,14 @@
 
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
 import {
 	COMMAND_REGISTRY,
 	getCommandDef,
 	getCommandsByType,
 	getValueName,
-	matchesSpecValue,
-	specValueLabels,
 } from "../src/adapter/eiscp/command-registry.ts";
+import { matchesSpecValue, specValueLabels } from "../src/adapter/eiscp/spec-labels.ts";
 
 describe("command registry", () => {
 	describe("structure validation", () => {
@@ -276,5 +276,36 @@ describe("spec labels for a value", () => {
 		assert.equal(matchesSpecValue("SLI", "10", "bd/dvd"), true);
 		assert.equal(matchesSpecValue("SLI", "10", "BD-DVD"), true);
 		assert.equal(matchesSpecValue("SLI", "11", "strm box"), true);
+	});
+});
+
+describe("the generated registry stays generated", () => {
+	it("exports exactly what the generator emits, and nothing hand-written", () => {
+		// This guard exists because the opposite happened: `specValueLabels` and
+		// `matchesSpecValue` — 52 lines of hand-written logic — had been appended to the
+		// end of the generated file. The next `npm run generate` deleted them without a
+		// word, and it only surfaced because the build then failed on a missing export.
+		// They now live in spec-labels.ts. Anything hand-written that lands here again
+		// is on borrowed time, so fail loudly instead.
+		const source = readFileSync(new URL("../src/adapter/eiscp/command-registry.ts", import.meta.url), "utf-8");
+		assert.match(source.split("\n")[0]!, /Auto-generated/, "the generated header must stay at the top");
+
+		const exported = [...source.matchAll(/^export (?:function|const|interface|type) (\w+)/gm)].map((m) => m[1]);
+		assert.deepEqual(
+			[...exported].sort(),
+			[
+				"COMMAND_REGISTRY",
+				"CommandActionType",
+				"CommandDef",
+				"CommandValueDef",
+				"SelectorCommandDef",
+				"StepperCommandDef",
+				"ToggleCommandDef",
+				"getCommandDef",
+				"getCommandsByType",
+				"getValueName",
+			],
+			"an unexpected export in a generated file means someone edited it by hand",
+		);
 	});
 });
