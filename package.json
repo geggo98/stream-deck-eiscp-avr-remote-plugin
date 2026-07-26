@@ -36,7 +36,8 @@
     "generate:icons": "tsx scripts/generate-icons.ts",
     "generate:manifest": "tsx scripts/generate-manifest.ts",
     "generate": "npm run generate:commands && npm run generate:icons && npm run generate:manifest",
-    "capture:responses": "tsx scripts/capture-command-responses.ts"
+    "capture:responses": "tsx scripts/capture-command-responses.ts",
+    "capture:names": "tsx scripts/capture-name-discovery.ts"
   },
   "type": "module",
   "devDependencies": {

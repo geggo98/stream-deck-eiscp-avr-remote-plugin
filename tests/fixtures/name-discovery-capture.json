@@ -1,0 +1,1306 @@
+{
+	"capturedAt": "2026-07-26T09:50:24.216Z",
+	"host": "10.2.0.32",
+	"port": 60128,
+	"model": "VSX-S520D",
+	"note": "Wire-level recording of the Auto-Discover sweeps, driven by the plugin's own runSweep state machine. State-changing capture: snapshot/restore included. Replayed by tests/helpers/mock-receiver.ts.",
+	"baseline": [
+		{
+			"command": "PWR",
+			"parameter": "01"
+		},
+		{
+			"command": "MVL",
+			"parameter": "02"
+		},
+		{
+			"command": "AMT",
+			"parameter": "00"
+		},
+		{
+			"command": "SLI",
+			"parameter": "10"
+		},
+		{
+			"command": "LMD",
+			"parameter": "80"
+		},
+		{
+			"command": "FLD",
+			"parameter": "42442F4456442020202020202032"
+		},
+		{
+			"command": "DIM",
+			"parameter": "00"
+		}
+	],
+	"sweeps": {
+		"SLI": {
+			"start": "10",
+			"steps": 12,
+			"names": {
+				"10": "42442F4456442020202020202032",
+				"11": "5354524D20424F58202020202032",
+				"12": "5456202020202020202020202032",
+				"22": "50484F4E4F202020202020202032",
+				"23": "4344202020202020202020202032",
+				"24": "464D2038372E35304D487A202D2D",
+				"29": "5553422020202020202020202032",
+				"33": "5445444459202020202020202D2D",
+				"01": "43424C2F53415420202020202032",
+				"02": "47414D4520202020202020202032",
+				"2B": "4E45542020202020202020202032",
+				"2E": "425420415544494F202020202032"
+			},
+			"frames": [
+				{
+					"dir": "out",
+					"ms": 0,
+					"iscp": "!1SLIQSTN",
+					"command": "SLI",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131534c495153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 51,
+					"iscp": "!1SLI10",
+					"command": "SLI",
+					"parameter": "10",
+					"hex": "2131534c4931301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 52,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 102,
+					"iscp": "!1FLD43424C2F53415420202020202032",
+					"command": "FLD",
+					"parameter": "43424C2F53415420202020202032",
+					"hex": "2131464c44343334323443324635333431353432303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 1177,
+					"iscp": "!1SLI01",
+					"command": "SLI",
+					"parameter": "01",
+					"hex": "2131534c4930311a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 1432,
+					"iscp": "!1LMD00",
+					"command": "LMD",
+					"parameter": "00",
+					"hex": "21314c4d4430301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 1440,
+					"iscp": "!1MOT00",
+					"command": "MOT",
+					"parameter": "00",
+					"hex": "21314d4f5430301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 1760,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 1875,
+					"iscp": "!1FLD43424C2F53415420202020202032",
+					"command": "FLD",
+					"parameter": "43424C2F53415420202020202032",
+					"hex": "2131464c44343334323443324635333431353432303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 1875,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 1927,
+					"iscp": "!1FLD47414D4520202020202020202032",
+					"command": "FLD",
+					"parameter": "47414D4520202020202020202032",
+					"hex": "2131464c44343734313444343532303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 3270,
+					"iscp": "!1SLI02",
+					"command": "SLI",
+					"parameter": "02",
+					"hex": "2131534c4930321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 3783,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 3839,
+					"iscp": "!1FLD47414D4520202020202020202032",
+					"command": "FLD",
+					"parameter": "47414D4520202020202020202032",
+					"hex": "2131464c44343734313444343532303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 3839,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 3974,
+					"iscp": "!1FLD5354524D20424F58202020202032",
+					"command": "FLD",
+					"parameter": "5354524D20424F58202020202032",
+					"hex": "2131464c44353335343532344432303432344635383230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 5025,
+					"iscp": "!1SLI11",
+					"command": "SLI",
+					"parameter": "11",
+					"hex": "2131534c4931311a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 5545,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 5603,
+					"iscp": "!1FLD5354524D20424F58202020202032",
+					"command": "FLD",
+					"parameter": "5354524D20424F58202020202032",
+					"hex": "2131464c44353335343532344432303432344635383230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 5603,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 5660,
+					"iscp": "!1FLD4344202020202020202020202032",
+					"command": "FLD",
+					"parameter": "4344202020202020202020202032",
+					"hex": "2131464c44343334343230323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 7122,
+					"iscp": "!1SLI23",
+					"command": "SLI",
+					"parameter": "23",
+					"hex": "2131534c4932331a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 7135,
+					"iscp": "!1LMDFF",
+					"command": "LMD",
+					"parameter": "FF",
+					"hex": "21314c4d4446461a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 7711,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 7767,
+					"iscp": "!1FLD4344202020202020202020202032",
+					"command": "FLD",
+					"parameter": "4344202020202020202020202032",
+					"hex": "2131464c44343334343230323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 7767,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 7818,
+					"iscp": "!1FLD5456202020202020202020202032",
+					"command": "FLD",
+					"parameter": "5456202020202020202020202032",
+					"hex": "2131464c44353435363230323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 9217,
+					"iscp": "!1SLI12",
+					"command": "SLI",
+					"parameter": "12",
+					"hex": "2131534c4931321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 9226,
+					"iscp": "!1LMD00",
+					"command": "LMD",
+					"parameter": "00",
+					"hex": "21314c4d4430301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 9878,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 9930,
+					"iscp": "!1FLD5456202020202020202020202032",
+					"command": "FLD",
+					"parameter": "5456202020202020202020202032",
+					"hex": "2131464c44353435363230323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 9930,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 9978,
+					"iscp": "!1FLD50484F4E4F202020202020202032",
+					"command": "FLD",
+					"parameter": "50484F4E4F202020202020202032",
+					"hex": "2131464c44353034383446344534463230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 11319,
+					"iscp": "!1SLI22",
+					"command": "SLI",
+					"parameter": "22",
+					"hex": "2131534c4932321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 11838,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 11892,
+					"iscp": "!1FLD50484F4E4F202020202020202032",
+					"command": "FLD",
+					"parameter": "50484F4E4F202020202020202032",
+					"hex": "2131464c44353034383446344534463230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 11892,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 11949,
+					"iscp": "!1FLD4441422020202020202020202032",
+					"command": "FLD",
+					"parameter": "4441422020202020202020202032",
+					"hex": "2131464c44343434313432323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13936,
+					"iscp": "!1SLI33",
+					"command": "SLI",
+					"parameter": "33",
+					"hex": "2131534c4933331a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13946,
+					"iscp": "!1FLD5445444459202020202020202D2D",
+					"command": "FLD",
+					"parameter": "5445444459202020202020202D2D",
+					"hex": "2131464c44353434353434343435393230323032303230323032303230324432441a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13946,
+					"iscp": "!1PRS00",
+					"command": "PRS",
+					"parameter": "00",
+					"hex": "213150525330301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13946,
+					"iscp": "!1TUN",
+					"command": "TUN",
+					"parameter": "",
+					"hex": "213154554e0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 14603,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 14657,
+					"iscp": "!1FLD5445444459202020202020202D2D",
+					"command": "FLD",
+					"parameter": "5445444459202020202020202D2D",
+					"hex": "2131464c44353434353434343435393230323032303230323032303230324432441a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 14657,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 14702,
+					"iscp": "!1FLD464D202020202020202020202032",
+					"command": "FLD",
+					"parameter": "464D202020202020202020202032",
+					"hex": "2131464c44343634443230323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 16288,
+					"iscp": "!1SLI24",
+					"command": "SLI",
+					"parameter": "24",
+					"hex": "2131534c4932341a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 16307,
+					"iscp": "!1FLD464D2038372E35304D487A202D2D",
+					"command": "FLD",
+					"parameter": "464D2038372E35304D487A202D2D",
+					"hex": "2131464c44343634443230333833373245333533303444343837413230324432441a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 16316,
+					"iscp": "!1TUN08750",
+					"command": "TUN",
+					"parameter": "08750",
+					"hex": "213154554e30383735301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 16965,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 17082,
+					"iscp": "!1FLD464D2038372E35304D487A202D2D",
+					"command": "FLD",
+					"parameter": "464D2038372E35304D487A202D2D",
+					"hex": "2131464c44343634443230333833373245333533303444343837413230324432441a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 17083,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 17138,
+					"iscp": "!1FLD4E45542020202020202020202032",
+					"command": "FLD",
+					"parameter": "4E45542020202020202020202032",
+					"hex": "2131464c44344534353534323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18845,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P",
+					"hex": "21314e4c534330501a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18855,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn",
+					"hex": "21314e4c5355302d54756e65496e1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18855,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora",
+					"hex": "21314e4c5355312d50616e646f72611a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18856,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify",
+					"hex": "21314e4c5355322d53706f746966791a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18856,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer",
+					"hex": "21314e4c5355332d4465657a65721a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18856,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal",
+					"hex": "21314e4c5355342d546964616c1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18856,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic",
+					"hex": "21314e4c5355352d416d617a6f6e4d757369631a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18856,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect",
+					"hex": "21314e4c5355362d466c617265436f6e6e6563741a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18856,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in",
+					"hex": "21314e4c5355372d4368726f6d6563617374206275696c742d696e1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18856,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi",
+					"hex": "21314e4c5355382d44545320506c61792d46691a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18865,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay",
+					"hex": "21314e4c5355392d416972506c61791a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18866,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server",
+					"hex": "21314e4c5355302d4d75736963205365727665721a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18866,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue",
+					"hex": "21314e4c5355312d506c61792051756575651a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18903,
+					"iscp": "!1NLTF3000000000C0000FFFF00NET",
+					"command": "NLT",
+					"parameter": "F3000000000C0000FFFF00NET",
+					"hex": "21314e4c54463330303030303030303043303030304646464630304e45541a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P",
+					"hex": "21314e4c534330501a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn",
+					"hex": "21314e4c5355302d54756e65496e1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora",
+					"hex": "21314e4c5355312d50616e646f72611a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify",
+					"hex": "21314e4c5355322d53706f746966791a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer",
+					"hex": "21314e4c5355332d4465657a65721a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal",
+					"hex": "21314e4c5355342d546964616c1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic",
+					"hex": "21314e4c5355352d416d617a6f6e4d757369631a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect",
+					"hex": "21314e4c5355362d466c617265436f6e6e6563741a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in",
+					"hex": "21314e4c5355372d4368726f6d6563617374206275696c742d696e1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi",
+					"hex": "21314e4c5355382d44545320506c61792d46691a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18911,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay",
+					"hex": "21314e4c5355392d416972506c61791a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18912,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server",
+					"hex": "21314e4c5355302d4d75736963205365727665721a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18912,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue",
+					"hex": "21314e4c5355312d506c61792051756575651a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18923,
+					"iscp": "!1SLI2B",
+					"command": "SLI",
+					"parameter": "2B",
+					"hex": "2131534c4932421a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18933,
+					"iscp": "!1LMD82",
+					"command": "LMD",
+					"parameter": "82",
+					"hex": "21314c4d4438321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 18942,
+					"iscp": "!1MOT01",
+					"command": "MOT",
+					"parameter": "01",
+					"hex": "21314d4f5430311a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 19595,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 19701,
+					"iscp": "!1FLD4E45542020202020202020202032",
+					"command": "FLD",
+					"parameter": "4E45542020202020202020202032",
+					"hex": "2131464c44344534353534323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 19701,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 19759,
+					"iscp": "!1FLD5553422020202020202020202032",
+					"command": "FLD",
+					"parameter": "5553422020202020202020202032",
+					"hex": "2131464c44353535333432323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 21278,
+					"iscp": "!1SLI29",
+					"command": "SLI",
+					"parameter": "29",
+					"hex": "2131534c4932391a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 21293,
+					"iscp": "!1LMD00",
+					"command": "LMD",
+					"parameter": "00",
+					"hex": "21314c4d4430301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 21293,
+					"iscp": "!1MOT00",
+					"command": "MOT",
+					"parameter": "00",
+					"hex": "21314d4f5430301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 21339,
+					"iscp": "!1NLTF00100000001010002FF00USB",
+					"command": "NLT",
+					"parameter": "F00100000001010002FF00USB",
+					"hex": "21314e4c54463030313030303030303031303130303032464630305553421a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 21358,
+					"iscp": "!1NLSU0-No Storage",
+					"command": "NLS",
+					"parameter": "U0-No Storage",
+					"hex": "21314e4c5355302d4e6f2053746f726167651a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 21808,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 21863,
+					"iscp": "!1FLD5553422020202020202020202032",
+					"command": "FLD",
+					"parameter": "5553422020202020202020202032",
+					"hex": "2131464c44353535333432323032303230323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 21863,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 21909,
+					"iscp": "!1FLD425420415544494F202020202032",
+					"command": "FLD",
+					"parameter": "425420415544494F202020202032",
+					"hex": "2131464c44343235343230343135353434343934463230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 22966,
+					"iscp": "!1SLI2E",
+					"command": "SLI",
+					"parameter": "2E",
+					"hex": "2131534c4932451a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 22975,
+					"iscp": "!1MOT01",
+					"command": "MOT",
+					"parameter": "01",
+					"hex": "21314d4f5430311a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 23420,
+					"iscp": "!1NLTF422000000000001FFFF00",
+					"command": "NLT",
+					"parameter": "F422000000000001FFFF00",
+					"hex": "21314e4c54463432323030303030303030303030314646464630301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 23430,
+					"iscp": "!1NLSC-P",
+					"command": "NLS",
+					"parameter": "C-P",
+					"hex": "21314e4c53432d501a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 23446,
+					"iscp": "!1NLTF422000000000001FFFF00",
+					"command": "NLT",
+					"parameter": "F422000000000001FFFF00",
+					"hex": "21314e4c54463432323030303030303030303030314646464630301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 23455,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P",
+					"hex": "21314e4c534330501a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 23574,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 23635,
+					"iscp": "!1FLD425420415544494F202020202032",
+					"command": "FLD",
+					"parameter": "425420415544494F202020202032",
+					"hex": "2131464c44343235343230343135353434343934463230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 23635,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP",
+					"hex": "495343500000001000000008010000002131534c4955500d"
+				},
+				{
+					"dir": "in",
+					"ms": 23693,
+					"iscp": "!1FLD42442F4456442020202020202032",
+					"command": "FLD",
+					"parameter": "42442F4456442020202020202032",
+					"hex": "2131464c44343234343246343435363434323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 24261,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//",
+					"hex": "21314e46492f2f1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 24673,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//",
+					"hex": "21314e46492f2f1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 25112,
+					"iscp": "!1SLI10",
+					"command": "SLI",
+					"parameter": "10",
+					"hex": "2131534c4931301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 25121,
+					"iscp": "!1LMD80",
+					"command": "LMD",
+					"parameter": "80",
+					"hex": "21314c4d4438301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 25744,
+					"iscp": "!1FLDQSTN",
+					"command": "FLD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a010000002131464c445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 25807,
+					"iscp": "!1FLD42442F4456442020202020202032",
+					"command": "FLD",
+					"parameter": "42442F4456442020202020202032",
+					"hex": "2131464c44343234343246343435363434323032303230323032303230323033321a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 25808,
+					"iscp": "!1SLI10",
+					"command": "SLI",
+					"parameter": "10",
+					"hex": "495343500000001000000008010000002131534c4931300d"
+				}
+			]
+		},
+		"LMD": {
+			"start": "80",
+			"steps": 9,
+			"names": {},
+			"frames": [
+				{
+					"dir": "out",
+					"ms": 0,
+					"iscp": "!1LMDQSTN",
+					"command": "LMD",
+					"parameter": "QSTN",
+					"hex": "49534350000000100000000a0100000021314c4d445153544e0d"
+				},
+				{
+					"dir": "in",
+					"ms": 186,
+					"iscp": "!1SLI10",
+					"command": "SLI",
+					"parameter": "10",
+					"hex": "2131534c4931301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 199,
+					"iscp": "!1LMD80",
+					"command": "LMD",
+					"parameter": "80",
+					"hex": "21314c4d4438301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 199,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 245,
+					"iscp": "!1FLD2020446F6C627920537572722020",
+					"command": "FLD",
+					"parameter": "2020446F6C627920537572722020",
+					"hex": "2131464c44323032303434364636433632373932303533373537323732323032301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 4714,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 4790,
+					"iscp": "!1LMD82",
+					"command": "LMD",
+					"parameter": "82",
+					"hex": "21314c4d4438321a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 4905,
+					"iscp": "!1FLD20445453204E657572616C3A5820",
+					"command": "FLD",
+					"parameter": "20445453204E657572616C3A5820",
+					"hex": "2131464c44323034343534353332303445363537353732363136433341353832301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 6415,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 6552,
+					"iscp": "!1LMD0F",
+					"command": "LMD",
+					"parameter": "0F",
+					"hex": "21314c4d4430461a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 6582,
+					"iscp": "!1FLD20202020204D6F6E6F2020202020",
+					"command": "FLD",
+					"parameter": "20202020204D6F6E6F2020202020",
+					"hex": "2131464c44323032303230323032303444364636453646323032303230323032301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 8116,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 8195,
+					"iscp": "!1LMD14",
+					"command": "LMD",
+					"parameter": "14",
+					"hex": "21314c4d4431341a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 8222,
+					"iscp": "!1FLD5375727220456E68616E63657220",
+					"command": "FLD",
+					"parameter": "5375727220456E68616E63657220",
+					"hex": "2131464c44353337353732373232303435364536383631364536333635373232301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 9819,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 9907,
+					"iscp": "!1LMDFF",
+					"command": "LMD",
+					"parameter": "FF",
+					"hex": "21314c4d4446461a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 9934,
+					"iscp": "!1FLD204175746F537572726F756E6420",
+					"command": "FLD",
+					"parameter": "204175746F537572726F756E6420",
+					"hex": "2131464c44323034313735373436463533373537323732364637353645363432301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 11520,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 11608,
+					"iscp": "!1LMD01",
+					"command": "LMD",
+					"parameter": "01",
+					"hex": "21314c4d4430311a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 11723,
+					"iscp": "!1MOT00",
+					"command": "MOT",
+					"parameter": "00",
+					"hex": "21314d4f5430301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 11736,
+					"iscp": "!1RAS00",
+					"command": "RAS",
+					"parameter": "00",
+					"hex": "213152415330301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 11736,
+					"iscp": "!1FLD2020202044697265637420202020",
+					"command": "FLD",
+					"parameter": "2020202044697265637420202020",
+					"hex": "2131464c44323032303230323034343639373236353633373432303230323032301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 13223,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 13415,
+					"iscp": "!1AEQ00",
+					"command": "AEQ",
+					"parameter": "00",
+					"hex": "213141455130301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13428,
+					"iscp": "!1LMD11",
+					"command": "LMD",
+					"parameter": "11",
+					"hex": "21314c4d4431311a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13457,
+					"iscp": "!1MOT00",
+					"command": "MOT",
+					"parameter": "00",
+					"hex": "21314d4f5430301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13541,
+					"iscp": "!1RAS00",
+					"command": "RAS",
+					"parameter": "00",
+					"hex": "213152415330301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13574,
+					"iscp": "!1SPL--",
+					"command": "SPL",
+					"parameter": "--",
+					"hex": "213153504c2d2d1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13596,
+					"iscp": "!1PCT00",
+					"command": "PCT",
+					"parameter": "00",
+					"hex": "213150435430301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 13659,
+					"iscp": "!1FLD2050757265204469726563742020",
+					"command": "FLD",
+					"parameter": "2050757265204469726563742020",
+					"hex": "2131464c44323035303735373236353230343436393732363536333734323032301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 15125,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 15219,
+					"iscp": "!1AEQ01",
+					"command": "AEQ",
+					"parameter": "01",
+					"hex": "213141455130311a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 15253,
+					"iscp": "!1LMD00",
+					"command": "LMD",
+					"parameter": "00",
+					"hex": "21314c4d4430301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 15278,
+					"iscp": "!1MOT01",
+					"command": "MOT",
+					"parameter": "01",
+					"hex": "21314d4f5430311a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 15391,
+					"iscp": "!1RAS00",
+					"command": "RAS",
+					"parameter": "00",
+					"hex": "213152415330301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 15401,
+					"iscp": "!1SPL--",
+					"command": "SPL",
+					"parameter": "--",
+					"hex": "213153504c2d2d1a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 15430,
+					"iscp": "!1PCT01",
+					"command": "PCT",
+					"parameter": "01",
+					"hex": "213150435430311a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 15460,
+					"iscp": "!1FLD2020202053746572656F20202020",
+					"command": "FLD",
+					"parameter": "2020202053746572656F20202020",
+					"hex": "2131464c44323032303230323035333734363537323635364632303230323032301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 16825,
+					"iscp": "!1LMDUP",
+					"command": "LMD",
+					"parameter": "UP",
+					"hex": "4953435000000010000000080100000021314c4d4455500d"
+				},
+				{
+					"dir": "in",
+					"ms": 16963,
+					"iscp": "!1LMD80",
+					"command": "LMD",
+					"parameter": "80",
+					"hex": "21314c4d4438301a0d0a"
+				},
+				{
+					"dir": "in",
+					"ms": 16974,
+					"iscp": "!1FLD2020446F6C627920537572722020",
+					"command": "FLD",
+					"parameter": "2020446F6C627920537572722020",
+					"hex": "2131464c44323032303434364636433632373932303533373537323732323032301a0d0a"
+				},
+				{
+					"dir": "out",
+					"ms": 18526,
+					"iscp": "!1LMD80",
+					"command": "LMD",
+					"parameter": "80",
+					"hex": "4953435000000010000000080100000021314c4d4438300d"
+				}
+			]
+		}
+	}
+}

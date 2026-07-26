@@ -26,6 +26,75 @@ export interface MockReceiverOptions {
 	echoSets?: boolean;
 	/** Artificial delay before every reply, in ms. */
 	replyDelayMs?: number;
+	/**
+	 * Replay a recorded exchange instead of synthesising answers: the frames
+	 * captured from the real unit by `npm run capture:names`.
+	 *
+	 * Behaviour the synthetic echo cannot express and the sweep depends on: the
+	 * input *name* (FLD) leads the input *code* by ~1 s on the real device, other
+	 * commands broadcast in between, and UP does not step numerically through the
+	 * codes. See tests/fixtures/name-discovery-capture.json.
+	 */
+	replay?: CapturedExchangeSource;
+	/**
+	 * Scale for the captured inter-frame delays. 0 (default) replays in captured
+	 * order but immediately, which keeps tests fast; 1 replays in real time.
+	 */
+	replayTimeScale?: number;
+}
+
+/** One frame as recorded by scripts/capture-name-discovery.ts. */
+export interface CapturedFrame {
+	dir: "out" | "in";
+	ms: number;
+	iscp: string;
+	command?: string;
+	parameter?: string;
+	hex?: string;
+}
+
+/** A recorded sweep (or any frame list) to replay. */
+export interface CapturedExchangeSource {
+	frames: CapturedFrame[];
+}
+
+/** An outbound message and the inbound frames the real device answered it with. */
+interface ReplayExchange {
+	key: string;
+	responses: { command: string; parameter: string; afterMs: number }[];
+}
+
+/**
+ * Group a captured frame list into request/response exchanges: every outbound
+ * frame owns the inbound frames that followed it until the next outbound one.
+ */
+function buildExchanges(frames: CapturedFrame[]): Map<string, ReplayExchange[]> {
+	const byKey = new Map<string, ReplayExchange[]>();
+	let current: { frame: CapturedFrame; exchange: ReplayExchange } | undefined;
+	const flush = (): void => {
+		if (!current) return;
+		const list = byKey.get(current.exchange.key) ?? [];
+		list.push(current.exchange);
+		byKey.set(current.exchange.key, list);
+		current = undefined;
+	};
+	for (const frame of frames) {
+		if (frame.dir === "out") {
+			flush();
+			const { command, parameter } = frame;
+			if (command === undefined || parameter === undefined) continue;
+			current = { frame, exchange: { key: `${command}${parameter}`, responses: [] } };
+			continue;
+		}
+		if (!current || frame.command === undefined || frame.parameter === undefined) continue;
+		current.exchange.responses.push({
+			command: frame.command,
+			parameter: frame.parameter,
+			afterMs: Math.max(0, frame.ms - current.frame.ms),
+		});
+	}
+	flush();
+	return byKey;
 }
 
 export interface ReceivedMessage {
@@ -109,9 +178,35 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		else send();
 	};
 
+	// Recorded exchanges, consumed in capture order per request key: the sweep
+	// sends the same request many times (SLI UP, FLD QSTN) and each repetition
+	// must get the answer the real device gave *that* time round.
+	const exchanges = options.replay ? buildExchanges(options.replay.frames) : undefined;
+	const timeScale = options.replayTimeScale ?? 0;
+
+	const replayNext = (socket: Socket, command: string, parameter: string): boolean => {
+		const queue = exchanges?.get(`${command}${parameter}`);
+		if (!queue || queue.length === 0) return false;
+		const exchange = queue.shift()!;
+		for (const response of exchange.responses) {
+			const send = () => {
+				if (!socket.destroyed) socket.write(frameReply(response.command, response.parameter));
+				state[response.command] = response.parameter;
+			};
+			const delay = Math.round(response.afterMs * timeScale);
+			if (delay > 0) setTimeout(send, delay).unref?.();
+			// Keep the captured order without the captured wait.
+			else setImmediate(send);
+		}
+		return true;
+	};
+
 	const handleMessage = (socket: Socket, command: string, parameter: string) => {
 		received.push({ command, parameter });
 		if (ignore.has(command)) return;
+		// Replay wins where a recording exists; anything not recorded falls through
+		// to the synthetic behaviour, so a replaying mock is still a usable receiver.
+		if (replayNext(socket, command, parameter)) return;
 
 		if (parameter === "QSTN") {
 			const value = state[command];
