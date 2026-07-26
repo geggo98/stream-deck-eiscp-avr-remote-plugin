@@ -19,6 +19,7 @@
  */
 import { streamDeck } from "@elgato/streamdeck";
 import { matchesSpecValue } from "../../adapter/eiscp/command-registry.ts";
+import { sanitiseDeviceText } from "../../adapter/eiscp/device-text.ts";
 import {
 	decodeDisplayText,
 	formatCommandValue,
@@ -65,18 +66,14 @@ const MAX_HOSTS = 32;
 /**
  * Strip control characters and clamp length.
  *
- * `decodeDisplayText` decodes the FLD hex as ASCII, which masks the high bit
- * rather than rejecting, so control bytes reach here intact and would otherwise
- * be persisted and pushed into Stream Deck titles.
+ * Delegates to the shared boundary in `device-text.ts`: the same policy now guards
+ * learned names and now-playing metadata, and a security boundary with two copies
+ * drifts. Control bytes genuinely arrive — the receiver prefixes its display
+ * payloads with 0x1a — and would otherwise be persisted and pushed into Stream
+ * Deck titles.
  */
 function sanitiseLearned(value: string, maxLength: number): string {
-	let out = "";
-	for (const ch of value) {
-		const code = ch.codePointAt(0)!;
-		if (code >= 0x20 && code !== 0x7f) out += ch;
-		if (out.length >= maxLength) break;
-	}
-	return out.trim();
+	return sanitiseDeviceText(value, maxLength);
 }
 
 interface HostState {
