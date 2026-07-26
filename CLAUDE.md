@@ -474,3 +474,19 @@ everything afterwards. Device quirks worth knowing:
   (`tests/fixtures/standby-behaviour-capture.json`, `npm run capture:standby`.)
 - Right after a power-on `LMD` reads `N/A` for a moment, and setting `MVL`
   auto-unmutes (`!1AMT00` arrives before the `!1MVL..` echo).
+- **Its timing is not deterministic, and that is not noise — it is the reason the
+  sweep polls instead of waiting a fixed delay.** Measured across the captured sweep
+  steps (`tests/fixtures/name-discovery-capture.json`):
+  - `SLI` codes arrive **1103–2044 ms** after `UP` — a 1.9× spread, and the worst case
+    already eats 68 % of `MAX_WAIT_MS` (3000 ms). Anything slower is indistinguishable
+    from "the value did not change".
+  - `LMD` codes arrive in **76–205 ms** — an order of magnitude faster, same command
+    shape — while their *names* lag 46–436 ms.
+  - One `LMD UP` was **never answered at all**, which is why the recorded sweep is 9
+    steps over 8 modes.
+  - For `SLI` the display name arrives ~50 ms after `UP` while the code takes 1–2 s, so
+    the name leads its code by a factor of 20–40. That is the mis-pairing the passive
+    learner cannot avoid and the reason the sweep queries `FLD` explicitly.
+
+  Consequence for tests: assert *relationships* and values read out of the fixture, not
+  counts typed in by hand — a re-capture may legitimately produce different totals.

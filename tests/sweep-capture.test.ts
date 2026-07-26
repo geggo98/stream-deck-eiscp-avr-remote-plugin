@@ -222,8 +222,13 @@ describe(`What the recorded sweep reports back (${capture.model})`, () => {
 		const modes = new Set(capturedCodeOrder(capture.sweeps["LMD"]!, "LMD"));
 
 		assert.equal(result.count, capture.sweeps["LMD"]!.steps, "steps as recorded");
-		assert.equal(modes.size, 8, "the captured unit offers eight listening modes");
 		assert.equal(result.options, modes.size, "options = the distinct modes reached");
+		// The property under test, not the numbers of one recording: this unit answered
+		// 9 steps over 8 modes, but the receiver's latency is not deterministic (measured
+		// across the captured steps: SLI codes arrive 1103–2044 ms after UP, LMD codes
+		// 76–205 ms, and one LMD UP was never answered at all), so a re-capture may well
+		// land on different totals. Derive them from the fixture and assert the
+		// relationship instead of pinning either count.
 		assert.ok(result.count > result.options, `${result.count} steps over ${result.options} options`);
 	});
 
