@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.0.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v0.3.0...v1.0.0) (2026-07-26)
+
+
+### Features
+
+* **names:** re-measure a doubtful input name and take the majority ([56a27d9](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/56a27d91eefc841312ceb9d847ec269826ddb036))
+* pre-fill new actions with the last used receiver ([39123f8](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/39123f8575f8b933c0f998e011231e8d9066b972))
+* show the receiver's power state on every key and dial ([9ab9b9f](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/9ab9b9f07c17e91f066c5813372e16f9bb522ee4))
+
+
+### Bug Fixes
+
+* **names:** stop learning the volume and tone readout as an input name ([9019974](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/90199747a73432dab751f2c2b16871778f8764f1))
+* repair plugin launch and make the PI usable when the plugin is down ([84e2033](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/84e20330b22e2dbfc2ad1634dba5a42e7534c34c))
+* **security:** bound and sanitise device-supplied data ([3be9098](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/3be9098713d786bdf1934dae6b657a027fe81603))
+* **security:** bound the eISCP receive path ([f5015e4](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/f5015e493190c64c2ddf5c1d648be07f509ec0c5))
+* **security:** guard against amplifying PI messages into unbounded work ([1cc713f](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/1cc713fd86daf313091d66b7093ec79f6e8b8ec1))
+* **security:** harden the dev-only scanner and DNS-SD tooling ([81d9822](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/81d98225441ba2159f207ff0a058283adb31e39b))
+* **security:** keep the plugin alive when a promise escapes ([6cb7357](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/6cb73574b15d73e13710c158a0d341368dae0d68))
+* **security:** never ship the Node inspector or TRACE logging ([c66c98d](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/c66c98d911966f6ee72a03a0f389f3800f1379d2))
+* **security:** validate and bound eISCP discovery input ([7d41a3c](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/7d41a3ceb9d9d677b057d45f88d405787938d24e))
+* **security:** validate outbound commands and the configured device IP ([611c152](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/611c152b31843296bccb9d961445f17bfa87a97f))
+* **security:** vendor sdpi-components and add a CSP to every PI ([06235b1](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/06235b15a26fc380d2f25f8bff3eb251663f02c0))
+* **test:** stop the sweep replay from starving its own socket reads ([62499fb](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/62499fb0ef20d963e8667bd33cc714b61fff5474))
+
+
+### Documentation
+
+* **security:** add the review report, threat model and dependency fixes ([5151e22](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/5151e22c0b8a5d0713bf70febc29d9026b95860b))
+
+
+### Chores
+
+* release 1.0.0 ([de25e81](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/de25e814ff91ead0df50afb4496c98c2becab92e))
+
 ## [0.3.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v0.2.0...v0.3.0) (2026-07-20)
 
 
