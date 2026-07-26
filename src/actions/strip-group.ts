@@ -22,16 +22,30 @@
  * window in which two of them believe they are the cover.
  */
 
-/** What one segment of a group draws. */
+/**
+ * What one segment of a group draws.
+ *
+ * The layout is built around where the space is actually short, and that is **not**
+ * the cover: album art is square, so it fits into part of a single segment with room
+ * left over. Long titles and artist names are the problem — beside a 92 px cover only
+ * ~100 px remain, about eleven characters, and "Taylor Swift" is twelve. Text also
+ * cannot flow from one segment to the next, since each is its own canvas.
+ *
+ * So every segment beyond the first buys **text width**: a line that had ~100 px next
+ * to the cover gets a full 200 px of its own, and a group with segments to spare
+ * splits one long title across several of them (see `splitTextAcross`).
+ */
 export type StripRole =
-	/** A lone dial: everything on one segment. */
+	/** A lone dial: cover, text and progress crammed onto one segment. */
 	| "all"
-	/** Cover art only. Several adjacent "cover" segments may share one picture. */
+	/** Cover art plus the progress bar and time, which fit in the space beside it. */
 	| "cover"
-	/** Title, artist, album. */
+	/** Title and artist together, full width. Used when a group has only two segments. */
 	| "text"
-	/** Progress bar and elapsed/total time. */
-	| "progress";
+	/** The track title, full width. Several adjacent ones share one split title. */
+	| "title"
+	| "artist"
+	| "album";
 
 export interface StripMember {
 	/** The action instance id (`action.id`). */
@@ -43,22 +57,28 @@ export interface StripMember {
 export interface StripAssignment {
 	role: StripRole;
 	/**
-	 * Which part of one shared picture this segment draws, when its group spreads a
-	 * cover across more than one segment. Absent means "draw the whole picture".
+	 * Which part of a split title this segment draws, when a group dedicates more than
+	 * one segment to the title. Feed it to `splitTextAcross`.
 	 */
-	slice?: { index: number; count: number };
+	textPart?: { index: number; count: number };
 	/** Position within the contiguous group, left to right, and the group's size. */
 	position: number;
 	groupSize: number;
 }
 
+/**
+ * No options yet, and one deliberately absent.
+ *
+ * An earlier draft had `spreadCover`, to stretch one picture across several cover
+ * segments. The layout only ever assigns **one** cover segment — a square cover fits
+ * inside a single 200x100 with room to spare, so widening it buys nothing — which
+ * made the flag unreachable. Unreachable configuration is worse than none, so it is
+ * gone. `composeCoverImage` still accepts a slice and is still tested for it, should a
+ * deliberate "one big picture" mode ever want it.
+ */
 export interface AssignOptions {
-	/**
-	 * Stretch one cover across every cover segment of a group instead of repeating it
-	 * on each. Off by default: it is the more surprising look, and it is the part that
-	 * depends on the SVG slice trick.
-	 */
-	spreadCover?: boolean;
+	/** Reserved; see the note above. */
+	readonly _?: never;
 }
 
 /**
@@ -87,20 +107,35 @@ export function contiguousGroups(members: readonly StripMember[]): StripMember[]
 /**
  * The role layout for a group of `size` segments.
  *
- * Deliberately explicit rather than computed: these are design decisions, and a
- * table is easier to argue with than an algorithm. Beyond three segments the extra
- * room goes to the cover, because that is the part that benefits from width — text
- * and a progress bar do not get better with a second segment.
+ * Deliberately a table rather than an algorithm: these are design decisions, and a
+ * table is easier to argue with.
+ *
+ *   1  all
+ *   2  cover | title+artist            <- the text line doubles from ~100 to 200 px
+ *   3  cover | title | artist
+ *   4  cover | title | artist | album
+ *   5+ cover | title x (size-3) | artist | album
+ *
+ * The cover segment carries the progress bar and the time as well, because a square
+ * cover leaves half its segment free — there is no reason to spend a whole segment on
+ * a bar. Everything above four goes to the title, since that is the string that
+ * actually runs out of room; two segments of readable type beat one segment at 10 px.
  */
 export function rolesForGroupSize(size: number): StripRole[] {
 	// Guard the non-numbers explicitly. Every comparison against NaN is false, so
-	// without this a NaN fell through to the last branch and produced a layout with
-	// *no* cover segment at all — `Array.from({length: NaN})` is an empty array, so
-	// the group would have shown text and a progress bar and nothing else.
+	// without this a NaN fell through to the general branch, where
+	// `Array.from({length: NaN})` yields an empty array — producing a layout with no
+	// cover segment at all.
 	if (!Number.isFinite(size) || size <= 1) return ["all"];
 	if (size === 2) return ["cover", "text"];
-	if (size === 3) return ["cover", "text", "progress"];
-	return [...Array.from<unknown, StripRole>({ length: size - 2 }, () => "cover"), "text", "progress"];
+	if (size === 3) return ["cover", "title", "artist"];
+	if (size === 4) return ["cover", "title", "artist", "album"];
+	return [
+		"cover",
+		...Array.from<unknown, StripRole>({ length: size - 3 }, () => "title"),
+		"artist",
+		"album",
+	];
 }
 
 /**
@@ -113,21 +148,24 @@ export function assignRoles(
 	members: readonly StripMember[],
 	options: AssignOptions = {},
 ): Map<string, StripAssignment> {
+	void options;
 	const out = new Map<string, StripAssignment>();
 	for (const group of contiguousGroups(members)) {
 		const roles = rolesForGroupSize(group.length);
-		const coverCount = roles.filter((r) => r === "cover").length;
-		let coverSeen = 0;
+		const titleCount = roles.filter((r) => r === "title").length;
+		let titleSeen = 0;
 		for (const [position, member] of group.entries()) {
 			const role = roles[position]!;
-			const spreads = options.spreadCover === true && role === "cover" && coverCount > 1;
+			// A split title only makes sense when more than one segment carries it;
+			// otherwise the segment shows the whole string and needs no part index.
+			const splits = role === "title" && titleCount > 1;
 			out.set(member.id, {
 				role,
 				position,
 				groupSize: group.length,
-				...(spreads ? { slice: { index: coverSeen, count: coverCount } } : {}),
+				...(splits ? { textPart: { index: titleSeen, count: titleCount } } : {}),
 			});
-			if (role === "cover") coverSeen++;
+			if (role === "title") titleSeen++;
 		}
 	}
 	return out;
