@@ -80,6 +80,8 @@ async function replaySweep(command: TrackedCommand): Promise<{
 	// Raw codes per command, the way ConnectionManager caches them for the sweep.
 	const codes: Record<string, string> = {};
 	const visited: string[] = [];
+	// Resolved by the next inbound frame; see sleepUntilFrame below.
+	let wakeOnFrame: (() => void) | undefined;
 	client.on("rawPacket", (direction, packet) => {
 		if (direction !== "received") return;
 		const message = "message" in packet ? packet.message : "";
@@ -87,17 +89,43 @@ async function replaySweep(command: TrackedCommand): Promise<{
 		if (!m) return;
 		codes[m[1]!] = m[2]!;
 		if (m[1] === command && visited[visited.length - 1] !== m[2]) visited.push(m[2]!);
+		wakeOnFrame?.();
 	});
 	client.on("error", () => {});
 	await client.connect();
 	await mock.waitForClient();
+
+	/**
+	 * Stand-in for the sweep's real waits (200 ms per poll, 1.5 s for a name).
+	 *
+	 * The captured delays are deliberately dropped (`replayTimeScale: 0`), so a
+	 * fixed pause here would be a bet on how fast the loopback happens to be — and
+	 * `setImmediate` lost that bet: on a loaded CI runner all 15 poll iterations
+	 * elapsed before the answer to `UP` arrived, so every step read the *previous*
+	 * code and the pairing came out shifted by one. Wait for the frame instead, and
+	 * fall through after a bounded pause for the steps where the receiver has
+	 * nothing more to say. The sweep's own poll loop supplies the patience; this
+	 * only has to not spend it all before the first frame lands.
+	 */
+	const QUIET_MS = 60;
+	const sleepUntilFrame = (): Promise<void> =>
+		new Promise<void>((resolve) => {
+			const finish = (): void => {
+				clearTimeout(timer);
+				wakeOnFrame = undefined;
+				resolve();
+			};
+			const timer = setTimeout(finish, QUIET_MS);
+			timer.unref?.();
+			wakeOnFrame = finish;
+		});
 
 	const names: Record<string, string> = {};
 	const deps: SweepDeps = {
 		send: (_h, cmd, param) => client.send(cmd, param),
 		query: (_h, cmd) => client.query(cmd),
 		getCached: (_h, cmd) => codes[cmd],
-		sleep: () => new Promise((resolve) => setImmediate(resolve)),
+		sleep: sleepUntilFrame,
 		nameFor: (_h, _cmd, code) => code ?? "",
 		recordSli: (_h, code, fldHex) => {
 			names[code] = fldHex;
