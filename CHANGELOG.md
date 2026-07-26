@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.3](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.2...v1.0.3) (2026-07-26)
+
+
+### Bug Fixes
+
+* **names:** stop learning a track title as the listening mode ([095e5be](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/095e5be1c5761a0900752c570e43a966a02f643d))
+
+
+### Documentation
+
+* correct the bundler-escape note — esbuild is not the only option ([bf21fb5](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/bf21fb51dc12717ba47785bef3cf10735df61d10))
+
+
+### Build System
+
+* **deps:** stop proposing TypeScript majors, and say when to stop ignoring them ([b000f49](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/b000f496816e1f31189a517eb12635c10f18080b))
+
 ## [1.0.2](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.1...v1.0.2) (2026-07-26)
 
 
