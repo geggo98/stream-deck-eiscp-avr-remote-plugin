@@ -164,6 +164,68 @@ describe("eISCP protocol layer", () => {
 				assert.equal(decoded.message, encoded.iscpMessage);
 			}
 		});
+
+		/**
+		 * The body is decoded as UTF-8, not ASCII, and these three tests are the
+		 * whole reason.
+		 *
+		 * Node's "ascii" decoder masks the high bit instead of rejecting it, so it
+		 * does not fail on non-ASCII — it silently *invents plausible letters*.
+		 * The spec declares NTI/NAT/NAL and NLS type U as "64 Unicode letters
+		 * [UTF-8 encoded]", i.e. exactly the fields a now-playing display reads.
+		 */
+		describe("text encoding of the message body", () => {
+			/** Build a real frame with an arbitrary body, bypassing encodePacket's ASCII path. */
+			function frameWithBody(body: Buffer): Buffer {
+				const header = Buffer.alloc(16);
+				header.write("ISCP", 0, "ascii");
+				header.writeUInt32BE(16, 4);
+				header.writeUInt32BE(body.length, 8);
+				header.writeUInt8(0x01, 12);
+				return Buffer.concat([header, body]);
+			}
+
+			it("decodes UTF-8 device text instead of masking the high bit", () => {
+				const body = Buffer.from("!1NTIBj\u00f6rk \u2013 J\u00f3ga\r", "utf8");
+				const packet = decodePacket(frameWithBody(body));
+
+				assert.equal(packet.message, "!1NTIBj\u00f6rk \u2013 J\u00f3ga\r");
+				// What the previous "ascii" decode did to the same bytes. Asserted as a
+				// property, not as a literal: the point is that masking yields *different,
+				// perfectly ordinary letters* that nothing downstream could detect — not
+				// which particular ones. (Spelling the mangled form out by hand is also how
+				// this test failed first time round: U+2013 masks to two control bytes.)
+				assert.notEqual(body.toString("ascii"), packet.message);
+				assert.match(body.toString("ascii"), /^!1NTIBj[^\u00f6]/, "the masked byte became another letter");
+				// The clearest single instance: "\u00f6" is C3 B6, and masking turns those two
+				// bytes into the two unremarkable characters "C6".
+				assert.equal(Buffer.from("Bj\u00f6rk", "utf8").toString("ascii"), "BjC6rk");
+			});
+
+			it("leaves pure-ASCII bodies byte-identical, so nothing else changes", () => {
+				// Covers every command code, every enumerated parameter, and the hex
+				// payloads of FLD and NJA — i.e. all traffic measured off the reference
+				// device. This is why the switch to UTF-8 moved no existing test.
+				for (const text of ["!1PWR01\r", "!1NJA10FFD8FFE0\u001a\r\n", "!1FLD1A437275656C\r"]) {
+					const body = Buffer.from(text, "utf8");
+					assert.equal(body.toString("utf8"), body.toString("ascii"));
+					assert.equal(decodePacket(frameWithBody(body)).message, text);
+				}
+			});
+
+			it("turns a malformed sequence into U+FFFD rather than a wrong letter", () => {
+				// A lone continuation byte cannot start a UTF-8 sequence. It must not
+				// become "T" (0xD4 & 0x7f), and it must not throw either: a peer that
+				// sends broken text may not take the parser down.
+				const body = Buffer.concat([Buffer.from("!1NTI", "ascii"), Buffer.from([0xd4]), Buffer.from("\r", "ascii")]);
+				const packet = decodePacket(frameWithBody(body));
+
+				assert.equal(packet.message, "!1NTI�\r");
+				// The command prefix is ASCII in every real frame, so the fields the
+				// parser slices out are unaffected by a broken byte in the parameter.
+				assert.equal(parseIscpMessage(packet.message).command, "NTI");
+			});
+		});
 	});
 
 	describe("parseIscpMessage", () => {

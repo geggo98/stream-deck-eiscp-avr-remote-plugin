@@ -425,7 +425,11 @@ export class EiscpTransport extends EventEmitter<EiscpTransportEvents> {
 		const rawPacket = this.receiveBuffer.consume(terminatorIdx + 1);
 
 		this.emit("packet", rawPacket);
-		this.emit("data", { kind: "raw-iscp", message: rawPacket.toString("ascii") });
+		// UTF-8 for the same reason as the enveloped path in `decodePacket`: "ascii"
+		// masks the high bit and turns device text into different letters instead of
+		// failing. This branch has no `rawMessage` to fall back on, so a wrong decode
+		// here is unrecoverable downstream.
+		this.emit("data", { kind: "raw-iscp", message: rawPacket.toString("utf8") });
 		this.consecutiveBadFrames = 0;
 		return true;
 	}

@@ -22,11 +22,15 @@ import { PacketHeader, Terminator, type Terminator as TerminatorType } from "./e
  * The `dataSize` header field is a full uint32, so a peer can declare up to 4
  * GiB. Without a ceiling, `decodePacket` only rejects buffers that are *too
  * short* for the declared size, and the transport therefore waits — and keeps
- * buffering — for a frame that never completes. Real traffic is tiny: the
- * longest response captured from the reference VSX-S520D is 66 bytes. 64 KiB
- * leaves ample room for the largest realistic payloads (the `NRI` receiver-info
- * XML, which this plugin does not currently query) while keeping the worst case
- * bounded.
+ * buffering — for a frame that never completes.
+ *
+ * Individual frames stay small even when the payload does not: the largest bodies
+ * measured off the reference VSX-S520D are 256 bytes (the `NJA` cover-art chunks,
+ * 246 hex characters each). A whole cover is ~45–97 KB, but it arrives as several
+ * hundred *separate* frames, so it is the accumulator in `jacket-art.ts` — not this
+ * limit — that has to bound it. 64 KiB therefore still leaves ample room per frame
+ * (the biggest realistic single body is the `NRI` receiver-info XML, which this
+ * plugin does not query) while keeping the worst case bounded.
  */
 export const MAX_FRAME_BYTES = 64 * 1024;
 
@@ -229,9 +233,19 @@ export function decodePacket(buffer: Buffer): EiscpPacket {
 		);
 	}
 
-	// Extract message; the terminator stays in place and is stripped by parseIscpMessage
+	// Extract message; the terminator stays in place and is stripped by parseIscpMessage.
+	//
+	// Decoded as UTF-8, not ASCII, and that distinction is load-bearing: Node's
+	// "ascii" decoder *masks* the high bit instead of rejecting it, so every byte
+	// ≥ 0x80 silently turns into a different, plausible-looking letter — "Björk"
+	// arrives as "BjC6rk". The spec declares the text-carrying commands (NTI, NAT,
+	// NAL, NLS type U, NLT's title bar) as "64 Unicode letters [UTF-8 encoded]", so
+	// masking corrupts exactly the fields a listener cares about. UTF-8 decodes
+	// pure-ASCII payloads byte-identically (which is every command code, every
+	// enumerated parameter, and the hex payloads of FLD and NJA), and turns a
+	// genuinely malformed sequence into U+FFFD rather than into a wrong letter.
 	const rawMessage = buffer.subarray(PacketHeader.HEADER_SIZE, PacketHeader.HEADER_SIZE + dataSize);
-	const message = rawMessage.toString("ascii");
+	const message = rawMessage.toString("utf8");
 
 	return {
 		header,
