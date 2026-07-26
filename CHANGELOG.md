@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.1...v1.0.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* **discover:** report what the sweep found, not how many steps it took ([2d59623](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/2d59623401b31e7f4d5cca5adaa62ded54b956a9))
+
 ## [1.0.1](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.0...v1.0.1) (2026-07-26)
 
 
