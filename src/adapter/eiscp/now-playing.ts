@@ -24,7 +24,7 @@
  */
 
 import { scopedLogger } from "../logging.ts";
-import type { ConnectionEvent } from "./connection-manager.ts";
+import { ConnectionManager, type ConnectionEvent } from "./connection-manager.ts";
 import { sanitiseDeviceText } from "./device-text.ts";
 import { JacketArtAccumulator, type ArtImage } from "./jacket-art.ts";
 
@@ -411,10 +411,16 @@ export class NowPlayingTracker {
 
 let singleton: NowPlayingTracker | undefined;
 
-/** Process-wide tracker, wired in `plugin.ts` next to the status tracker. */
-export function getNowPlayingTracker(deps?: NowPlayingDeps): NowPlayingTracker {
+/**
+ * Process-wide tracker.
+ *
+ * Created on first use against the real ConnectionManager, exactly like
+ * `getDeviceStatusTracker` — no explicit wiring step in `plugin.ts`, because the
+ * tracker costs nothing until an action subscribes (hosts nobody watches are dropped
+ * before any work happens).
+ */
+export function getNowPlayingTracker(deps: NowPlayingDeps = ConnectionManager.getInstance()): NowPlayingTracker {
 	if (!singleton) {
-		if (!deps) throw new Error("getNowPlayingTracker: first call must supply deps");
 		singleton = new NowPlayingTracker(deps);
 		singleton.start();
 	}
