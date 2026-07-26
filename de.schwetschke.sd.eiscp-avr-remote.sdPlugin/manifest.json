@@ -1,7 +1,7 @@
 {
   "Name": "eISCP AV Receiver Remote Control",
   "UUID": "de.schwetschke.sd.eiscp-avr-remote",
-  "Version": "1.0.0.0",
+  "Version": "1.0.2.0",
   "Author": "Stefan Schwetschke",
   "URL": "https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin",
   "Description": "Remote control for AV receivers that support the Integra Serial Control Protocol over Ethernet (eISCP). Compatible with many Pioneer, Onkyo and Integra network receivers. Independent project, not affiliated with or endorsed by these manufacturers.",
@@ -285,6 +285,22 @@
       "States": [
         {
           "Image": "imgs/actions/transport/key",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
+      "Name": "Now Playing",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.now-playing",
+      "Icon": "imgs/actions/now-playing/icon",
+      "Tooltip": "Show the current cover art, title and artist; press to play/pause.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/now-playing.html",
+      "States": [
+        {
+          "Image": "imgs/actions/now-playing/key",
           "TitleAlignment": "middle"
         }
       ]

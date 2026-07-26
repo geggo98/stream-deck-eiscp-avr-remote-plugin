@@ -36,6 +36,7 @@ import { SPEC_BY_ID, uuidFor, type DedicatedIdOfKind, type ToggleSpec } from "./
 import { nameFor, type TrackedCommand } from "./name-store.ts";
 import { handleDiscoverMessage } from "./discovery.ts";
 import { handleOptionNamesMessage } from "./pi-names.ts";
+import { NowPlayingKeyAction } from "./now-playing-key.ts";
 
 /** Learned-name actions (Auto-Discover UI); their commands are tracked by the name store. */
 type LearnedKeyId = "input-next" | "input-prev" | "mode-next" | "mode-prev";
@@ -535,6 +536,7 @@ export const DEDICATED_ACTIONS = [
 	new ModeNextAction(),
 	new ModePrevAction(),
 	new TransportAction(),
+	new NowPlayingKeyAction(),
 	new BassUpAction(),
 	new BassDownAction(),
 	new TrebleUpAction(),

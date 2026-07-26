@@ -15,7 +15,7 @@
  *  2. it carries the *standard* decorator context (`addInitializer`, `kind:"class"`),
  *     property literals that survive minification and that legacy emit has no
  *     equivalent for,
- *  3. it evaluates far enough to register all 25 actions.
+ *  3. it evaluates far enough to register every action in the manifest.
  *
  * And (4) the harness proves its own signal: the same probe against a deliberately
  * broken setup must fail. Without that, (3) would be a test that cannot fail — the
@@ -83,13 +83,21 @@ describe("built bundle", { skip: built ? false : "run `npm run build` first" }, 
 		);
 	});
 
-	it("registers all 25 actions when it runs", () => {
+	it("registers every action in the manifest when it runs", () => {
 		// `registerAction` throws for a UUID that is not in the manifest, and the
 		// "passive name discovery registered" line comes *after* every registration in
 		// plugin.ts — so reaching it is proof that all of them succeeded. A decorator
 		// regression that lost the UUIDs would stop short of it.
 		const { log } = runBundle({ withManifest: true });
 		assert.match(log, /passive name discovery registered/, `registration did not complete:\n${log}`);
+		// Derived, not typed in: this count used to be a literal in the test name and
+		// went stale the first time an action was added. The manifest and the catalog
+		// are both generated from the same source, so a mismatch here means the
+		// generator did not run.
+		const manifest = JSON.parse(
+			readFileSync(new URL("../de.schwetschke.sd.eiscp-avr-remote.sdPlugin/manifest.json", import.meta.url), "utf-8"),
+		) as { Actions: unknown[] };
+		assert.ok(manifest.Actions.length > 20, `expected the full action set, found ${manifest.Actions.length}`);
 		assert.doesNotMatch(log, /uncaught exception/i, `the bundle threw while loading:\n${log}`);
 		// Not connecting is expected: there is no Stream Deck to talk to here.
 		assert.match(log, /missing command line arguments/, "expected the connection to fail without Stream Deck");
