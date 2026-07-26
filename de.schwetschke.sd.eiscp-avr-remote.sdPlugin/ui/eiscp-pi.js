@@ -105,7 +105,17 @@
 			"</div>" +
 			'<sdpi-item label="Custom IP" id="customIpItem" style="display:none;">' +
 			'  <sdpi-textfield setting="customIp" placeholder="192.168.1.100"></sdpi-textfield>' +
-			"</sdpi-item>";
+			"</sdpi-item>" +
+			'<sdpi-item label="Standby">' +
+			'  <div class="pi-check">' +
+			'    <input type="checkbox" id="wakeOnPress" checked>' +
+			'    <label for="wakeOnPress">Wake the receiver when a key is pressed</label>' +
+			"  </div>" +
+			"</sdpi-item>" +
+			'<div class="pi-hint">' +
+			"  In standby the receiver ignores everything except power and input selection," +
+			"  so keys are shown dimmed and a press wakes it first." +
+			"</div>";
 
 		// The manual field must be reachable *without* the plugin: it used to appear
 		// only when the dropdown's "Custom IP…" entry was selected, and that entry
@@ -122,6 +132,39 @@
 				const field = document.querySelector('[setting="customIp"]');
 				if (field && typeof field.focus === "function") field.focus();
 			});
+		}
+
+		// The wake-on-press switch. Read straight from the global settings, but
+		// written back through the plugin (see src/actions/pi-wake.ts): a
+		// `global`-bound component would rewrite the whole settings object from a
+		// snapshot taken when this panel opened, and take the learned names with it.
+		const wake = c.querySelector("#wakeOnPress");
+		if (wake) {
+			try {
+				SDPIComponents.streamDeckClient
+					.getGlobalSettings()
+					.then((gs) => {
+						// Absent means on: waking is the default.
+						wake.checked = !gs || gs.wakeOnPress !== false;
+					})
+					.catch(() => {
+						/* leave it at the default */
+					});
+				wake.addEventListener("change", () => {
+					SDPIComponents.streamDeckClient.send("sendToPlugin", {
+						event: "setWakeOnPress",
+						value: wake.checked,
+					});
+				});
+				// A rejected write is answered with the value that is actually stored.
+				SDPIComponents.streamDeckClient.sendToPropertyInspector.subscribe((ev) => {
+					const p = ev && ev.payload ? ev.payload : ev;
+					if (!p || p.event !== "setWakeOnPress") return;
+					wake.checked = p.value !== false;
+				});
+			} catch (e) {
+				/* sdpi client not ready; the checkbox stays at its default */
+			}
 		}
 
 		// Keep dependent UI (the Auto-Discover button) in step with either input.

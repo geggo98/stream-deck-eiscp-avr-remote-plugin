@@ -6,23 +6,33 @@
 import { strict as assert } from "node:assert";
 import { afterEach, describe, it } from "node:test";
 import {
+	actionIdFromManifestId,
 	deviceIpToAdopt,
+	DIM_OPACITY,
 	explicitDeviceIp,
+	feedbackStatusStyle,
 	forgetActionSettings,
 	formatCommandValue,
+	generateColoredBg,
 	getRememberedActionSettings,
+	isDimmedFor,
+	keyImageFor,
 	markGlobalSettingsLoaded,
 	MAX_REMEMBERED_MODEL_LENGTH,
 	MAX_TRACKED_ACTION_SETTINGS,
 	nextToggleValue,
+	OFFLINE_TITLE,
 	parseTone,
 	presetLabel,
+	pressIsSwallowed,
 	readLastDevice,
 	rememberActionSettings,
 	resolveDeviceIp,
 	resolveParam,
 	setCachedGlobalSettings,
+	statusTitle,
 	toneFeedback,
+	wakeOnPressEnabled,
 	whenGlobalSettingsLoaded,
 } from "../src/actions/eiscp-base.ts";
 
@@ -335,5 +345,171 @@ describe("nextToggleValue", () => {
 	it("turns on for any other (unknown/transitional) value", () => {
 		assert.equal(nextToggleValue("77", cfg), "01");
 		assert.equal(nextToggleValue("", cfg), "01");
+	});
+});
+
+// --- receiver power state on the deck ---------------------------------------
+
+describe("isDimmedFor", () => {
+	it("leaves a reachable, powered receiver alone", () => {
+		assert.equal(isDimmedFor("on", "MVL"), false);
+		assert.equal(isDimmedFor("on", "PWR"), false);
+	});
+
+	it("dims a sleeping receiver's keys", () => {
+		assert.equal(isDimmedFor("standby", "MVL"), true);
+		assert.equal(isDimmedFor("standby", "SLI"), true);
+	});
+
+	it("never dims the power key in standby — it is the one key that works there", () => {
+		assert.equal(isDimmedFor("standby", "PWR"), false);
+	});
+
+	it("dims everything, power included, when the receiver is unreachable", () => {
+		assert.equal(isDimmedFor("offline", "PWR"), true);
+		assert.equal(isDimmedFor("offline", "MVL"), true);
+		assert.equal(isDimmedFor("offline", undefined), true);
+	});
+
+	it("leaves an unknown state undecorated rather than guessing", () => {
+		assert.equal(isDimmedFor("unknown", "MVL"), false);
+	});
+});
+
+describe("statusTitle", () => {
+	it("says so when the receiver cannot be reached", () => {
+		assert.equal(statusTitle("14", "offline"), OFFLINE_TITLE);
+		assert.equal(statusTitle(undefined, "offline"), OFFLINE_TITLE);
+	});
+
+	it("passes every other state through untouched, undefined included", () => {
+		// undefined means "restore the user's own title", and that has to survive.
+		for (const status of ["on", "standby", "unknown"] as const) {
+			assert.equal(statusTitle("14", status), "14");
+			assert.equal(statusTitle(undefined, status), undefined);
+		}
+	});
+
+	it("restores the real title when the receiver comes back", () => {
+		// The regression this guards: "Offline" is a function of the status, not a
+		// separate write, so it cannot outlive the outage.
+		assert.equal(statusTitle("Play", "offline"), OFFLINE_TITLE);
+		assert.equal(statusTitle("Play", "on"), "Play");
+	});
+});
+
+describe("actionIdFromManifestId", () => {
+	it("takes the catalog id — which is also the image folder — off the UUID", () => {
+		assert.equal(actionIdFromManifestId("de.schwetschke.sd.eiscp-avr-remote.power"), "power");
+		assert.equal(actionIdFromManifestId("de.schwetschke.sd.eiscp-avr-remote.eiscp-dial-indicator"), "eiscp-dial-indicator");
+	});
+
+	it("returns undefined for anything unusable", () => {
+		assert.equal(actionIdFromManifestId(undefined), undefined);
+		assert.equal(actionIdFromManifestId(""), undefined);
+		assert.equal(actionIdFromManifestId("trailing."), undefined);
+	});
+});
+
+describe("keyImageFor", () => {
+	const uuid = "de.schwetschke.sd.eiscp-avr-remote.mute";
+
+	it("names the dim variant while the receiver sleeps", () => {
+		assert.equal(keyImageFor(uuid, "standby", "AMT", 0), "imgs/actions/mute/key-dim.svg");
+		assert.equal(keyImageFor(uuid, "standby", "AMT", 1), "imgs/actions/mute/key-on-dim.svg");
+	});
+
+	it("falls back to the manifest image when everything is normal", () => {
+		// undefined is what setImage() wants for "use the declared image".
+		assert.equal(keyImageFor(uuid, "on", "AMT", 0), undefined);
+		assert.equal(keyImageFor(uuid, "unknown", "AMT", 1), undefined);
+	});
+
+	it("dims the power key only when the receiver is gone", () => {
+		const power = "de.schwetschke.sd.eiscp-avr-remote.power";
+		assert.equal(keyImageFor(power, "standby", "PWR", 0), undefined);
+		assert.equal(keyImageFor(power, "offline", "PWR", 0), "imgs/actions/power/key-dim.svg");
+	});
+
+	it("decorates nothing when the action id is unknown", () => {
+		assert.equal(keyImageFor(undefined, "offline", "MVL", 0), undefined);
+	});
+});
+
+describe("feedbackStatusStyle", () => {
+	it("is fully opaque and untitled when all is well", () => {
+		assert.deepEqual(feedbackStatusStyle("on", "MVL"), { opacity: 1 });
+	});
+
+	it("dims a sleeping receiver's touch strip without renaming it", () => {
+		assert.deepEqual(feedbackStatusStyle("standby", "MVL"), { opacity: DIM_OPACITY });
+	});
+
+	it("dims and labels an unreachable one", () => {
+		assert.deepEqual(feedbackStatusStyle("offline", "MVL"), { opacity: DIM_OPACITY, title: OFFLINE_TITLE });
+	});
+
+	it("always states an opacity, so returning to normal is never implicit", () => {
+		// The layout keeps its last value; omitting it would leave a strip dimmed.
+		for (const status of ["on", "standby", "offline", "unknown"] as const) {
+			assert.equal(typeof feedbackStatusStyle(status, "MVL").opacity, "number");
+		}
+	});
+});
+
+describe("generateColoredBg", () => {
+	const fillOf = (dataUri: string): string => {
+		const svg = Buffer.from(dataUri.replace("data:image/svg+xml;base64,", ""), "base64").toString("utf-8");
+		return /fill="([^"]+)"/.exec(svg)?.[1] ?? "";
+	};
+
+	it("uses the colour as given when the receiver is on", () => {
+		assert.equal(fillOf(generateColoredBg("#4CAF50", "on", "AMT")), "#4CAF50");
+		// Default argument: unchanged behaviour for callers that do not care.
+		assert.equal(fillOf(generateColoredBg("#4CAF50")), "#4CAF50");
+	});
+
+	it("darkens it while the receiver is not listening", () => {
+		assert.equal(fillOf(generateColoredBg("#4CAF50", "standby", "AMT")), "#1E4620");
+		assert.equal(fillOf(generateColoredBg("#F44336", "offline", "AMT")), "#621B16");
+	});
+
+	it("passes an unparseable colour through instead of throwing", () => {
+		assert.equal(fillOf(generateColoredBg("red", "offline", "AMT")), "red");
+	});
+});
+
+describe("pressIsSwallowed", () => {
+	it("knows which commands a sleeping receiver acts on", () => {
+		// Measured on the reference unit: PWR works, SLI even wakes it.
+		assert.equal(pressIsSwallowed("standby", "PWR"), false);
+		assert.equal(pressIsSwallowed("standby", "SLI"), false);
+		assert.equal(pressIsSwallowed("standby", "MVL"), true);
+		assert.equal(pressIsSwallowed("standby", "AMT"), true);
+		assert.equal(pressIsSwallowed("standby", "LMD"), true);
+	});
+
+	it("is only about standby — an offline receiver fails loudly on its own", () => {
+		assert.equal(pressIsSwallowed("offline", "MVL"), false);
+		assert.equal(pressIsSwallowed("on", "MVL"), false);
+		assert.equal(pressIsSwallowed("unknown", "MVL"), false);
+	});
+});
+
+describe("wakeOnPressEnabled", () => {
+	afterEach(() => setCachedGlobalSettings(undefined));
+
+	it("defaults to on: a key that does nothing is the problem being solved", () => {
+		assert.equal(wakeOnPressEnabled({}), true);
+		assert.equal(wakeOnPressEnabled({ wakeOnPress: true }), true);
+	});
+
+	it("is off only when explicitly switched off", () => {
+		assert.equal(wakeOnPressEnabled({ wakeOnPress: false }), false);
+	});
+
+	it("reads the shared cache when asked without an argument", () => {
+		setCachedGlobalSettings({ wakeOnPress: false });
+		assert.equal(wakeOnPressEnabled(), false);
 	});
 });

@@ -69,6 +69,12 @@ An eISCP packet consists of a 16-byte header followed by the ISCP message:
 
 **Response format:** `!1PWR00` or `!1PWR01`
 
+**In standby (`PWR00`) the unit stays on the network** and answers queries
+normally, but SET commands are dropped **silently** — no echo and no state
+change, so only a follow-up query reveals it. Measured exception on the
+VSX-S520D: `SLI` (input selection) powers the unit on and is then applied. See
+`tests/fixtures/standby-behaviour-capture.json`.
+
 ---
 
 ### Master Volume (`MVL`)

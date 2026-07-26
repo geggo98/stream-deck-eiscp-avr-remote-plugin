@@ -6,8 +6,8 @@
 
 import {
 	action,
-	type DialAction,
 	type DidReceiveSettingsEvent,
+	type FeedbackPayload,
 	type KeyAction,
 	type SendToPluginEvent,
 	type WillAppearEvent,
@@ -154,16 +154,18 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		}
 		const command = this.displayCommand();
 		const mgr = ConnectionManager.getInstance();
-		const refresh = () =>
-			fireAndLog(
-				action.setTitle(nameFor(host, command, mgr.getCachedValue(host, command))),
-				this.logger,
-				"setTitle",
-			);
+		const refresh = (): void => {
+			const cached = mgr.getCachedValue(host, command);
+			this.paintKeyImage(action, command, [0]);
+			// "?" rather than an empty key while the receiver has not said anything yet.
+			this.paintKeyTitle(action, cached === undefined ? "?" : nameFor(host, command, cached));
+		};
 
-		// Re-render on a value change, or when a name is learned (FLD arrives).
+		// Re-render on a value change, when a name is learned (FLD arrives), and when
+		// the receiver's power state changes.
 		this.trackSub(action.id, mgr.onCommandUpdate(host, command, () => refresh()));
 		this.trackSub(action.id, mgr.onCommandUpdate(host, "FLD", () => refresh()));
+		this.watchStatus(action.id, host, refresh);
 
 		try {
 			await mgr.queryCommand(host, command);
@@ -171,15 +173,8 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 			refresh();
 		} catch (err) {
 			this.logger.error(`bindKey: query ${command} on ${host} failed: ${err}`);
-			if (fresh()) {
-				// Degrade visibly like the other bases: render from the cache if
-				// one exists, otherwise show "?" instead of a stale title.
-				if (mgr.getCachedValue(host, command) !== undefined) {
-					refresh();
-				} else {
-					fireAndLog(action.setTitle("?"), this.logger, "setTitle");
-				}
-			}
+			// refresh() already degrades to "?" when the cache is empty.
+			if (fresh()) refresh();
 		}
 		return settings;
 	}
@@ -303,26 +298,15 @@ export class TransportAction extends KeyActionBase<TransportSettings> {
 		return { command: "NTC", parameter: settings.transportKey || SPEC_BY_ID["transport"].parameter };
 	}
 
-	private setTransportTitle(action: KeyAction<TransportSettings>, settings: TransportSettings): void {
+	/**
+	 * The key's own label. Returned to the base rather than written here, so the
+	 * label, the "No IP" state and the receiver's power state all come out of one
+	 * ordered paint instead of racing each other — this key used to lose its label
+	 * whenever the base repainted after it.
+	 */
+	protected override statelessTitle(settings: TransportSettings): string {
 		const key = settings.transportKey || SPEC_BY_ID["transport"].parameter;
-		fireAndLog(action.setTitle(TRANSPORT_LABELS[key] ?? key), this.logger, "setTitle");
-	}
-
-	// Appear/settings both funnel through the base's (debounced) bindKey;
-	// overriding it keeps the transport label and the "No IP" state in one
-	// ordered place instead of racing a separately set title.
-	protected override async bindKey(
-		action: KeyAction<TransportSettings>,
-		settings: TransportSettings,
-	): Promise<TransportSettings> {
-		// Reason about what the base actually bound with, not the raw settings: on a
-		// freshly dropped key the base adopts the remembered receiver, and judging
-		// the raw settings would leave that key without its transport label.
-		const bound = await super.bindKey(action, settings);
-		if (resolveDeviceIp(bound)) {
-			this.setTransportTitle(action, bound);
-		}
-		return bound;
+		return TRANSPORT_LABELS[key] ?? key;
 	}
 }
 
@@ -345,26 +329,21 @@ export class VolumeDialAction extends DialActionBase<EiscpActionSettings> {
 		};
 	}
 
-	protected updateFeedback(
-		action: DialAction<EiscpActionSettings>,
+	protected buildFeedback(
 		cfg: DialConfig,
 		rawValue: string,
 		_settings: EiscpActionSettings,
 		pressOn: boolean,
-	): void {
+	): FeedbackPayload {
 		const num = parseInt(rawValue, 16);
 		const mvl = COMMAND_REGISTRY[cfg.command];
 		const max = mvl?.actionType === "stepper" ? mvl.maxValue : 80;
 		const percent = Math.round(((Number.isNaN(num) ? 0 : num) / max) * 100);
-		fireAndLog(
-			action.setFeedback({
-				value: Number.isNaN(num) ? rawValue : String(num),
-				title: pressOn ? "MUTED" : "Volume",
-				indicator: { value: Math.min(percent, 100), bar_fill_c: pressOn ? "#F44336" : "#4CAF50" },
-			}),
-			this.logger,
-			"setFeedback",
-		);
+		return {
+			value: Number.isNaN(num) ? rawValue : String(num),
+			title: pressOn ? "MUTED" : "Volume",
+			indicator: { value: Math.min(percent, 100), bar_fill_c: pressOn ? "#F44336" : "#4CAF50" },
+		};
 	}
 }
 
@@ -406,23 +385,18 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 		return ["FLD"];
 	}
 
-	protected updateFeedback(
-		action: DialAction<EiscpActionSettings>,
+	protected buildFeedback(
 		cfg: DialConfig,
 		rawValue: string,
 		settings: EiscpActionSettings,
 		pressOn: boolean,
-	): void {
+	): FeedbackPayload {
 		const host = resolveDeviceIp(settings);
-		fireAndLog(
-			action.setFeedback({
-				title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
-				// bind() never renders without a host; fall back defensively anyway.
-				value: host ? nameFor(host, this.command(), rawValue) : rawValue,
-			}),
-			this.logger,
-			"setFeedback",
-		);
+		return {
+			title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
+			// bind() never renders without a host; fall back defensively anyway.
+			value: host ? nameFor(host, this.command(), rawValue) : rawValue,
+		};
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, EiscpActionSettings>): Promise<void> {
@@ -474,26 +448,21 @@ abstract class ToneDialAction extends DialActionBase<EiscpActionSettings> {
 		};
 	}
 
-	protected updateFeedback(
-		action: DialAction<EiscpActionSettings>,
+	protected buildFeedback(
 		cfg: DialConfig,
 		rawValue: string,
 		_settings: EiscpActionSettings,
 		pressOn: boolean,
-	): void {
+	): FeedbackPayload {
 		const { percent, display } = toneFeedback(rawValue, this.component);
-		fireAndLog(
-			action.setFeedback({
-				title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
-				value: display,
-				indicator: {
-					value: percent,
-					bar_fill_c: pressOn ? "#9E9E9E" : "#4CAF50",
-				},
-			}),
-			this.logger,
-			"setFeedback",
-		);
+		return {
+			title: pressOn ? (cfg.pressLabel ?? "ON") : this.stripTitle,
+			value: display,
+			indicator: {
+				value: percent,
+				bar_fill_c: pressOn ? "#9E9E9E" : "#4CAF50",
+			},
+		};
 	}
 }
 
@@ -535,18 +504,13 @@ export class PresetDialAction extends DialActionBase<EiscpActionSettings> {
 		};
 	}
 
-	protected updateFeedback(
-		action: DialAction<EiscpActionSettings>,
+	protected buildFeedback(
 		_cfg: DialConfig,
 		rawValue: string,
 		_settings: EiscpActionSettings,
 		_pressOn: boolean,
-	): void {
-		fireAndLog(
-			action.setFeedback({ title: "Preset", value: presetLabel(rawValue) }),
-			this.logger,
-			"setFeedback",
-		);
+	): FeedbackPayload {
+		return { title: "Preset", value: presetLabel(rawValue) };
 	}
 }
 

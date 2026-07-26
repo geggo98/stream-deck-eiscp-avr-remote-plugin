@@ -6,9 +6,9 @@
  * Subscribes to press command for status display (e.g. mute indicator).
  */
 
-import { action, type DialAction } from "@elgato/streamdeck";
+import { action, type FeedbackPayload } from "@elgato/streamdeck";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
-import { type EiscpActionSettings, fireAndLog, resolveParam, formatCommandValue } from "./eiscp-base.ts";
+import { type EiscpActionSettings, resolveParam, formatCommandValue } from "./eiscp-base.ts";
 import { DialActionBase, type DialConfig } from "./eiscp-action-base.ts";
 
 interface DialSettings extends EiscpActionSettings {
@@ -39,16 +39,15 @@ export class EiscpDialAction extends DialActionBase<DialSettings> {
 		};
 	}
 
-	protected updateFeedback(
-		action: DialAction<DialSettings>,
+	protected buildFeedback(
 		cfg: DialConfig,
 		rawValue: string,
 		_settings: DialSettings,
 		pressOn: boolean,
-	): void {
+	): FeedbackPayload {
 		const label = formatCommandValue(cfg.command, rawValue);
 		const pressDef = cfg.pressCommand ? COMMAND_REGISTRY[cfg.pressCommand] : undefined;
 		const title = pressOn && pressDef ? pressDef.name.toUpperCase() : cfg.command;
-		fireAndLog(action.setFeedback({ value: label, title }), this.logger, "setFeedback");
+		return { value: label, title };
 	}
 }

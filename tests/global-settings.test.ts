@@ -153,4 +153,52 @@ describe("global-settings write funnel is the only writer", () => {
 		walk(src);
 		assert.deepEqual(offenders, [], "these must go through updateGlobalSettings instead");
 	});
+
+	/**
+	 * The same rule from the other side: a Property Inspector must not write the
+	 * global settings either.
+	 *
+	 * sdpi-components can, via its `global` attribute — and it writes the *whole*
+	 * object from the snapshot it took when the panel opened. A PI left open while
+	 * the plugin learns option names (its own Auto-Discover button does that) would
+	 * then revert them. So the wake-on-press switch sends a message instead, and
+	 * that message name has to keep matching on both sides.
+	 */
+	it("keeps the PI out of the global settings and its message name in step", () => {
+		const ui = fileURLToPath(new URL("../de.schwetschke.sd.eiscp-avr-remote.sdPlugin/ui", import.meta.url));
+		const ours: string[] = [];
+		const walk = (dir: string): void => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				const full = join(dir, entry.name);
+				// vendor/ is the third-party bundle; it may contain anything.
+				if (entry.isDirectory()) {
+					if (entry.name !== "vendor") walk(full);
+					continue;
+				}
+				if (entry.name.endsWith(".js")) ours.push(full);
+			}
+		};
+		walk(ui);
+		assert.ok(ours.length > 0, "found the PI scripts");
+
+		for (const file of ours) {
+			const body = readFileSync(file, "utf8");
+			assert.ok(
+				!/\bsetGlobalSettings\s*\(/.test(body),
+				`${file.slice(ui.length + 1)} writes the global settings directly`,
+			);
+			// The `global` attribute on a setting-bound component does the same thing.
+			assert.ok(
+				!/<sdpi-[a-z]+[^>]*\sglobal[\s>]/.test(body),
+				`${file.slice(ui.length + 1)} binds a component to a global setting`,
+			);
+		}
+
+		const pi = readFileSync(join(ui, "eiscp-pi.js"), "utf8");
+		const handler = readFileSync(fileURLToPath(new URL("../src/actions/pi-wake.ts", import.meta.url)), "utf8");
+		// Hardcoded rather than imported: importing the handler would pull the SDK
+		// into the test process (see CLAUDE.md on log-file rotation).
+		assert.match(pi, /"setWakeOnPress"/, "the PI sends the wake-setting message");
+		assert.match(handler, /WAKE_SETTING_EVENT = "setWakeOnPress"/, "and the plugin listens for that name");
+	});
 });

@@ -7,9 +7,9 @@
  * Subscribes to press command for status display (e.g. mute indicator).
  */
 
-import { action, type DialAction } from "@elgato/streamdeck";
+import { action, type FeedbackPayload } from "@elgato/streamdeck";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
-import { type EiscpActionSettings, fireAndLog, resolveParam, formatCommandValue } from "./eiscp-base.ts";
+import { type EiscpActionSettings, resolveParam, formatCommandValue } from "./eiscp-base.ts";
 import { DialActionBase, type DialConfig } from "./eiscp-action-base.ts";
 
 interface DialIndicatorSettings extends EiscpActionSettings {
@@ -49,13 +49,12 @@ export class EiscpDialIndicatorAction extends DialActionBase<DialIndicatorSettin
 		};
 	}
 
-	protected updateFeedback(
-		action: DialAction<DialIndicatorSettings>,
+	protected buildFeedback(
 		cfg: DialConfig,
 		rawValue: string,
 		settings: DialIndicatorSettings,
 		pressOn: boolean,
-	): void {
+	): FeedbackPayload {
 		const cmd = COMMAND_REGISTRY[cfg.command];
 		const pressDef = cfg.pressCommand ? COMMAND_REGISTRY[cfg.pressCommand] : undefined;
 		const barColor = settings.barColor || "#4CAF50";
@@ -68,25 +67,16 @@ export class EiscpDialIndicatorAction extends DialActionBase<DialIndicatorSettin
 			const max = this.getMaxValue(cfg.command);
 			const percent = Math.round((num / max) * 100);
 			const fillColor = pressOn ? barMutedColor : barColor;
-			fireAndLog(
-				action.setFeedback({
-					value: `${num}`,
-					title,
-					indicator: { value: Math.min(percent, 100), bar_fill_c: fillColor },
-				}),
-				this.logger,
-				"setFeedback",
-			);
-		} else {
-			fireAndLog(
-				action.setFeedback({
-					value: formatCommandValue(cfg.command, rawValue),
-					title,
-					indicator: { value: 0, enabled: false },
-				}),
-				this.logger,
-				"setFeedback",
-			);
+			return {
+				value: `${num}`,
+				title,
+				indicator: { value: Math.min(percent, 100), bar_fill_c: fillColor },
+			};
 		}
+		return {
+			value: formatCommandValue(cfg.command, rawValue),
+			title,
+			indicator: { value: 0, enabled: false },
+		};
 	}
 }

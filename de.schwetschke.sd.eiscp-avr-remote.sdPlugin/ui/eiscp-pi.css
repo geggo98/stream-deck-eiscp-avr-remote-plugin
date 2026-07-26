@@ -20,6 +20,22 @@
 	line-height: 1.35;
 }
 
+/* A plain checkbox plus its label, for settings the plugin has to persist itself
+   (sdpi-components can only bind to a setting, and for a *global* one it would
+   rewrite the whole settings object — see src/actions/pi-wake.ts). Same reason as
+   above: the label needs an explicit colour. */
+.pi-check {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.pi-check label {
+	color: #d8d8d8;
+	font-size: 12px;
+	line-height: 1.3;
+}
+
 /* A hint that reports a problem the user needs to act on. */
 .pi-warn {
 	color: #f5a623;

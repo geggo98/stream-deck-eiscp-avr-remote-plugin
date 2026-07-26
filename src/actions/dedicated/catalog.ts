@@ -264,3 +264,25 @@ export function dedicatedPropertyInspector(spec: DedicatedSpec): string {
 export function onStateColor(command: string): string {
 	return command === "AMT" ? "#F44336" : "#4CAF50";
 }
+
+/**
+ * File name (no extension) of a key image variant.
+ *
+ * `dim` is the "receiver is not listening" look shown while it sits in standby or
+ * is unreachable. One naming rule shared by the generator (scripts/generate-icons.ts,
+ * which writes these files) and the runtime (`keyImageFor` in eiscp-base.ts, which
+ * hands the path to `setImage`), so the two cannot drift apart.
+ */
+export function keyImageName(onState: boolean, dim: boolean): string {
+	return `key${onState ? "-on" : ""}${dim ? "-dim" : ""}`;
+}
+
+/**
+ * Plugin-relative path of a key image variant, as `setImage` wants it.
+ *
+ * With the extension: the manifest may omit it (Stream Deck resolves it there),
+ * `setImage` takes a real file path.
+ */
+export function keyImagePath(id: string, onState: boolean, dim: boolean): string {
+	return `imgs/actions/${id}/${keyImageName(onState, dim)}.svg`;
+}

@@ -29,12 +29,23 @@ interface Subscription {
 
 type MessageObserver = (host: string, command: string, parameter: string) => void;
 
+/**
+ * What happened to a host's connection. `connect-failed` is deliberately
+ * distinct from `disconnected`: the first means we never reached the receiver
+ * (unplugged, wrong IP, blocked by the local-network firewall), the second that
+ * an established session went away.
+ */
+export type ConnectionEvent = "connected" | "disconnected" | "connect-failed";
+
+type ConnectionObserver = (host: string, event: ConnectionEvent) => void;
+
 export class ConnectionManager {
 	private static instance: ConnectionManager;
 	private clients: Map<string, EiscpClient> = new Map();
 	private stateCache: Map<string, Map<string, string>> = new Map();
 	private subscriptions: Subscription[] = [];
 	private messageObservers: MessageObserver[] = [];
+	private connectionObservers: ConnectionObserver[] = [];
 	private connecting: Map<string, Promise<EiscpClient>> = new Map();
 	private evictionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
@@ -78,6 +89,10 @@ export class ConnectionManager {
 			// close handler is only attached after a successful connect), so
 			// without this it would sit in the pool forever.
 			this.scheduleEviction(host);
+			// Same reason the eviction is needed: nothing else reports this, and
+			// "we could not reach the receiver at all" is exactly what the power
+			// state display has to distinguish from standby.
+			this.notifyConnection(host, "connect-failed");
 			throw err;
 		} finally {
 			this.connecting.delete(host);
@@ -119,10 +134,12 @@ export class ConnectionManager {
 			client.on("disconnected", () => {
 				logger.warn(`Client disconnected from ${host}`);
 				this.scheduleEviction(host);
+				this.notifyConnection(host, "disconnected");
 			});
 
 			client.on("connected", () => {
 				this.cancelEviction(host);
+				this.notifyConnection(host, "connected");
 			});
 		} else {
 			logger.info(`Reconnecting existing client to ${host}:${port}`);
@@ -218,6 +235,33 @@ export class ConnectionManager {
 			const idx = this.messageObservers.indexOf(cb);
 			if (idx >= 0) this.messageObservers.splice(idx, 1);
 		};
+	}
+
+	/**
+	 * Observe connect/disconnect/connect-failure for every host.
+	 *
+	 * These already happened inside the pool (they drive eviction and the log);
+	 * they are published because no action can otherwise tell "the receiver is in
+	 * standby" from "the receiver is not there at all" — both look like a rejected
+	 * promise. Returns an unsubscribe function.
+	 */
+	addConnectionObserver(cb: ConnectionObserver): () => void {
+		this.connectionObservers.push(cb);
+		return () => {
+			const idx = this.connectionObservers.indexOf(cb);
+			if (idx >= 0) this.connectionObservers.splice(idx, 1);
+		};
+	}
+
+	/** A throwing observer must not stop delivery to the remaining ones. */
+	private notifyConnection(host: string, event: ConnectionEvent): void {
+		for (const observer of this.connectionObservers) {
+			try {
+				observer(host, event);
+			} catch (err) {
+				logger.error(`connection observer failed for ${host}/${event}: ${err}`);
+			}
+		}
 	}
 
 	private handleMessage(host: string, msg: DecodedMessage): void {

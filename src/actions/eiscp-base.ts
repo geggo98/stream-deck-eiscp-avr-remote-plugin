@@ -5,6 +5,8 @@
 import { isIP } from "node:net";
 
 import { COMMAND_REGISTRY, getValueName } from "../adapter/eiscp/command-registry.ts";
+import type { DeviceStatus } from "../adapter/eiscp/device-status.ts";
+import { keyImagePath } from "./dedicated/catalog.ts";
 
 /** JSON-compatible value (mirrors the SDK's JsonValue; undefined is allowed). */
 type JsonValue = string | number | boolean | null | undefined | JsonValue[] | { [key: string]: JsonValue };
@@ -36,6 +38,8 @@ export interface GlobalSettings {
 	/** The receiver most recently picked in any PI; pre-fills freshly added actions. */
 	lastDevice?: { host?: string; model?: string };
 	names?: SerializedNames;
+	/** Power the receiver on before sending a command it would sleep through. */
+	wakeOnPress?: boolean;
 	[key: string]: JsonValue;
 }
 
@@ -326,9 +330,147 @@ export function fireAndLog(
 	promise.catch((err) => logger.error(`${what} failed: ${err}`));
 }
 
-export function generateColoredBg(color: string): string {
-	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144"><rect width="144" height="144" fill="${color}"/></svg>`;
+// --- receiver power state on the deck ---------------------------------------
+//
+// A receiver in standby answers queries but silently drops sets, and an
+// unreachable one does not even do that (measured; see
+// tests/fixtures/standby-behaviour-capture.json). Both used to look exactly like
+// a working key. The rendering rule, in one place so no render path can differ:
+//
+//   on       – untouched
+//   standby  – the key is drawn asleep (dim image / dim touch strip)
+//   offline  – asleep *and* labelled, because it is the more serious case
+//
+// The decoration is deliberately a pure function of the status rather than a
+// separate "show offline" write: every render recomputes it, so nothing can stick
+// once the receiver comes back — a failure mode this plugin has already had twice.
+
+/** Title shown while the receiver cannot be reached at all. */
+export const OFFLINE_TITLE = "Offline";
+
+/**
+ * Opacity values a layout item accepts: the schema allows one decimal only
+ * (`@elgato/schemas` `Opacity`), which is worth stating here because this module
+ * must not import the SDK to say so.
+ */
+export type FeedbackOpacity = 0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1;
+
+/** Touch-strip opacity for a receiver that is not listening (matches the icons' dim). */
+export const DIM_OPACITY: FeedbackOpacity = 0.4;
+
+/**
+ * Whether a key steering `command` should look asleep.
+ *
+ * `PWR` is exempt in standby: it is the one command a sleeping receiver *does*
+ * honour, so dimming the Power key would claim the opposite of the truth. When
+ * the receiver is unreachable nothing works, power included.
+ */
+export function isDimmedFor(status: DeviceStatus, command?: string): boolean {
+	if (status === "offline") return true;
+	if (status === "standby") return command !== "PWR";
+	return false;
+}
+
+/** The title to show: the real one, or "Offline" when there is nothing to talk to. */
+export function statusTitle(base: string | undefined, status: DeviceStatus): string | undefined {
+	return status === "offline" ? OFFLINE_TITLE : base;
+}
+
+/**
+ * The catalog id of an action — which is also its image folder — from the UUID
+ * the SDK reports as `manifestId`.
+ */
+export function actionIdFromManifestId(manifestId: string | undefined): string | undefined {
+	if (!manifestId) return undefined;
+	const id = manifestId.split(".").pop();
+	return id || undefined;
+}
+
+/**
+ * Key image for a status, or `undefined` to fall back to the manifest image.
+ *
+ * `undefined` is the lit state on purpose: `setImage(undefined)` restores what the
+ * manifest declares, so the normal look needs no asset of its own and a user's own
+ * icon keeps working.
+ */
+export function keyImageFor(
+	manifestId: string | undefined,
+	status: DeviceStatus,
+	command?: string,
+	state: 0 | 1 = 0,
+): string | undefined {
+	const id = actionIdFromManifestId(manifestId);
+	if (!id || !isDimmedFor(status, command)) return undefined;
+	return keyImagePath(id, state === 1, true);
+}
+
+/**
+ * Commands a sleeping receiver still acts on — measured, not assumed
+ * (`tests/fixtures/standby-behaviour-capture.json`): `PWR` obviously, and `SLI`,
+ * because selecting an input powers the unit on by itself.
+ *
+ * Everything else is swallowed in standby, which is why a press needs either a
+ * wake-up first or honest feedback afterwards.
+ */
+export const STANDBY_HONOURED_COMMANDS: readonly string[] = ["PWR", "SLI"];
+
+/** Whether pressing this key now would visibly do nothing. */
+export function pressIsSwallowed(status: DeviceStatus, command: string): boolean {
+	return status === "standby" && !STANDBY_HONOURED_COMMANDS.includes(command);
+}
+
+/**
+ * Whether a press should power the receiver on first. Default on: a key that does
+ * nothing is the complaint this whole feature exists for, so opting *out* is the
+ * deliberate choice.
+ */
+export function wakeOnPressEnabled(gs: GlobalSettings = getCachedGlobalSettings()): boolean {
+	return gs.wakeOnPress !== false;
+}
+
+/** Persist the wake-on-press choice (through the shared funnel; see updateGlobalSettings). */
+export function setWakeOnPress(enabled: boolean): Promise<void> {
+	return updateGlobalSettings((current) =>
+		wakeOnPressEnabled(current) === enabled ? undefined : { ...current, wakeOnPress: enabled },
+	);
+}
+
+/**
+ * How a dial's touch strip is decorated. Always returns a concrete opacity: the
+ * layout keeps whatever it was last given, so "back to normal" has to be stated,
+ * not omitted.
+ */
+export function feedbackStatusStyle(
+	status: DeviceStatus,
+	command?: string,
+): { opacity: FeedbackOpacity; title?: string } {
+	const opacity = isDimmedFor(status, command) ? DIM_OPACITY : 1;
+	return status === "offline" ? { opacity, title: OFFLINE_TITLE } : { opacity };
+}
+
+/**
+ * Flat background for the generic toggle's key. A dimmed receiver gets the same
+ * colour drawn dark, matching the generated `key-dim.svg` variants.
+ */
+export function generateColoredBg(color: string, status: DeviceStatus = "on", command?: string): string {
+	const fill = isDimmedFor(status, command) ? darkenColor(color, DIM_BG_FACTOR) : color;
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144"><rect width="144" height="144" fill="${fill}"/></svg>`;
 	return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+/** Kept in step with DIM_FACTOR in scripts/generate-icons.ts. */
+const DIM_BG_FACTOR = 0.4;
+
+/** Scale a #rrggbb colour toward black; anything unparseable is passed through. */
+function darkenColor(hex: string, factor: number): string {
+	const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+	if (!m) return hex;
+	const channel = (part: string): string =>
+		Math.round(Number.parseInt(part, 16) * factor)
+			.toString(16)
+			.padStart(2, "0")
+			.toUpperCase();
+	return `#${channel(m[1]!)}${channel(m[2]!)}${channel(m[3]!)}`;
 }
 
 export function getToggleColor(command: string, isOn: boolean): string {

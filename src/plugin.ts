@@ -14,6 +14,7 @@ import {
 import * as nameStore from "./actions/dedicated/name-store";
 import { register as registerDiscovery } from "./actions/dedicated/discovery";
 import { ConnectionManager } from "./adapter/eiscp/connection-manager";
+import { getDeviceStatusTracker } from "./adapter/eiscp/device-status";
 import { setAdapterLogger } from "./adapter/logging";
 
 // TRACE makes the SDK dump every WebSocket frame, which means complete settings
@@ -60,6 +61,11 @@ setGlobalSettingsWriter((gs) => streamDeck.settings.setGlobalSettings(gs));
 
 // Always-on passive name discovery (learns option names from the receiver's display).
 registerDiscovery(ConnectionManager.getInstance());
+
+// Power/reachability tracking for the deck display. Started here so its message
+// observer is attached before the first frame can arrive; the per-host heartbeat
+// only runs while an action is actually watching that receiver.
+getDeviceStatusTracker();
 
 streamDeck.connect();
 

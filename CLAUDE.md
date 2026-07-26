@@ -147,6 +147,57 @@ only accepts known catalog ids, so typos fail to compile).
 - **Typecheck surface:** `npm run typecheck` uses `tsconfig.typecheck.json`
   (src + tests + scripts); the build's `tsconfig.json` covers src only.
 
+## Receiver power state on the deck
+
+Every key and dial reflects what the receiver actually is, because all three
+states used to look identical — and a press even produced a green checkmark for a
+command the receiver dropped:
+
+| state | key | dial | how it is known |
+|---|---|---|---|
+| **on** (`PWR 01`) | unchanged | unchanged | the `PWR` frame, immediately |
+| **standby** (`PWR 00`) | icon dimmed (`key-dim.svg`) | icon + texts at `DIM_OPACITY` | the `PWR` frame, immediately |
+| **offline** (unplugged, unreachable) | dimmed **+ title `Offline`** | dimmed + `Offline` | connect/send failure at once, else the heartbeat |
+
+- `src/adapter/eiscp/device-status.ts` holds both halves: `nextState` is a pure
+  reducer over everything observable (a `PWR` value, any message, connect,
+  disconnect, connect failure, a failed probe), and `DeviceStatusTracker` wires it
+  to the ConnectionManager's two observers plus a `PWR` heartbeat. Started in
+  `plugin.ts` next to the name discovery.
+- **State changes are event-driven, never polled for.** A `PWR` frame — including
+  the one the receiver sends after the plugin powers it on — flips every bound
+  action at once. `HEARTBEAT_MS` (30 s) exists only for the case nothing
+  announces: a receiver that vanishes leaves a half-open socket, and kernel TCP
+  keep-alive needs minutes. While offline it probes with a 5/10/30/60 s backoff,
+  so a receiver that comes back is picked up without a key press.
+- **Subscribing is how interest is declared**: `onStatus(host, cb)` starts that
+  host's heartbeat and the last unsubscribe stops it — a profile nobody looks at
+  costs nothing.
+- **The decoration is a pure function of the status inside the normal render**, not
+  a separate write. That is deliberate: `Offline` cannot outlive the outage,
+  because the next render recomputes it (`statusTitle`, `keyImageFor`,
+  `feedbackStatusStyle`). Stuck degraded titles have been a real bug here twice
+  (`3e0b685`), and the earlier fix was to add a clearing path — this removes the
+  need for one. Repaints always render from the ConnectionManager's **cache**; a
+  status change is not a value change, and querying an offline receiver only
+  stalls.
+- The **Power key is never dimmed in standby** — it is the one key that works
+  there. When the receiver is unreachable it dims like everything else.
+- Dials keep no state of their own: the five `buildFeedback` implementations return
+  a payload and `DialActionBase.sendFeedback` applies the decoration once. Every
+  item gets an **explicit** opacity, including `1`, because a layout keeps what it
+  was last given.
+- **Wake on press** (`GlobalSettings.wakeOnPress`, default on, switchable in every
+  PI): in standby a press first sends `PWR 01` and waits for the receiver's own
+  confirmation (`waitForStatus`, 3 s cap) before the real command. Best-effort by
+  design — a slow or failed wake still sends. With it switched off, a press that
+  the receiver will ignore shows `showAlert` instead of `showOk` (`reportPress`).
+- The PI's checkbox writes through `sendToPlugin` → `setWakeOnPress` →
+  `updateGlobalSettings`, **not** sdpi-components' `global` attribute: a
+  `global`-bound input keeps its own snapshot of the whole settings object and
+  writes all of it back, so toggling it in a PI that was open while the plugin
+  learned names would revert them. Same failure class as the funnel exists for.
+
 ## Security invariants
 
 The plugin parses unauthenticated LAN traffic, so the network-facing code carries
@@ -190,6 +241,20 @@ real device; echoes sets with UP/DOWN/TG semantics). Transport, client, and
 ConnectionManager behaviour tests run against it — prefer it over ad-hoc
 `net.createServer` mocks.
 
+**The double has a power state, and it is explicit.** `startMockReceiver`
+defaults to a receiver that is **on** (`power: "on"`, which overrides the
+captured map's `PWR 00`) because the fixture was recorded in standby while the
+old double still honoured every set — a receiver that behaves that way does not
+exist. The standby behaviour is selectable, since not every receiver is alike:
+
+- `power: "on" | "standby"` — `PWR` sets always work, so a test can wake it.
+- `standbySets: "ignore" | "echo" | "accept"` — dropped in silence (the measured
+  VSX-S520D), acknowledged with the *unchanged* value, or applied anyway.
+- `standbyWakeCommands` (default `["SLI"]`) — sets that power the unit on and are
+  then applied, which is what the real one does with an input change.
+- `silent: true` — connects and never answers (the half-open receiver).
+- `refuseConnections: true` — a port with nothing behind it (ECONNREFUSED).
+
 For behaviour the synthetic echo cannot express, the mock also **replays recorded
 wire traffic**: `startMockReceiver({ replay, replayTimeScale })` groups a captured
 frame list into request/response exchanges and answers each repetition of a
@@ -212,6 +277,16 @@ keeps the captured order but drops the captured waits, so CI stays fast).
 - The fixture contains whatever the display showed at capture time, including a
   radio station name where a tuner input was selected — re-capture rather than
   hand-editing if that matters.
+- **`npm run capture:standby`** (`scripts/capture-standby-behaviour.ts`) measures
+  what a set does in standby versus awake, as `query — set — wait — query`, so
+  "the receiver ignored it" is observed rather than assumed. Also state-changing
+  (`EISCP_ALLOW_STATE_CHANGES=1`, snapshot/restore, volume hard-capped at 2, and
+  the unit is held at that volume while awake). It re-establishes the power state
+  **before every probe** — the first version did not, and one `SLI` set woke the
+  unit and silently turned the rest of the "standby" phase into an awake one.
+- `tests/standby-capture.test.ts` asserts the recording itself (so the hardware
+  truth is executable, and a re-capture of a differently-behaving device fails
+  loudly) and then requires the mock's synthetic standby model to reproduce it.
 
 ## Property Inspector (PI) notes
 
@@ -308,6 +383,17 @@ everything afterwards. Device quirks worth knowing:
 - Ignores `DIR` (Direct) and `SPA`/`SPB` — queries to them time out; use
   `LMD` listening modes instead.
 - Keeps only **one eISCP connection**: a second connect makes it drop the
-  first. Never hold two connections in tests.
+  first. Never hold two connections in tests. Since the power-state heartbeat
+  arrived this bites harder: the plugin now reconnects on its own after ~5 s
+  (measured), so it takes the connection back from a CLI or capture script
+  instead of staying idle. Stop the plugin, do not just hope it is quiet.
 - Selecting the TUNER input (`SLI 26`) makes it report the active band
   (FM = `24` / AM = `25`), never `26` itself.
+- **In network standby it answers every query but drops sets in silence** — no
+  echo, no state change, nothing on the display. Measured, with one exception:
+  `SLI` (input selection) *powers the unit on* and is applied, which is why it
+  and `PWR` are the `STANDBY_HONOURED_COMMANDS`. A query after the set is the
+  only way to tell; the write itself succeeds either way.
+  (`tests/fixtures/standby-behaviour-capture.json`, `npm run capture:standby`.)
+- Right after a power-on `LMD` reads `N/A` for a moment, and setting `MVL`
+  auto-unmutes (`!1AMT00` arrives before the `!1MVL..` echo).

@@ -24,28 +24,43 @@ import {
 	type WillDisappearEvent,
 	streamDeck,
 } from "@elgato/streamdeck";
+import type { FeedbackPayload } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
+import { getDeviceStatusTracker, type DeviceStatus } from "../adapter/eiscp/device-status.ts";
 import { BindCoordinator, REBIND_DEBOUNCE_MS } from "./bind-coordinator.ts";
 import { handleDeviceListMessage, rememberDevice } from "./pi-devices.ts";
+import { handleWakeSettingMessage } from "./pi-wake.ts";
 import {
 	deviceIpToAdopt,
 	type EiscpActionSettings,
 	explicitDeviceIp,
+	feedbackStatusStyle,
 	fireAndLog,
 	forgetActionSettings,
 	getCachedGlobalSettings,
+	keyImageFor,
 	nextToggleValue,
+	pressIsSwallowed,
+	wakeOnPressEnabled,
 	readLastDevice,
 	rememberActionSettings,
 	resolveDeviceIp,
 	formatCommandValue,
 	generateColoredBg,
 	getToggleColor,
+	statusTitle,
 	UNCONFIGURED_TITLE,
 	waitForGlobalSettings,
 } from "./eiscp-base.ts";
+
+/**
+ * How long to wait for the receiver's own `PWR01` after waking it. Measured at
+ * ~1 s on a VSX-S520D; the unit also needs a moment before it accepts the next
+ * command, which this wait doubles as.
+ */
+const WAKE_TIMEOUT_MS = 3000;
 
 /** Behavior for a two-state on/off command (power, mute, ...). */
 export interface ToggleConfig {
@@ -83,6 +98,16 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	private readonly subs = new Map<string, (() => void)[]>();
 	/** Per-action bind generations + re-bind debounce (SDK-free, unit-tested). */
 	private readonly binds = new BindCoordinator(REBIND_DEBOUNCE_MS);
+	/** Receiver each action is currently bound to, so a render can ask for its status. */
+	private readonly hosts = new Map<string, string>();
+	/**
+	 * Last image written per action and state, so an unchanged one is not re-sent.
+	 *
+	 * Renders run on every value update — turning a volume dial writes a title per
+	 * tick — and the status image is the same for all of them. Skipping the repeats
+	 * keeps a rotation from also sending a `setImage` frame per tick.
+	 */
+	private readonly paintedImages = new Map<string, string>();
 
 	// Explicit scope string (class names are mangled by terser in release builds).
 	constructor(scope: string) {
@@ -109,7 +134,17 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 * bind's title/state with results from the old configuration.
 	 */
 	protected nextBindGeneration(actionId: string): number {
+		// Called exactly once at the start of every bind funnel, which makes it the
+		// one place that knows a fresh paint is about to happen: forget what was
+		// last drawn, so an appear after a profile switch (where Stream Deck resets
+		// the key to its manifest image) always writes rather than being skipped as
+		// unchanged.
+		this.forgetPaintedImages(actionId);
 		return this.binds.nextGeneration(actionId);
+	}
+
+	private forgetPaintedImages(actionId: string): void {
+		for (const state of [0, 1]) this.paintedImages.delete(`${actionId}:${state}`);
 	}
 
 	protected isCurrentBind(actionId: string, generation: number): boolean {
@@ -181,11 +216,105 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 		if (own) rememberDevice(own);
 	}
 
+	/**
+	 * Follow the receiver's power/reachability state for as long as this action is
+	 * bound to `host`, re-painting whenever it changes.
+	 *
+	 * `repaint` must render from what is already known (the ConnectionManager's
+	 * cache) rather than query: a status change is not a value change, and a
+	 * receiver that just went offline would only make the query time out.
+	 */
+	protected watchStatus(actionId: string, host: string, repaint: () => void): void {
+		this.hosts.set(actionId, host);
+		this.trackSub(
+			actionId,
+			getDeviceStatusTracker().onStatus(host, () => repaint()),
+		);
+	}
+
+	/** Current status of the receiver this action is bound to. */
+	protected statusFor(actionId: string): DeviceStatus {
+		const host = this.hosts.get(actionId);
+		return host ? getDeviceStatusTracker().getStatus(host) : "unknown";
+	}
+
+	/**
+	 * Power the receiver on if this command would otherwise be slept through.
+	 *
+	 * A receiver in standby drops most sets without a word (measured; see
+	 * `STANDBY_HONOURED_COMMANDS`), so the press would look successful and do
+	 * nothing. Waking first is what the user asked the key to do — switchable off
+	 * in the Property Inspector for anyone who does not want a key press to power
+	 * up their amplifier.
+	 *
+	 * Deliberately best-effort: a failed or slow wake still lets the command
+	 * through, so this never becomes a new way for a press to be swallowed.
+	 */
+	protected async wakeIfNeeded(host: string, command: string): Promise<void> {
+		const tracker = getDeviceStatusTracker();
+		if (!pressIsSwallowed(tracker.getStatus(host), command)) return;
+		if (!wakeOnPressEnabled()) return;
+		this.logger.debug(`waking ${host} before ${command}`);
+		try {
+			await ConnectionManager.getInstance().sendCommand(host, "PWR", "01");
+		} catch (err) {
+			this.logger.warn(`wake before ${command} failed: ${err}`);
+			return;
+		}
+		// The receiver announces the change itself; the tracker turns that frame into
+		// a status, so this waits for the device rather than for a fixed delay.
+		if (!(await tracker.waitForStatus(host, "on", WAKE_TIMEOUT_MS))) {
+			this.logger.warn(`${host} did not confirm power-on within ${WAKE_TIMEOUT_MS} ms; sending anyway`);
+		}
+	}
+
+	/**
+	 * Press feedback that does not lie: the checkmark means "the receiver acted on
+	 * it", not "the write succeeded". With waking switched off, a set sent into
+	 * standby is dropped silently, and `showOk` used to claim otherwise.
+	 */
+	protected reportPress(action: KeyAction<TSettings> | DialAction<TSettings>, command: string): void {
+		const swallowed = pressIsSwallowed(this.statusFor(action.id), command);
+		if (swallowed) {
+			this.logger.info(`${command} was sent while the receiver is in standby; it will be ignored`);
+			fireAndLog(action.showAlert(), this.logger, "showAlert");
+			return;
+		}
+		// showOk is keypad-only.
+		if (action.isKey()) fireAndLog(action.showOk(), this.logger, "showOk");
+	}
+
+	/**
+	 * Paint a key's status image. `state` matters for two-state actions: the state
+	 * that is not currently shown can become visible without another render, so
+	 * both have to be written.
+	 */
+	protected paintKeyImage(action: KeyAction<TSettings>, command: string | undefined, states: readonly (0 | 1)[]): void {
+		const status = this.statusFor(action.id);
+		for (const state of states) {
+			const image = keyImageFor(this.manifestId, status, command, state);
+			const key = `${action.id}:${state}`;
+			// "" stands for the manifest image, so "no image yet" and "back to the
+			// manifest image" are distinguishable.
+			if (this.paintedImages.get(key) === (image ?? "")) continue;
+			this.paintedImages.set(key, image ?? "");
+			// undefined restores the manifest image, i.e. the normal, lit look.
+			fireAndLog(action.setImage(image, { state }), this.logger, "setImage");
+		}
+	}
+
+	/** A key's title, with the "Offline" decoration applied. */
+	protected paintKeyTitle(action: KeyAction<TSettings>, base: string | undefined): void {
+		fireAndLog(action.setTitle(statusTitle(base, this.statusFor(action.id))), this.logger, "setTitle");
+	}
+
 	override async onWillDisappear(ev: WillDisappearEvent<TSettings>): Promise<void> {
 		this.clearSubs(ev.action.id);
 		// Invalidate pending binds and cancel a queued re-bind.
 		this.binds.invalidate(ev.action.id);
 		forgetActionSettings(ev.action.id);
+		this.hosts.delete(ev.action.id);
+		this.forgetPaintedImages(ev.action.id);
 	}
 
 	/**
@@ -194,6 +323,7 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 * onSendToPlugin (e.g. the learned-name cyclers) must call super.
 	 */
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, TSettings>): Promise<void> {
+		if (await handleWakeSettingMessage(ev)) return;
 		await handleDeviceListMessage(ev);
 	}
 }
@@ -212,16 +342,28 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 		const isOn = rawValue === cfg.onValue;
 		this.logger.debug(`render ${cfg.command}: ${rawValue} -> isOn=${isOn}`);
 		fireAndLog(action.setState(isOn ? 1 : 0), this.logger, "setState");
+		this.paintToggleImage(action, cfg, isOn);
+		// A title-less toggle (Power/Mute) passes undefined, which restores the
+		// user's own title — and clears a degraded one. statusTitle still gets to
+		// overrule it with "Offline".
+		this.paintKeyTitle(action, this.showTitle ? formatCommandValue(cfg.command, rawValue) : undefined);
+	}
+
+	/**
+	 * The key's picture, in whichever of the two styles this toggle uses: a flat
+	 * colour generated here, or the two State images from the manifest.
+	 */
+	private paintToggleImage(action: KeyAction<TSettings>, cfg: ToggleConfig, isOn: boolean): void {
+		const status = this.statusFor(action.id);
 		if (this.coloredBackground) {
-			fireAndLog(action.setImage(generateColoredBg(getToggleColor(cfg.command, isOn))), this.logger, "setImage");
+			const color = getToggleColor(cfg.command, isOn);
+			fireAndLog(action.setImage(generateColoredBg(color, status, cfg.command)), this.logger, "setImage");
+			return;
 		}
-		if (this.showTitle) {
-			fireAndLog(action.setTitle(formatCommandValue(cfg.command, rawValue)), this.logger, "setTitle");
-		} else {
-			// Title-less toggles (Power/Mute) may carry an error title from a
-			// degraded state; restore the user's configured title.
-			fireAndLog(action.setTitle(), this.logger, "setTitle");
-		}
+		// Both states: Stream Deck keeps a per-state image, and the state we are not
+		// showing right now becomes visible on the next value change without a
+		// render of its own.
+		this.paintKeyImage(action, cfg.command, [0, 1]);
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<TSettings>): Promise<void> {
@@ -276,6 +418,13 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			action.id,
 			mgr.onCommandUpdate(host, cfg.command, (raw) => this.render(action, cfg, raw)),
 		);
+		// Re-paint on a power/reachability change, from the cached value: the status
+		// changed, the value did not, and querying an offline receiver only stalls.
+		this.watchStatus(action.id, host, () => {
+			const cached = mgr.getCachedValue(host, cfg.command);
+			if (cached !== undefined) this.render(action, cfg, cached);
+			else this.renderWithoutValue(action, cfg);
+		});
 
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
@@ -286,8 +435,18 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 			if (!fresh()) return;
 			// Degrade visibly instead of showing a stale/empty key; render()
 			// restores the configured title on the next successful update.
-			fireAndLog(action.setTitle("?"), this.logger, "setTitle");
+			this.renderWithoutValue(action, cfg);
 		}
+	}
+
+	/**
+	 * The key when its value is unknown — the initial query failed, or a status
+	 * change arrived before any value did. Shows the state decoration and a "?"
+	 * where a value would be, so the key never looks like a working one.
+	 */
+	private renderWithoutValue(action: KeyAction<TSettings>, cfg: ToggleConfig): void {
+		if (!this.coloredBackground) this.paintKeyImage(action, cfg.command, [0, 1]);
+		this.paintKeyTitle(action, "?");
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<TSettings>): Promise<void> {
@@ -304,6 +463,7 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 		}
 		const mgr = ConnectionManager.getInstance();
 		try {
+			await this.wakeIfNeeded(host, cfg.command);
 			if (cfg.toggleValue) {
 				await mgr.sendCommand(host, cfg.command, cfg.toggleValue);
 			} else {
@@ -316,7 +476,7 @@ export abstract class ToggleActionBase<TSettings extends EiscpActionSettings> ex
 				}
 				await mgr.sendCommand(host, cfg.command, nextToggleValue(current, cfg));
 			}
-			fireAndLog(ev.action.showOk(), this.logger, "showOk");
+			this.reportPress(ev.action, cfg.command);
 		} catch (err) {
 			this.logger.error(`onKeyDown: toggle ${cfg.command} on ${host} failed: ${err}`);
 			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
@@ -335,8 +495,17 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 
 	protected abstract getKeyConfig(settings: TSettings): KeyConfig | undefined;
 
+	/**
+	 * Title for a key that shows no live state. `undefined` means "the user's own
+	 * title"; the transport key overrides this with its function's label.
+	 */
+	protected statelessTitle(_settings: TSettings): string | undefined {
+		return undefined;
+	}
+
 	protected render(action: KeyAction<TSettings>, cfg: KeyConfig, rawValue: string): void {
-		if (this.showsState) fireAndLog(action.setTitle(formatCommandValue(cfg.command, rawValue)), this.logger, "setTitle");
+		this.paintKeyImage(action, cfg.command, [0]);
+		if (this.showsState) this.paintKeyTitle(action, formatCommandValue(cfg.command, rawValue));
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<TSettings>): Promise<void> {
@@ -383,8 +552,15 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			return settings;
 		}
 		if (!this.showsState) {
-			// Clear a possible lingering "No IP" title now that an IP exists.
-			fireAndLog(action.setTitle(), this.logger, "setTitle");
+			// No value to show, but the receiver's state still applies: a transport
+			// key or a tone stepper is just as useless in standby as any other.
+			// Painting through the same helper also clears a lingering "No IP".
+			const paint = (): void => {
+				this.paintKeyImage(action, cfg.command, [0]);
+				this.paintKeyTitle(action, this.statelessTitle(settings));
+			};
+			this.watchStatus(action.id, host, paint);
+			paint();
 			return settings;
 		}
 		const mgr = ConnectionManager.getInstance();
@@ -393,6 +569,12 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 			action.id,
 			mgr.onCommandUpdate(host, cfg.command, (raw) => this.render(action, cfg, raw)),
 		);
+		// See ToggleActionBase.bindKey: re-paint from the cache, never re-query.
+		this.watchStatus(action.id, host, () => {
+			const cached = mgr.getCachedValue(host, cfg.command);
+			if (cached !== undefined) this.render(action, cfg, cached);
+			else this.renderWithoutValue(action, cfg);
+		});
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
 			if (!fresh()) return settings; // a newer bind owns the key now
@@ -400,9 +582,15 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		} catch (err) {
 			this.logger.error(`bindKey: query ${cfg.command} failed: ${err}`);
 			if (!fresh()) return settings;
-			fireAndLog(action.setTitle(cfg.command), this.logger, "setTitle");
+			this.renderWithoutValue(action, cfg);
 		}
 		return settings;
+	}
+
+	/** The key with its value unknown; the command name is the honest placeholder. */
+	private renderWithoutValue(action: KeyAction<TSettings>, cfg: KeyConfig): void {
+		this.paintKeyImage(action, cfg.command, [0]);
+		this.paintKeyTitle(action, cfg.command);
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<TSettings>): Promise<void> {
@@ -420,8 +608,9 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 		}
 		const mgr = ConnectionManager.getInstance();
 		try {
+			await this.wakeIfNeeded(host, cfg.command);
 			await mgr.sendCommand(host, cfg.command, cfg.parameter);
-			fireAndLog(ev.action.showOk(), this.logger, "showOk");
+			this.reportPress(ev.action, cfg.command);
 		} catch (err) {
 			this.logger.error(`onKeyDown: ${cfg.command} ${cfg.parameter} failed: ${err}`);
 			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
@@ -436,14 +625,45 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 
 	protected abstract getDialConfig(settings: TSettings): DialConfig | undefined;
 
-	/** Render the touch-strip feedback. Implemented per layout ($A1 text vs $B1 bar). */
-	protected abstract updateFeedback(
-		action: DialAction<TSettings>,
+	/**
+	 * Build the touch-strip feedback. Implemented per layout ($A1 text vs $B1 bar).
+	 *
+	 * Returns the payload instead of sending it, so the single sender below can
+	 * apply the receiver's state to every dial without five call sites having to
+	 * remember to.
+	 */
+	protected abstract buildFeedback(
 		cfg: DialConfig,
 		rawValue: string,
 		settings: TSettings,
 		pressOn: boolean,
-	): void;
+	): FeedbackPayload;
+
+	/**
+	 * Send a dial's feedback with the receiver's state applied.
+	 *
+	 * Every item gets an explicit opacity, including the normal one: the layout
+	 * keeps what it was last given, so returning to normal has to be said out loud
+	 * or a dimmed strip stays dimmed forever.
+	 */
+	protected sendFeedback(action: DialAction<TSettings>, cfg: DialConfig, payload: FeedbackPayload): void {
+		const { opacity, title } = feedbackStatusStyle(this.statusFor(action.id), cfg.command);
+		const decorated: FeedbackPayload = { ...payload, icon: { opacity } };
+		for (const key of ["title", "value"] as const) {
+			const item = payload[key];
+			// The five implementations all pass plain strings; wrap them so the opacity
+			// can ride along, and let "Offline" take over the title. An item that is
+			// already an object keeps its other properties.
+			const base = typeof item === "object" && item !== null ? item : typeof item === "string" ? { value: item } : {};
+			const override = key === "title" && title !== undefined ? { value: title } : {};
+			decorated[key] = { ...base, ...override, opacity };
+		}
+		const indicator = payload["indicator"];
+		if (indicator !== undefined && typeof indicator === "object") {
+			decorated["indicator"] = { ...indicator, opacity };
+		}
+		fireAndLog(action.setFeedback(decorated), this.logger, "setFeedback");
+	}
 
 	protected isPressOn(actionId: string, cfg: DialConfig): boolean {
 		const pressCmd = cfg.pressCommand;
@@ -511,9 +731,15 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		const mgr = ConnectionManager.getInstance();
 
 		const rerender = (raw: string) =>
-			this.updateFeedback(action, cfg, raw, settings, this.isPressOn(actionId, cfg));
+			this.sendFeedback(action, cfg, this.buildFeedback(cfg, raw, settings, this.isPressOn(actionId, cfg)));
 
 		this.trackSub(actionId, mgr.onCommandUpdate(host, cfg.command, rerender));
+		// Power/reachability changed: redraw from the cached value (see the key bases).
+		this.watchStatus(actionId, host, () => {
+			const cached = mgr.getCachedValue(host, cfg.command);
+			if (cached !== undefined) rerender(cached);
+			else this.sendFeedback(action, cfg, { title: "?", value: "" });
+		});
 
 		// Learned-name dials redraw when an FLD name event arrives, even though the
 		// main SLI/LMD value is unchanged — re-render from the cached main value.
@@ -554,7 +780,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			this.logger.error(`bind: query ${cfg.command} on ${host} failed: ${err}`);
 			if (!fresh()) return;
 			// Degrade visibly; the next live update overwrites this.
-			fireAndLog(action.setFeedback({ title: "?", value: "" }), this.logger, "setFeedback");
+			this.sendFeedback(action, cfg, { title: "?", value: "" });
 		}
 	}
 
@@ -576,6 +802,9 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		const param = ticks > 0 ? cfg.upParam : cfg.downParam;
 		const count = Math.abs(ticks);
 		try {
+			// Once for the whole rotation, not per tick: waking takes seconds and the
+			// ticks of one turn are a single user gesture.
+			await this.wakeIfNeeded(host, cfg.command);
 			for (let i = 0; i < count; i++) {
 				await mgr.sendCommand(host, cfg.command, param);
 			}
@@ -602,7 +831,11 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		}
 		const mgr = ConnectionManager.getInstance();
 		try {
+			await this.wakeIfNeeded(host, pressCommand);
 			await mgr.sendCommand(host, pressCommand, pressParam);
+			// Dials have no checkmark, but they do have the alert — so a press the
+			// receiver is going to ignore still says so instead of looking fine.
+			this.reportPress(ev.action, pressCommand);
 		} catch (err) {
 			this.logger.error(`onDialDown: ${pressCommand} ${pressParam} on ${host} failed: ${err}`);
 			fireAndLog(ev.action.showAlert(), this.logger, "showAlert");
