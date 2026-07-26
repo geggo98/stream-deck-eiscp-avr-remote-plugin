@@ -72,21 +72,35 @@ describe("role layout", () => {
 		assert.deepEqual(rolesForGroupSize(1), ["all"]);
 	});
 
-	it("splits two, three and more the way the design says", () => {
+	it("spends every extra segment on text, not on the cover", () => {
+		// The design point: a square cover fits inside one segment with room left over
+		// for the progress bar, so widening it buys nothing. Titles are what run out of
+		// space — beside a 92 px cover only ~100 px remain, about eleven characters.
 		assert.deepEqual(rolesForGroupSize(2), ["cover", "text"]);
-		assert.deepEqual(rolesForGroupSize(3), ["cover", "text", "progress"]);
-		// Beyond three, the extra room goes to the cover: text and a progress bar do
-		// not get better with a second segment, a picture does.
-		assert.deepEqual(rolesForGroupSize(4), ["cover", "cover", "text", "progress"]);
-		assert.deepEqual(rolesForGroupSize(6), ["cover", "cover", "cover", "cover", "text", "progress"]);
+		assert.deepEqual(rolesForGroupSize(3), ["cover", "title", "artist"]);
+		assert.deepEqual(rolesForGroupSize(4), ["cover", "title", "artist", "album"]);
+		// Beyond four the surplus goes to the title, which is the string that actually
+		// overflows: two segments of readable type beat one segment at 10 px.
+		assert.deepEqual(rolesForGroupSize(5), ["cover", "title", "title", "artist", "album"]);
+		assert.deepEqual(rolesForGroupSize(6), ["cover", "title", "title", "title", "artist", "album"]);
 	});
 
-	it("always assigns exactly one text and one progress segment above size one", () => {
-		for (let size = 2; size <= 8; size++) {
+	it("always has exactly one cover segment and never wastes one on a bar alone", () => {
+		for (let size = 1; size <= 8; size++) {
 			const roles = rolesForGroupSize(size);
 			assert.equal(roles.length, size, `size ${size}`);
-			assert.equal(roles.filter((r) => r === "text").length, 1, `size ${size}: one text segment`);
-			assert.equal(roles.filter((r) => r === "progress").length, size === 2 ? 0 : 1, `size ${size}`);
+			const covers = roles.filter((r) => r === "cover").length;
+			assert.equal(covers, size === 1 ? 0 : 1, `size ${size}: one cover segment (or "all")`);
+			assert.ok(
+				!roles.includes("text") || size === 2,
+				`size ${size}: the combined text line is only for a two-segment group`,
+			);
+		}
+	});
+
+	it("gives the title at least one full-width segment from three upwards", () => {
+		for (let size = 3; size <= 8; size++) {
+			assert.ok(rolesForGroupSize(size).includes("title"), `size ${size}`);
 		}
 	});
 
@@ -100,13 +114,33 @@ describe("role layout", () => {
 describe("assignRoles", () => {
 	it("assigns left to right by column, not by arrival", () => {
 		const assigned = assignRoles(members(2, 0, 1));
-		assert.deepEqual(rolesOf(assigned, ["dial-0", "dial-1", "dial-2"]), ["cover", "text", "progress"]);
+		assert.deepEqual(rolesOf(assigned, ["dial-0", "dial-1", "dial-2"]), ["cover", "title", "artist"]);
 	});
 
 	it("gives every member a position and the group size", () => {
 		const assigned = assignRoles(members(5, 6, 7));
 		assert.deepEqual(assigned.get("dial-5"), { role: "cover", position: 0, groupSize: 3 });
-		assert.deepEqual(assigned.get("dial-7"), { role: "progress", position: 2, groupSize: 3 });
+		assert.deepEqual(assigned.get("dial-7"), { role: "artist", position: 2, groupSize: 3 });
+	});
+
+	it("splits a long title across the segments that carry it", () => {
+		// The answer to the actual problem: a five-segment group gives the title two
+		// full-width segments instead of shrinking it to fit one.
+		const assigned = assignRoles(members(0, 1, 2, 3, 4));
+		assert.deepEqual(assigned.get("dial-1")!.textPart, { index: 0, count: 2 });
+		assert.deepEqual(assigned.get("dial-2")!.textPart, { index: 1, count: 2 });
+		// Non-title segments have nothing to split.
+		assert.equal(assigned.get("dial-0")!.textPart, undefined);
+		assert.equal(assigned.get("dial-3")!.textPart, undefined);
+	});
+
+	it("does not split a title that has a segment to itself", () => {
+		// A part index of 0-of-1 would send the whole string through the splitter for
+		// no reason.
+		for (const size of [3, 4]) {
+			const assigned = assignRoles(members(...Array.from({ length: size }, (_, i) => i)));
+			assert.equal(assigned.get("dial-1")!.textPart, undefined, `size ${size}`);
+		}
 	});
 
 	it("assigns each disjoint group independently", () => {
@@ -116,43 +150,18 @@ describe("assignRoles", () => {
 		assert.deepEqual(assigned.get("dial-5"), { role: "all", position: 0, groupSize: 1 });
 	});
 
-	it("does not spread the cover unless asked", () => {
-		// Spreading is the more surprising look and it depends on the SVG slice trick,
-		// so it stays off by default.
-		const assigned = assignRoles(members(0, 1, 2, 3));
-		assert.equal(assigned.get("dial-0")!.slice, undefined);
-		assert.equal(assigned.get("dial-1")!.slice, undefined);
-	});
-
-	it("slices one picture across the cover segments when spreading", () => {
-		const assigned = assignRoles(members(0, 1, 2, 3), { spreadCover: true });
-		assert.deepEqual(assigned.get("dial-0")!.slice, { index: 0, count: 2 });
-		assert.deepEqual(assigned.get("dial-1")!.slice, { index: 1, count: 2 });
-		// Only the cover segments slice; the text and progress ones have nothing to cut.
-		assert.equal(assigned.get("dial-2")!.slice, undefined);
-		assert.equal(assigned.get("dial-3")!.slice, undefined);
-	});
-
-	it("covers a spread picture exactly once: contiguous indices, no repeats", () => {
-		// The property that would show up as a duplicated or missing strip of cover.
-		const assigned = assignRoles(members(0, 1, 2, 3, 4, 5), { spreadCover: true });
-		const slices = [...assigned.values()].flatMap((a) => (a.slice ? [a.slice] : []));
-		assert.equal(slices.length, 4, "six segments -> four cover segments");
-		assert.ok(
-			slices.every((s) => s.count === 4),
-			"every slice must agree on how many pieces there are",
-		);
-		assert.deepEqual(
-			slices.map((s) => s.index).sort((a, b) => a - b),
-			[0, 1, 2, 3],
-		);
-	});
-
-	it("does not slice when a group has only one cover segment", () => {
-		// Slicing 1-of-1 would be a no-op that still went through the stretch path.
-		for (const size of [2, 3]) {
-			const assigned = assignRoles(members(...Array.from({ length: size }, (_, i) => i)), { spreadCover: true });
-			assert.equal(assigned.get("dial-0")!.slice, undefined, `size ${size}`);
+	it("no longer offers cover spreading, because the layout cannot reach it", () => {
+		// An earlier draft stretched one picture across several cover segments. The
+		// layout assigns exactly one cover segment — a square cover fits inside a single
+		// 200x100 with room to spare — so the option was unreachable configuration.
+		// composeCoverImage still slices and is still tested for it, should a deliberate
+		// "one big picture" mode ever want it.
+		for (let size = 1; size <= 6; size++) {
+			const assigned = assignRoles(members(...Array.from({ length: size }, (_, i) => i)));
+			assert.ok(
+				[...assigned.values()].every((a) => !("slice" in a)),
+				`size ${size}: no assignment carries a cover slice`,
+			);
 		}
 	});
 
@@ -187,7 +196,7 @@ describe("StripRegistry", () => {
 		// and neither of the survivors may be left drawing half a picture.
 		const reg = new StripRegistry();
 		for (const [id, column] of [["a", 0], ["b", 1], ["c", 2]] as const) reg.add("dev", id, column);
-		assert.deepEqual(rolesOf(reg.assignments("dev"), ["a", "b", "c"]), ["cover", "text", "progress"]);
+		assert.deepEqual(rolesOf(reg.assignments("dev"), ["a", "b", "c"]), ["cover", "title", "artist"]);
 
 		reg.remove("dev", "b");
 		const after = reg.assignments("dev");
