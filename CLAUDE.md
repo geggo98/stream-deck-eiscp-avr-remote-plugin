@@ -96,7 +96,18 @@ only accepts known catalog ids, so typos fail to compile).
 - **Build output ignored:** `*.sdPlugin/bin` is gitignored, plugin source is tracked
 - **Logging:** "info" by default; set `EISCP_DEBUG` to get "trace" (see
   `plugin.ts`). TRACE dumps every WebSocket frame, i.e. full settings objects,
-  LAN IPs and the learned-name map, into the plugin's log files.
+  LAN IPs and the learned-name map, into the plugin's log files. With music playing
+  it also means ~1 800 cover-art frames per second reaching the log path, so never
+  log a metadata payload — only counts, sizes and a truncated hash.
+- **Inbound text is decoded as UTF-8, not ASCII.** Node's `"ascii"` decoder *masks*
+  the high bit instead of rejecting it, so every byte ≥ 0x80 silently became a
+  different, plausible letter ("Björk" → "BjC6rk"). The spec declares the
+  text-carrying commands as "64 Unicode letters [UTF-8 encoded]". Three decode sites
+  share the rule (`decodePacket`, the raw-ISCP path in `transport.ts`, and the `FLD`
+  hex payload); pure-ASCII payloads decode byte-identically, which is why the switch
+  moved no existing test. `sanitiseDeviceText` (`device-text.ts`) is the single
+  sanitising boundary and filters C0/DEL rather than "non-ASCII" — an ASCII-only
+  filter would delete exactly what that fix preserves.
 - **No default device IP:** `resolveDeviceIp` returns `undefined` when neither
   the action settings nor the global settings carry an IP; actions then show
   "No IP" / alert and send nothing. There is deliberately no baked-in fallback.
@@ -234,6 +245,93 @@ command the receiver dropped:
   `global`-bound input keeps its own snapshot of the whole settings object and
   writes all of it back, so toggling it in a PI that was open while the plugin
   learned names would revert them. Same failure class as the funnel exists for.
+
+## Now-playing metadata and cover art
+
+Measured on the reference VSX-S520D under **AirPlay** on 2026-07-26, and several of
+these findings contradict what this file used to say. The numbers matter, so they are
+here rather than in a commit message.
+
+| Fact | Consequence |
+|---|---|
+| `NTI`/`NAT`/`NAL` **do** arrive unsolicited on every track change, ~90 ms apart | The old note "this firmware never sends NTI/NAT/NAL" came from a capture taken while *browsing a list*, not while playing. No polling is needed. |
+| The AirPlay-specific family `ATI`/`AAT`/`AAL`/`ATM`/`AST` ("Airplay Model Only") **times out on all five** | The NET/USB commands are the working path. A spec-derived implementation would have built the wrong one. |
+| The **cover arrives ~760 ms before the text** | By the time a track change is detectable from the text, the art is already in hand — so the trigger is the text, and nothing has to wait. |
+| A cover is **45 217 B or 97 357 B** (JPEG 512×512) | The pre-existing `raw-dump.bin` fixture at 20 752 B is the *smallest* of three samples. A 64 KB cap would truncate real art. |
+| 368/792 frames of 246 hex characters, **792 frames in 443 ms**, median gap 0 ms | ~1 800 frames/s. Nothing may render or log per frame. |
+| `NJA QSTN` answers **`"BMP"`**, not `ENA`/`DIS` | The enable state reads back as an image-type token. |
+| `NTM` ticks once a second; `NMS` field `t` says whether the time means anything, field `s` whether seeking is allowed (measured `x` = **not** allowed) | The progress bar is device-backed, not estimated. `NTR` is `----/----` under AirPlay and unusable. |
+| `NMS` field `ii` and `NLT` service are **`44`**, which the spec does not assign | Do not map service ids you cannot look up. |
+| `FLD` shows the **track title** during AirPlay | Confirms why the name-store's metadata veto exists; it now runs continuously while music plays. |
+
+Structure of the code:
+
+- **`jacket-art.ts`** — a bounded state machine with a pure core (`nextArtState`) plus
+  a per-host accumulator. Caps come from the measurements, not the spec's maxima.
+  Three rules that each cost something to learn: hex is validated **before** decoding
+  (`Buffer.from(x,"hex")` does not throw, it silently stops at the first bad pair);
+  the container is taken from the **magic bytes**, not the declared `t` (the vendor
+  workbook ships two different `t` enumerations); and `t=2` (URL) is **never
+  followed** — the payload is a peer-chosen address.
+- **`now-playing.ts`** — pure parsers plus a tracker over the ConnectionManager's
+  observers. The interest gate is the first statement in the message handler, because
+  during a transfer it runs ~1 800 times a second: a plugin with no now-playing
+  element does nothing at all. `primed` must be a per-host **flag**, not "was the
+  state empty" — the initial fill is three messages, so only the first looks empty and
+  the other two would register as track changes.
+- **`onTrackChange` is separate from `onUpdate` precisely so `NTM` cannot trigger it.**
+  A once-a-second tick re-triggering a short display would mean it never goes away.
+
+### What the hardware accepts for a composed image
+
+Established by probing a throwaway action on a real Stream Deck +, one axis at a time.
+**The SDK documentation is wrong on the first point.**
+
+| wrapping | image reference | renders |
+|---|---|---|
+| base64 data URI | `xlink:href` + `href` | yes |
+| base64 data URI | `href` only | **yes** |
+| raw SVG string | `xlink:href` + `href` | **no** |
+| raw SVG string | `href` only | no |
+
+- `setImage`'s docs say a plain SVG string is accepted. For a composed image it is
+  **not**, and the failure is silent — the key falls back to its manifest icon, which
+  reads as "the plugin forgot to paint".
+- `xlink:href` is unnecessary and **doubles the payload** (the data URI appears once
+  per attribute): 346 KB vs 173 KB for the same 97 KB cover.
+- A nested `<image href="data:image/jpeg;base64,…">` does render, and that is the only
+  way to get two layers into one key image — native image libraries are out of reach
+  because Rollup bundles the plugin into a single file.
+- Load: four keys repainted from one event cost 5–8 ms of write time even at 346 KB
+  each. The write path is not the bottleneck.
+- Untried and worth one probe if payload size ever matters: percent-encoding the outer
+  SVG instead of base64-wrapping it should save the remaining 33 %.
+
+**The touch strip is physically continuous** — verified against a background image
+spanning all four segments, which crosses the boundaries with no visible offset. So
+slices sit on exact multiples of `STRIP_SEGMENT_WIDTH` with no bezel correction. It is
+a device property, not a documented guarantee, hence one named constant.
+
+### Where the space actually runs out
+
+Not the cover: album art is square and fits into part of a single 200×100 segment.
+**Long titles are the constraint** — beside a 92 px cover only ~98 px remain, about
+eleven characters, and "Taylor Swift" is twelve. So every extra strip segment buys
+*text* width (`rolesForGroupSize`), and `spreadCover` was removed once the layout only
+ever assigned one cover segment: unreachable configuration is worse than none.
+`composeCoverImage` still slices and is still tested for it.
+
+`text-fit.ts` shrinks through a size ladder, then splits across segments at **word**
+boundaries, and only then clips — the layout offers no font family (so the width
+estimate is an estimate, biased pessimistic) and no marquee at all.
+
+### Generated files contain only generated content
+
+`specValueLabels`/`matchesSpecValue` used to sit at the end of the *generated*
+`command-registry.ts`. Any `npm run generate` deleted them silently; it surfaced only
+when the build failed on a missing export. They now live in `spec-labels.ts`, and
+`tests/command-registry.test.ts` asserts the generated file exports exactly the ten
+symbols the generator emits.
 
 ## Security invariants
 
