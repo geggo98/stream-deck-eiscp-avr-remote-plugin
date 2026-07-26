@@ -590,11 +590,16 @@ export class EiscpClient extends EventEmitter<EiscpClientEvents> {
 			}
 
 			case "FLD": {
-				// Decode hex-encoded ASCII text
+				// Decode the hex-encoded display text. UTF-8, not ASCII, for the same
+				// reason as `decodePacket`: masking the high bit invents letters instead
+				// of failing. The measured VSX-S520D only ever put 7-bit text here, so
+				// this is byte-identical in practice — but the display shows track titles
+				// (measured: "Cruel Summer" during AirPlay), and those are not ASCII-only
+				// in general.
 				let text: string | undefined;
 				try {
 					text = Buffer.from(message.parameter, "hex")
-						.toString("ascii")
+						.toString("utf8")
 						.trim();
 				} catch {
 					// Defensive only: Buffer.from(..., "hex") never throws
