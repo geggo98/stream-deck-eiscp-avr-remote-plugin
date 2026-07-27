@@ -38,7 +38,8 @@ function playing(over: Partial<NowPlaying> = {}): NowPlaying {
 }
 
 function art(bytes = 512): NowPlaying["art"] {
-	return { type: "jpeg", bytes: Buffer.alloc(bytes, 0x41), frames: 2 };
+	const data = Buffer.alloc(bytes, 0x41);
+	return { type: "jpeg", bytes: data, frames: 2, hash: `h${bytes}` };
 }
 
 describe("track overlay settings", () => {

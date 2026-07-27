@@ -7,6 +7,7 @@
 
 import { scopedLogger, truncateForLog } from "../logging.ts";
 import { EiscpClient, createClient, type DecodedMessage } from "./client.ts";
+import { PerHostRateLimiter } from "./rate-limit.ts";
 
 const logger = scopedLogger("ConnectionManager");
 
@@ -42,6 +43,15 @@ type ConnectionObserver = (host: string, event: ConnectionEvent) => void;
 export class ConnectionManager {
 	private static instance: ConnectionManager;
 	private clients: Map<string, EiscpClient> = new Map();
+	/**
+	 * How fast the plugin may query one receiver.
+	 *
+	 * The burst is sized for the real one it must not slow down: every action on a
+	 * profile binds at once, and a full profile is a couple of dozen. Past that the
+	 * sustained rate takes over, which turns a runaway loop into a slow trickle rather
+	 * than a flood at a device that answers one connection.
+	 */
+	private readonly queryLimit = new PerHostRateLimiter({ perSecond: 10, burst: 24 });
 	private stateCache: Map<string, Map<string, string>> = new Map();
 	private subscriptions: Subscription[] = [];
 	private messageObservers: MessageObserver[] = [];
@@ -165,8 +175,23 @@ export class ConnectionManager {
 		logger.debug(`sendCommand: ${command} ${parameter} sent successfully`);
 	}
 
+	/**
+	 * Ask the receiver for a value.
+	 *
+	 * Rate-limited per host, and deliberately only here rather than on `sendCommand`:
+	 * queries are what the plugin generates *by itself* — every action's bind, the
+	 * power heartbeat, the now-playing pre-fill — and they all fire together at
+	 * startup or on a profile switch. Sets come from a key press and are limited by
+	 * the finger on the key, so throttling them would only add latency to the one
+	 * thing the user is waiting for.
+	 *
+	 * These receivers accept a single connection and cope badly with bursts, so the
+	 * ceiling lives at this boundary rather than in each caller: per-call-site
+	 * discipline holds only until the next call site.
+	 */
 	async queryCommand(host: string, command: string): Promise<string> {
 		logger.debug(`queryCommand: ${command} -> ${host}`);
+		await this.queryLimit.acquire(host);
 		const client = await this.ensureConnected(host);
 		const result = await client.query(command);
 		logger.debug(`queryCommand: ${command} -> ${truncateForLog(result)}`);

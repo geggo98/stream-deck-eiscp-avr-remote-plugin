@@ -361,6 +361,17 @@ export class NowPlayingTracker {
 			case "NJA": {
 				const image = this.art.accept(host, parameter, this.now());
 				if (image === undefined) return; // still assembling, or nothing for us
+				// The receiver retransmits the whole cover on every connect, and the
+				// offline backoff reconnects at 5/10/30/60 s — so the identical ~97 KB
+				// arrives again and again on a flapping link. Keeping the *existing*
+				// object when the content matches makes the whole downstream chain a
+				// no-op: the composition cache is keyed on the buffer, so nothing is
+				// re-encoded, and the resulting data URI is identical, so the paint
+				// de-duplication suppresses the write too.
+				if (image !== null && entry.state.art?.hash === image.hash) {
+					logger.debug(`${host}: cover unchanged (${image.hash}), nothing to redraw`);
+					return;
+				}
 				entry.state = { ...entry.state, art: image ?? undefined };
 				return this.notify(entry, "art");
 			}
