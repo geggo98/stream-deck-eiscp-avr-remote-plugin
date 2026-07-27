@@ -6,6 +6,7 @@ import { EiscpDialAction } from "./actions/eiscp-dial";
 import { EiscpDialIndicatorAction } from "./actions/eiscp-dial-indicator";
 import { DEDICATED_ACTIONS } from "./actions/dedicated/index";
 import {
+	coverOverHttpEnabled,
 	type GlobalSettings,
 	markGlobalSettingsLoaded,
 	setCachedGlobalSettings,
@@ -15,6 +16,7 @@ import * as nameStore from "./actions/dedicated/name-store";
 import { register as registerDiscovery } from "./actions/dedicated/discovery";
 import { ConnectionManager } from "./adapter/eiscp/connection-manager";
 import { getDeviceStatusTracker } from "./adapter/eiscp/device-status";
+import { setCoverHttpPolicy } from "./adapter/eiscp/now-playing";
 import { setAdapterLogger } from "./adapter/logging";
 
 // TRACE makes the SDK dump every WebSocket frame, which means complete settings
@@ -58,6 +60,10 @@ streamDeck.settings.onDidReceiveGlobalSettings<GlobalSettings>((ev) => setCached
 // The SDK binding for the shared write funnel (updateGlobalSettings); injected so
 // the settings module itself stays SDK-free.
 setGlobalSettingsWriter((gs) => streamDeck.settings.setGlobalSettings(gs));
+
+// The cover-over-HTTP switch lives in the global settings (action layer); inject the
+// read so the adapter stays independent of it, like the logger and the settings writer.
+setCoverHttpPolicy(() => coverOverHttpEnabled());
 
 // Always-on passive name discovery (learns option names from the receiver's display).
 registerDiscovery(ConnectionManager.getInstance());

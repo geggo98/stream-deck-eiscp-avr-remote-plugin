@@ -282,6 +282,46 @@ Structure of the code:
 - **`onTrackChange` is separate from `onUpdate` precisely so `NTM` cannot trigger it.**
   A once-a-second tick re-triggering a short display would mean it never goes away.
 
+### Cover art over HTTP — and why the plugin never sets the mode
+
+Measured 2026-07-27. The receiver serves its cover from its own web server:
+
+```
+GET http://<ip>/album_art.cgi   →  200, image/jpeg, valid JPEG 512×512
+```
+
+- **No authentication** (`GET /` is 401, this path is not).
+- **It follows the track immediately**: a skip, and the very first request already
+  returned the new picture (49 742 B → 119 487 B). The widely repeated "static,
+  non-refreshing image" is client-side caching — request with `no-store`.
+- It answers with a **non-standard `Content-size` header, not `Content-Length`.** That
+  is where the folklore about "the image contains headers, strip the first three
+  lines" comes from: a client that does not parse HTTP properly keeps the header block.
+  It is also why **nothing may bound the download from the headers** — on this device
+  there is no declared length at all, so `art-http.ts` streams with a hard cap and
+  aborts. `response.arrayBuffer()` is unusable here: it buffers the whole body before
+  anything can check the size, so an endless stream would decide how much memory the
+  process spends. A mutation test pins this (replacing the streaming read makes the
+  "never finishes the body" case take the full 5 s timeout instead of aborting).
+- The plugin **never sends `NJALINK`/`NJABMP`/`NJAENA`/`NJADIS`.** Per the vendor
+  workbook the setting is device-wide ("If Jacket Art is disable from one of
+  controllers, All controllers cannot display Jacket Art"), and the manufacturer's own
+  app very likely uses it too — a plugin asserting its preferred mode would fight every
+  other controller for it. Both modes are simply served: a `t=2` frame is fetched over
+  HTTP, inline frames are reassembled. `tests/art-http.test.ts` greps `src/` to keep it
+  that way.
+- **The announced URL is not followed as given.** Only its path is taken; the request
+  always goes to the receiver the plugin is already connected to. The address is
+  device-controlled input.
+- Verified end to end against the unit in both modes: in data mode the inline transfer
+  won (`frames=406`) and the HTTP copy was silently deduplicated by content hash; in
+  LINK mode the announcement was followed (`frames=0`, 79 808 B).
+
+**Never query `NJA`.** Measured twice: while art is streaming, `NJA QSTN` comes back
+with a *chunk of the image* rather than the mode token, because `queryCommand`
+correlates on the three-character command name alone and the first NJA frame to arrive
+settles it.
+
 ### What the hardware accepts for a composed image
 
 Established by probing a throwaway action on a real Stream Deck +, one axis at a time.

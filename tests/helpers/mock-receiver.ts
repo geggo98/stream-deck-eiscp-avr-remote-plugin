@@ -27,6 +27,7 @@
  * Shared by the transport/client/connection-manager behaviour tests.
  */
 
+import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import { createServer, type Server, type Socket } from "node:net";
 import { readFileSync } from "node:fs";
 
@@ -55,6 +56,36 @@ export interface MockReceiverOptions {
 	 * wakes it; the capture shows `!1SLI02` followed by `!1PWR01`).
 	 */
 	standbyWakeCommands?: readonly string[];
+	/**
+	 * Serve cover art over HTTP, the way the real unit does.
+	 *
+	 * Measured on the VSX-S520D: `http://<ip>/album_art.cgi` answers unauthenticated
+	 * with a valid JPEG, follows the track immediately, and — notably — sends a
+	 * non-standard `Content-size` header instead of `Content-Length`. The double
+	 * reproduces that quirk, because it is the reason a naive client ends up with the
+	 * header block inside the image, and the reason the plugin cannot rely on a
+	 * declared length to bound the download.
+	 */
+	http?: {
+		/** Bytes served at the art path. Omit for a server that 404s. */
+		art?: Buffer;
+		/** Path served; defaults to the measured "/album_art.cgi". */
+		path?: string;
+		/**
+		 * Send the body and never finish it — the unbounded stream a size cap has to
+		 * survive. The plugin must abort rather than allocate.
+		 */
+		neverEnds?: boolean;
+		/** Claim this many bytes in a (standard) Content-Length header. Default: none. */
+		declaredLength?: number;
+	};
+	/**
+	 * Announce the cover as a URL (`NJA` image type 2) rather than streaming it.
+	 *
+	 * This is the receiver's LINK mode. The plugin must serve whichever mode it finds
+	 * and never switch it, so the double can be put in either.
+	 */
+	jacketArtMode?: "data" | "link";
 	/**
 	 * Accept connections and never answer anything — the half-open receiver that
 	 * looks alive to TCP while every query times out.
@@ -145,6 +176,10 @@ export interface ReceivedMessage {
 
 export interface MockReceiver {
 	port: number;
+	/** Base URL of the mock's web server, when `http` was requested. */
+	httpUrl?: string;
+	/** Announce the cover the way LINK mode does, as a single URL frame. */
+	announceArtUrl(): void;
 	/** Every decoded inbound ISCP message, in arrival order. */
 	received: ReceivedMessage[];
 	/** Currently connected sockets (server side). */
@@ -333,6 +368,44 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const port = (server.address() as { port: number }).port;
+
+	// --- the receiver's web server -----------------------------------------
+	//
+	// Reproduces the measured quirks rather than an idealised HTTP server: the real
+	// unit answers with `Content-size`, not `Content-Length`, which is why a client
+	// cannot bound the download from the headers and why the streaming cap matters.
+	const artPath = options.http?.path ?? "/album_art.cgi";
+	let httpServer: HttpServer | undefined;
+	let httpUrl: string | undefined;
+	if (options.http) {
+		const art = options.http.art;
+		httpServer = createHttpServer((req, res) => {
+			if ((req.url ?? "").split("?")[0] !== artPath || !art) {
+				res.writeHead(404).end();
+				return;
+			}
+			const headers: Record<string, string> = { "Content-type": "image/jpeg" };
+			// The device's own spelling. Deliberately not Content-Length.
+			headers["Content-size"] = String(art.length);
+			if (options.http?.declaredLength !== undefined) {
+				headers["Content-Length"] = String(options.http.declaredLength);
+			}
+			res.writeHead(200, headers);
+			if (options.http?.neverEnds) {
+				// A body that never completes: write forever, slowly enough not to spin.
+				res.write(art);
+				const timer = setInterval(() => {
+					if (!res.writableEnded) res.write(art);
+				}, 5);
+				timer.unref?.();
+				res.on("close", () => clearInterval(timer));
+				return;
+			}
+			res.end(art);
+		});
+		await new Promise<void>((resolve) => httpServer!.listen(0, "127.0.0.1", resolve));
+		httpUrl = `http://127.0.0.1:${(httpServer.address() as { port: number }).port}`;
+	}
 	// Bind first so the port is a real, unused one, then let it go: connects to it
 	// fail immediately with ECONNREFUSED instead of hanging for the OS timeout.
 	if (options.refuseConnections) {
@@ -341,9 +414,19 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 
 	return {
 		port,
+		httpUrl,
 		received,
 		sockets,
 		state,
+		announceArtUrl() {
+			// What LINK mode looks like on the wire: one frame, image type 2, carrying
+			// the device's own address. Measured payload:
+			// "http://10.2.0.32/album_art.cgi".
+			const target = httpUrl ?? `http://127.0.0.1:${port}`;
+			for (const socket of sockets) {
+				if (!socket.destroyed) socket.write(frameReply("NJA", `2-${target}${artPath}`));
+			}
+		},
 		async waitForClient(timeoutMs = 2000) {
 			const start = Date.now();
 			while (sockets.size === 0 && Date.now() - start < timeoutMs) {
@@ -389,6 +472,15 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		async close() {
 			for (const socket of sockets) socket.destroy();
 			sockets.clear();
+			if (httpServer) {
+				// Before close(), not after: a `neverEnds` response holds its socket open
+				// and server.close() waits for connections to finish — the teardown would
+				// hang on the very case it exists to test. Also done before the early
+				// return below, or a refusing mock would leak its web server.
+				httpServer.closeAllConnections?.();
+				const toClose = httpServer;
+				await new Promise<void>((resolve) => toClose.close(() => resolve()));
+			}
 			// Already closed when handing out a refusing port; closing twice errors.
 			if (options.refuseConnections) return;
 			await new Promise<void>((resolve) => server.close(() => resolve()));

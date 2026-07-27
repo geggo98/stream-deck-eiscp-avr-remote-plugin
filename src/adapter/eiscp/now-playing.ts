@@ -24,6 +24,7 @@
  */
 
 import { scopedLogger } from "../logging.ts";
+import { fetchCoverOverHttp, type FetchArtOptions } from "./art-http.ts";
 import { ConnectionManager, type ConnectionEvent } from "./connection-manager.ts";
 import { sanitiseDeviceText } from "./device-text.ts";
 import { JacketArtAccumulator, type ArtImage } from "./jacket-art.ts";
@@ -42,6 +43,16 @@ export const MAX_NOW_PLAYING_HOSTS = 8;
  * reacts immediately rather than a second late.
  */
 export const TRACK_CHANGE_COOLDOWN_MS = 1_500;
+
+/**
+ * Shortest gap between two cover downloads for one receiver.
+ *
+ * The cover cannot change more often than the track does, and the trigger is
+ * device-driven, so this bounds what a chatty or misbehaving source can make the
+ * plugin do. Deliberately below a plausible track length, so a genuine change is never
+ * the one that gets dropped.
+ */
+export const ART_FETCH_MIN_INTERVAL_MS = 2_000;
 
 export type PlayStatus = "play" | "pause" | "stop" | "ff" | "rew" | "eof";
 
@@ -173,6 +184,15 @@ export interface NowPlayingOptions {
 	cooldownMs?: number;
 	/** Injected for tests; production uses `Date.now`. */
 	now?: () => number;
+	/**
+	 * Whether the cover may be fetched from the receiver's web server.
+	 *
+	 * A function rather than a flag, because the user can change it while the plugin
+	 * runs and the tracker must not hold a stale copy.
+	 */
+	httpEnabled?: () => boolean;
+	/** Injected for tests. */
+	fetchOptions?: FetchArtOptions;
 }
 
 type UpdateListener = (state: NowPlaying, change: NowPlayingChange) => void;
@@ -216,6 +236,12 @@ export class NowPlayingTracker {
 	/** In-flight pre-fills, so simultaneous binds share one round of queries. */
 	private readonly priming = new Map<string, Promise<void>>();
 	private readonly primedAt = new Map<string, number>();
+	/** Hosts with a cover request in flight, so a burst does not start several. */
+	private readonly fetching = new Set<string>();
+	/** When each host was last asked, for the rate limit. */
+	private readonly lastFetchAt = new Map<string, number>();
+	private readonly httpEnabled: () => boolean;
+	private readonly fetchOptions: FetchArtOptions;
 	private readonly deps: NowPlayingDeps;
 	private readonly maxHosts: number;
 	private readonly cooldownMs: number;
@@ -227,6 +253,8 @@ export class NowPlayingTracker {
 		this.maxHosts = options.maxHosts ?? MAX_NOW_PLAYING_HOSTS;
 		this.cooldownMs = options.cooldownMs ?? TRACK_CHANGE_COOLDOWN_MS;
 		this.now = options.now ?? Date.now;
+		this.httpEnabled = options.httpEnabled ?? (() => true);
+		this.fetchOptions = options.fetchOptions ?? {};
 	}
 
 	/** Attach to the ConnectionManager. Idempotent. */
@@ -303,6 +331,11 @@ export class NowPlayingTracker {
 		if (last !== undefined && this.now() - last < PRIME_COOLDOWN_MS) return;
 
 		const run = (async () => {
+			// A cover, immediately. Neither the text nor the art is volunteered on
+			// connect, and over HTTP one request settles it without waiting for the
+			// track to end. Independent of the queries, so a receiver without a web
+			// server simply falls back to whatever gets pushed later.
+			if (this.httpEnabled()) void this.fetchArtOverHttp(host);
 			for (const command of PRIME_COMMANDS) {
 				try {
 					await this.deps.queryCommand(host, command);
@@ -359,6 +392,15 @@ export class NowPlayingTracker {
 				return this.notify(entry, "menu");
 			}
 			case "NJA": {
+				// LINK mode: the receiver announces a URL instead of streaming the bytes.
+				// Measured: one frame with image type 2 carrying
+				// "http://<ip>/album_art.cgi", where data mode would have sent 368-792
+				// frames of hex. Fetching is asynchronous and the result arrives through
+				// the same `art` notification, so nothing here waits.
+				if (parameter.startsWith("2") && this.httpEnabled()) {
+					void this.fetchArtOverHttp(host, parameter.slice(2));
+					return;
+				}
 				const image = this.art.accept(host, parameter, this.now());
 				if (image === undefined) return; // still assembling, or nothing for us
 				// The receiver retransmits the whole cover on every connect, and the
@@ -377,6 +419,40 @@ export class NowPlayingTracker {
 			}
 			default:
 				return;
+		}
+	}
+
+	/**
+	 * Take a cover from the receiver's web server and publish it like any other.
+	 *
+	 * Serialised per host: a track change can produce a URL announcement while an
+	 * earlier fetch is still running, and two in flight would race to set the state.
+	 * The same content hash as the inline path means an unchanged picture costs
+	 * nothing downstream.
+	 */
+	private async fetchArtOverHttp(host: string, announcedUrl?: string): Promise<void> {
+		if (this.fetching.has(host)) return;
+		// Rate limit, on top of the in-flight guard. The announcement is device-driven:
+		// a source that flaps, or a receiver re-announcing on every metadata event, would
+		// otherwise mean one download per event. The cover cannot change faster than the
+		// track does, so a floor of a second or two costs nothing real.
+		const last = this.lastFetchAt.get(host);
+		if (last !== undefined && this.now() - last < ART_FETCH_MIN_INTERVAL_MS) return;
+		this.lastFetchAt.set(host, this.now());
+		this.fetching.add(host);
+		try {
+			const image = await fetchCoverOverHttp(host, announcedUrl, this.fetchOptions);
+			const entry = this.hosts.get(host);
+			// The element may have gone away while the request was in flight.
+			if (!entry || !image) return;
+			if (entry.state.art?.hash === image.hash) return;
+			// Info, not debug: once per track change at most, and it is the one line that
+			// tells a user which of the two cover paths their receiver is actually using.
+			logger.info(`${host}: cover taken over HTTP (${image.bytes.length} B, ${image.hash})`);
+			entry.state = { ...entry.state, art: image };
+			this.notify(entry, "art");
+		} finally {
+			this.fetching.delete(host);
 		}
 	}
 
@@ -463,6 +539,20 @@ export class NowPlayingTracker {
 	}
 }
 
+/**
+ * Whether covers may be fetched over HTTP.
+ *
+ * Injected rather than imported, because the setting lives in the action layer and
+ * the adapter must not depend on it — the same reason `setAdapterLogger` and
+ * `setGlobalSettingsWriter` exist. Defaults to on, so a tracker created before
+ * `plugin.ts` has wired anything still behaves the way the setting's default says.
+ */
+let coverHttpPolicy: () => boolean = () => true;
+
+export function setCoverHttpPolicy(policy: () => boolean): void {
+	coverHttpPolicy = policy;
+}
+
 let singleton: NowPlayingTracker | undefined;
 
 /**
@@ -475,7 +565,8 @@ let singleton: NowPlayingTracker | undefined;
  */
 export function getNowPlayingTracker(deps: NowPlayingDeps = ConnectionManager.getInstance()): NowPlayingTracker {
 	if (!singleton) {
-		singleton = new NowPlayingTracker(deps);
+		// Read through a function, not captured: the user can toggle it while running.
+		singleton = new NowPlayingTracker(deps, { httpEnabled: () => coverHttpPolicy() });
 		singleton.start();
 	}
 	return singleton;

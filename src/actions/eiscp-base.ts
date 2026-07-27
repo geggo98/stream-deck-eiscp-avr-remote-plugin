@@ -49,6 +49,11 @@ export interface GlobalSettings {
 	names?: SerializedNames;
 	/** Power the receiver on before sending a command it would sleep through. */
 	wakeOnPress?: boolean;
+	/**
+	 * Fetch the cover from the receiver's own web server rather than only accepting
+	 * the copy it streams over the control connection. Default on.
+	 */
+	coverOverHttp?: boolean;
 	[key: string]: JsonValue;
 }
 
@@ -461,6 +466,25 @@ export function wakeOnPressEnabled(gs: GlobalSettings = getCachedGlobalSettings(
 export function setWakeOnPress(enabled: boolean): Promise<void> {
 	return updateGlobalSettings((current) =>
 		wakeOnPressEnabled(current) === enabled ? undefined : { ...current, wakeOnPress: enabled },
+	);
+}
+
+/**
+ * Whether the cover may be fetched over HTTP. Default on.
+ *
+ * Measured worth: in the receiver's data mode one track change is 368-792 frames down
+ * the single control connection it allows; over HTTP it is one request on a separate
+ * socket, and a cover is available immediately at startup instead of only after the
+ * next track change.
+ */
+export function coverOverHttpEnabled(gs: GlobalSettings = getCachedGlobalSettings()): boolean {
+	return gs.coverOverHttp !== false;
+}
+
+/** Persist that choice (through the shared funnel; see updateGlobalSettings). */
+export function setCoverOverHttp(enabled: boolean): Promise<void> {
+	return updateGlobalSettings((current) =>
+		coverOverHttpEnabled(current) === enabled ? undefined : { ...current, coverOverHttp: enabled },
 	);
 }
 
