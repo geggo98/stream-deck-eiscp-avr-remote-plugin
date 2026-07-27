@@ -98,10 +98,19 @@ interface Harness {
 	send(host: string, command: string, parameter: string): void;
 	connection(host: string, event: ConnectionEvent): void;
 	queried: string[];
+	fetched: string[];
 	setNow(ms: number): void;
 }
 
-function harness(options: { maxHosts?: number; failCommands?: string[] } = {}): Harness {
+/** A distinct JPEG for the HTTP path, so it cannot be confused with the inline one. */
+function httpJpeg(): Buffer {
+	return Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(96, 0x7a), Buffer.from([0xff, 0xd9])]);
+}
+
+function harness(
+	options: { maxHosts?: number; failCommands?: string[]; httpEnabled?: boolean; httpBody?: Buffer | null } = {},
+): Harness {
+	const fetched: string[] = [];
 	let messageCb: ((host: string, command: string, parameter: string) => void) | undefined;
 	let connectionCb: ((host: string, event: ConnectionEvent) => void) | undefined;
 	const queried: string[] = [];
@@ -123,11 +132,29 @@ function harness(options: { maxHosts?: number; failCommands?: string[] } = {}): 
 				return "";
 			},
 		},
-		{ ...options, now: () => clock },
+		{
+			...options,
+			now: () => clock,
+			httpEnabled: () => options.httpEnabled ?? false,
+			fetchOptions: {
+				fetchImpl: (async (url: string | URL) => {
+					fetched.push(String(url));
+					const body = options.httpBody === undefined ? httpJpeg() : options.httpBody;
+					if (!body) throw new Error("refused");
+					return {
+						ok: true,
+						status: 200,
+						headers: new Headers(),
+						arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+					} as unknown as Response;
+				}) as unknown as typeof fetch,
+			},
+		},
 	);
 	tracker.start();
 	return {
 		tracker,
+		fetched,
 		send: (host, command, parameter) => messageCb?.(host, command, parameter),
 		connection: (host, event) => connectionCb?.(host, event),
 		queried,
@@ -466,5 +493,94 @@ describe("NowPlayingTracker: the same cover twice", () => {
 		for (const frame of artFrames()) h.send("10.0.0.1", "NJA", frame);
 		for (const frame of artFrames(0x41, 8)) h.send("10.0.0.1", "NJA", frame);
 		assert.equal(arts, 1, "re-chunking the same picture is not a new picture");
+	});
+});
+
+describe("NowPlayingTracker: cover over HTTP", () => {
+	const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
+
+	it("fetches the cover when the receiver announces a URL instead of streaming it", async () => {
+		// LINK mode, measured: one frame with image type 2 carrying
+		// "http://<ip>/album_art.cgi", where data mode sends 368-792 frames of hex.
+		const h = harness({ httpEnabled: true });
+		const changes: NowPlayingChange[] = [];
+		h.tracker.onUpdate("10.0.0.1", (_s, change) => changes.push(change));
+		h.fetched.length = 0;
+
+		h.send("10.0.0.1", "NJA", "2-http://10.0.0.1/album_art.cgi");
+		await settle();
+
+		assert.deepEqual(h.fetched, ["http://10.0.0.1/album_art.cgi"]);
+		assert.deepEqual(changes, ["art"]);
+		assert.equal(h.tracker.get("10.0.0.1").art?.bytes.length, httpJpeg().length);
+	});
+
+	it("goes to the receiver it is connected to, not to the host the device named", async () => {
+		const h = harness({ httpEnabled: true });
+		h.tracker.onUpdate("10.0.0.1", () => {});
+		h.fetched.length = 0;
+
+		h.send("10.0.0.1", "NJA", "2-http://somewhere.else/album_art.cgi");
+		await settle();
+		assert.deepEqual(h.fetched, ["http://10.0.0.1/album_art.cgi"]);
+	});
+
+	it("still reassembles inline art, so the mode is the device's choice", async () => {
+		// The requirement: the manufacturer's app may switch the receiver to either mode
+		// and the plugin must simply serve whichever it finds — never force one back.
+		const h = harness({ httpEnabled: true });
+		h.tracker.onUpdate("10.0.0.1", () => {});
+		h.fetched.length = 0;
+
+		for (const frame of artFrames()) h.send("10.0.0.1", "NJA", frame);
+		await settle();
+		assert.deepEqual(h.fetched, [], "inline data needs no request");
+		assert.ok(h.tracker.get("10.0.0.1").art, "and is assembled as before");
+	});
+
+	it("ignores an announced URL when the setting is off", async () => {
+		// With HTTP disabled and the receiver in LINK mode there is simply no cover —
+		// the honest outcome, since the alternative would be to change the device.
+		const h = harness({ httpEnabled: false });
+		h.tracker.onUpdate("10.0.0.1", () => {});
+		h.fetched.length = 0;
+
+		h.send("10.0.0.1", "NJA", "2-http://10.0.0.1/album_art.cgi");
+		await settle();
+		assert.deepEqual(h.fetched, []);
+		assert.equal(h.tracker.get("10.0.0.1").art, undefined);
+	});
+
+	it("starts one request per host, however many announcements arrive", async () => {
+		const h = harness({ httpEnabled: true });
+		h.tracker.onUpdate("10.0.0.1", () => {});
+		h.fetched.length = 0;
+
+		for (let i = 0; i < 5; i++) h.send("10.0.0.1", "NJA", "2-http://10.0.0.1/album_art.cgi");
+		await settle();
+		assert.equal(h.fetched.length, 1, `expected one in-flight request, got ${h.fetched.length}`);
+	});
+
+	it("survives a web server that is not there", async () => {
+		const h = harness({ httpEnabled: true, httpBody: null });
+		const changes: NowPlayingChange[] = [];
+		h.tracker.onUpdate("10.0.0.1", (_s, change) => changes.push(change));
+
+		h.send("10.0.0.1", "NJA", "2-http://10.0.0.1/album_art.cgi");
+		await settle();
+		assert.deepEqual(changes, [], "a failed fetch is not a change");
+		assert.equal(h.tracker.get("10.0.0.1").art, undefined);
+	});
+
+	it("asks for a cover as soon as a host is primed", async () => {
+		// Neither text nor art is volunteered on connect, so without this a freshly
+		// started plugin has no cover until the track ends.
+		const h = harness({ httpEnabled: true });
+		h.tracker.onUpdate("10.0.0.1", () => {});
+		h.fetched.length = 0;
+
+		await h.tracker.prime("10.0.0.1");
+		await settle();
+		assert.deepEqual(h.fetched, ["http://10.0.0.1/album_art.cgi"]);
 	});
 });

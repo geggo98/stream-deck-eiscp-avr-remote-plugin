@@ -116,6 +116,19 @@
 			"  In standby the receiver ignores everything except power and input selection," +
 			"  so keys are shown dimmed and a press wakes it first." +
 			"</div>" +
+			'<sdpi-item label="Cover art">' +
+			'  <div class="pi-check">' +
+			'    <input type="checkbox" id="coverOverHttp" checked>' +
+			'    <label for="coverOverHttp">Fetch cover art from the receiver\'s web server</label>' +
+			"  </div>" +
+			"</sdpi-item>" +
+			'<div class="pi-hint">' +
+			"  Faster and far lighter on the receiver than the copy it streams over the" +
+			"  control connection, and it means a cover is there straight away instead of" +
+			"  only after the next track. Whichever way the receiver is set to deliver" +
+			"  artwork is left alone \u2014 that setting is shared with every other app on" +
+			"  your network." +
+			"</div>" +
 			// Now-playing preview. Bound with plain `setting=` because these are
 			// per-action settings — deliberately NOT sdpi's `global` attribute, which
 			// keeps a snapshot of the whole settings object taken when the panel opened
@@ -204,6 +217,36 @@
 				if (++tries > 20) clearInterval(settle);
 			}, 100);
 			sync();
+		}
+
+		// Same round trip as the wake switch above, for the same reason: a `global`-bound
+		// input would rewrite the whole settings object from a stale snapshot.
+		const cover = c.querySelector("#coverOverHttp");
+		if (cover) {
+			try {
+				SDPIComponents.streamDeckClient
+					.getGlobalSettings()
+					.then((gs) => {
+						// Absent means on.
+						cover.checked = !gs || gs.coverOverHttp !== false;
+					})
+					.catch(() => {
+						/* leave it at the default */
+					});
+				cover.addEventListener("change", () => {
+					SDPIComponents.streamDeckClient.send("sendToPlugin", {
+						event: "setCoverOverHttp",
+						value: cover.checked,
+					});
+				});
+				SDPIComponents.streamDeckClient.sendToPropertyInspector.subscribe((ev) => {
+					const p = ev && ev.payload ? ev.payload : ev;
+					if (!p || p.event !== "setCoverOverHttp") return;
+					cover.checked = p.value !== false;
+				});
+			} catch (e) {
+				/* sdpi client not ready; the checkbox stays at its default */
+			}
 		}
 
 		// Keep dependent UI (the Auto-Discover button) in step with either input.
