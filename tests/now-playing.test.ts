@@ -135,12 +135,12 @@ function harness(options: { maxHosts?: number; failCommands?: string[] } = {}): 
 	};
 }
 
-/** A minimal JPEG split into a start and an end frame. */
-function artFrames(): string[] {
-	const image = Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(40, 0x41), Buffer.from([0xff, 0xd9])]);
-	const half = image.subarray(0, 20).toString("hex").toUpperCase();
-	const rest = image.subarray(20).toString("hex").toUpperCase();
-	return [`10${half}`, `12${rest}`];
+/** A minimal JPEG, split into `chunk`-byte frames so the chunking can be varied. */
+function artFrames(fill = 0x41, chunk = 20): string[] {
+	const image = Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(40, fill), Buffer.from([0xff, 0xd9])]);
+	const parts: string[] = [];
+	for (let i = 0; i < image.length; i += chunk) parts.push(image.subarray(i, i + chunk).toString("hex").toUpperCase());
+	return parts.map((hex, i) => `1${i === 0 ? "0" : i === parts.length - 1 ? "2" : "1"}${hex}`);
 }
 
 describe("NowPlayingTracker", () => {
@@ -185,11 +185,11 @@ describe("NowPlayingTracker", () => {
 		h.tracker.onUpdate("10.0.0.1", (_s, change) => changes.push(change));
 
 		const frames = artFrames();
-		h.send("10.0.0.1", "NJA", frames[0]!);
+		for (const frame of frames.slice(0, -1)) h.send("10.0.0.1", "NJA", frame);
 		assert.equal(changes.length, 0, "a partial transfer is not a change");
-		h.send("10.0.0.1", "NJA", frames[1]!);
+		h.send("10.0.0.1", "NJA", frames[frames.length - 1]!);
 
-		assert.deepEqual(changes, ["art"]);
+		assert.deepEqual(changes, ["art"], "one event for the whole transfer, on the last frame");
 		assert.equal(h.tracker.get("10.0.0.1").art?.type, "jpeg");
 	});
 
@@ -421,5 +421,50 @@ describe("NowPlayingTracker: lifecycle and bounds", () => {
 		const h = harness({ failCommands: ["NAT"] });
 		await h.tracker.prime("10.0.0.1");
 		assert.equal(h.queried.length, 6);
+	});
+});
+
+describe("NowPlayingTracker: the same cover twice", () => {
+	it("does not re-report a cover whose content is unchanged", () => {
+		// The receiver retransmits the whole image on *every* connect, and the offline
+		// backoff reconnects at 5/10/30/60 s — so on a flapping link the identical
+		// ~97 KB arrives over and over. Recognising it by content makes the whole
+		// downstream chain a no-op: no recompose, no repaint.
+		const h = harness();
+		const changes: NowPlayingChange[] = [];
+		h.tracker.onUpdate("10.0.0.1", (_s, change) => changes.push(change));
+
+		for (const frame of artFrames()) h.send("10.0.0.1", "NJA", frame);
+		assert.deepEqual(changes, ["art"]);
+		const first = h.tracker.get("10.0.0.1").art;
+
+		// The very same picture again, as a fresh transfer.
+		for (const frame of artFrames()) h.send("10.0.0.1", "NJA", frame);
+		assert.deepEqual(changes, ["art"], "an identical cover is not a change");
+		assert.ok(
+			h.tracker.get("10.0.0.1").art === first,
+			"the existing object is kept, so the composition cache still hits",
+		);
+	});
+
+	it("still reports a genuinely different cover", () => {
+		const h = harness();
+		const changes: NowPlayingChange[] = [];
+		h.tracker.onUpdate("10.0.0.1", (_s, change) => changes.push(change));
+
+		for (const frame of artFrames()) h.send("10.0.0.1", "NJA", frame);
+		for (const frame of artFrames(0x42)) h.send("10.0.0.1", "NJA", frame);
+		assert.deepEqual(changes, ["art", "art"]);
+	});
+
+	it("hashes the assembled image, not the frames it arrived in", () => {
+		// Same bytes, different chunking: still one cover.
+		const h = harness();
+		let arts = 0;
+		h.tracker.onUpdate("10.0.0.1", (_s, change) => { if (change === "art") arts++; });
+
+		for (const frame of artFrames()) h.send("10.0.0.1", "NJA", frame);
+		for (const frame of artFrames(0x41, 8)) h.send("10.0.0.1", "NJA", frame);
+		assert.equal(arts, 1, "re-chunking the same picture is not a new picture");
 	});
 });

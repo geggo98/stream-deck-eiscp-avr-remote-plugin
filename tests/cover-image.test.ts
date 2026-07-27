@@ -27,7 +27,8 @@ import {
 } from "../src/actions/cover-image.ts";
 
 function art(bytes = 64, type: "jpeg" | "bmp" = "jpeg"): ArtImage {
-	return { type, bytes: Buffer.alloc(bytes, 0x41), frames: 2 };
+	const data = Buffer.alloc(bytes, 0x41);
+	return { type, bytes: data, frames: 2, hash: `h${bytes}` };
 }
 
 /** Recover the SVG from the data URI the composer returns. */
@@ -69,7 +70,7 @@ describe("cover image: the encoding the hardware accepts", () => {
 		// markup, a cover would be able to inject elements into an image the plugin
 		// builds — the one injection surface this module has.
 		const bytes = Buffer.from('</svg><script>alert(1)</script><svg>', "utf8");
-		const svg = svgOf(composeCoverImage({ art: { type: "jpeg", bytes, frames: 1 } }));
+		const svg = svgOf(composeCoverImage({ art: { type: "jpeg", bytes, frames: 1, hash: "probe" } }));
 		assert.ok(!svg.includes("<script"), "raw art bytes must never appear as markup");
 		assert.ok(svg.includes(bytes.toString("base64")));
 	});

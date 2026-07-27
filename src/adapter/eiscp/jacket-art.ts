@@ -35,6 +35,8 @@
  *     without limit by sending `p=1` forever, so the caps live here.
  */
 
+import { createHash } from "node:crypto";
+
 import { scopedLogger } from "../logging.ts";
 
 const logger = scopedLogger("JacketArt");
@@ -47,6 +49,17 @@ export interface ArtImage {
 	bytes: Buffer;
 	/** How many frames it took; useful for logging without touching the payload. */
 	frames: number;
+	/**
+	 * Content hash, so "the same cover again" is cheap to recognise.
+	 *
+	 * The receiver retransmits the whole image on **every connect** and on every track
+	 * change, and the offline backoff reconnects at 5/10/30/60 s — so a flapping link
+	 * means the identical ~97 KB arrives over and over. Without an identity that
+	 * survives reassembly, each copy is a fresh Buffer and everything downstream
+	 * (compose, encode, repaint every element) runs again for a picture that did not
+	 * change. Truncated to 16 hex characters: this is a cache key, not a signature.
+	 */
+	hash: string;
 }
 
 /** One decoded `NJA` parameter. */
@@ -157,6 +170,11 @@ function verifyImage(bytes: Buffer): ArtImageType | undefined {
 	return undefined;
 }
 
+/** Cache key for an assembled image; see `ArtImage.hash`. */
+function contentHash(bytes: Buffer): string {
+	return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+}
+
 /**
  * Fold one frame into the transfer state.
  *
@@ -237,7 +255,10 @@ export function nextArtState(state: ArtState, frame: ArtFrame, now: number): Art
 	}
 	return {
 		state: {},
-		outcome: { kind: "complete", image: { type, bytes: assembled, frames: next.frames } },
+		outcome: {
+			kind: "complete",
+			image: { type, bytes: assembled, frames: next.frames, hash: contentHash(assembled) },
+		},
 	};
 }
 
