@@ -192,3 +192,32 @@ describe("the overlay face", () => {
 		assert.equal(face.progress, undefined);
 	});
 });
+
+describe("composing is shared, not repeated per element", () => {
+	it("returns the identical string for the same cover and the same size", () => {
+		// One track change notifies every configured element at once, and each used to
+		// compose its own copy: for a 97 KB cover that is two base64 passes over ~100
+		// and ~260 KB, per element, at the exact moment the receiver is streaming ~1 800
+		// frames a second. Identity — not just equality — is the assertion, because that
+		// is what proves the work was done once.
+		const shared = art(4096);
+		const first = buildOverlayFace(playing({ art: shared }))!;
+		const second = buildOverlayFace(playing({ art: shared }))!;
+		assert.equal(first.image, second.image);
+		assert.ok(first.image === second.image, "the same string instance, i.e. composed once");
+	});
+
+	it("still distinguishes a key from a strip", () => {
+		// Sharing must not collapse genuinely different compositions.
+		const shared = art(4096);
+		const key = buildOverlayFace(playing({ art: shared }), { width: 144, height: 144 })!;
+		const strip = buildOverlayFace(playing({ art: shared }), { width: 200, height: 100 })!;
+		assert.notEqual(key.image, strip.image);
+	});
+
+	it("composes a different cover separately", () => {
+		const a = buildOverlayFace(playing({ art: art(1024) }))!;
+		const b = buildOverlayFace(playing({ art: art(2048) }))!;
+		assert.notEqual(a.image, b.image);
+	});
+});

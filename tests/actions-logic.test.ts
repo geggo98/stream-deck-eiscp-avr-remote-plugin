@@ -30,6 +30,7 @@ import {
 	resolveDeviceIp,
 	resolveParam,
 	setCachedGlobalSettings,
+	dialIconFor,
 	statusTitle,
 	toneFeedback,
 	wakeOnPressEnabled,
@@ -511,5 +512,38 @@ describe("wakeOnPressEnabled", () => {
 	it("reads the shared cache when asked without an argument", () => {
 		setCachedGlobalSettings({ wakeOnPress: false });
 		assert.equal(wakeOnPressEnabled(), false);
+	});
+});
+
+describe("a dial's icon slot", () => {
+	it("always resolves to a concrete path, because the slot cannot be unset", () => {
+		// The defect this prevents: the track-change preview wrote a cover into a dial's
+		// icon slot and then, on expiry, sent only `{ opacity }`. A layout item keeps
+		// whatever it was last given, so the cover stayed on the touch strip for good.
+		// The way back is to write the action's own icon again — so this must return
+		// something for every real action.
+		const path = dialIconFor("de.schwetschke.sd.eiscp-avr-remote.volume-dial", "on", "MVL");
+		assert.equal(path, "imgs/actions/volume-dial/icon.svg");
+	});
+
+	it("uses the transparent list glyph, not the key image", () => {
+		// key.svg carries a dark rounded background that would show as a tile on the
+		// strip; icon.svg is the bare glyph, which is what the strip shows by default.
+		const path = dialIconFor("de.schwetschke.sd.eiscp-avr-remote.input-dial", "on", "SLI")!;
+		assert.ok(path.endsWith("/icon.svg"), path);
+		assert.ok(!path.includes("key"), path);
+	});
+
+	it("dims with the receiver, like the keys do", () => {
+		const dim = dialIconFor("de.schwetschke.sd.eiscp-avr-remote.volume-dial", "standby", "MVL");
+		assert.equal(dim, "imgs/actions/volume-dial/key-dim.svg");
+		const offline = dialIconFor("de.schwetschke.sd.eiscp-avr-remote.volume-dial", "offline", "MVL");
+		assert.equal(offline, "imgs/actions/volume-dial/key-dim.svg");
+	});
+
+	it("returns nothing for an unresolvable action, so the caller leaves the slot alone", () => {
+		// Writing "" would clear the layout's own icon with no way to restore it, so
+		// "no idea" has to be distinguishable from "blank".
+		assert.equal(dialIconFor(undefined, "on"), undefined);
 	});
 });

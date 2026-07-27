@@ -44,6 +44,7 @@ import { handleDeviceListMessage, rememberDevice } from "./pi-devices.ts";
 import { handleWakeSettingMessage } from "./pi-wake.ts";
 import {
 	deviceIpToAdopt,
+	dialIconFor,
 	type EiscpActionSettings,
 	explicitDeviceIp,
 	feedbackStatusStyle,
@@ -800,11 +801,17 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 						: {}),
 				}
 			: payload;
-		// The icon slot carries the overlay's picture when there is one; otherwise only
-		// its opacity is adjusted and the image stays whatever the layout supplies.
+		// The icon slot needs a value in BOTH directions, and getting that wrong is how
+		// a cover stuck to the touch strip for good: a layout item keeps whatever it was
+		// last given, so there is no way to *unset* the picture — writing only
+		// `{ opacity }` left the previous image in place forever. The way back is to
+		// write the action's own icon again.
+		const iconValue = overlay?.image ?? dialIconFor(this.manifestId, this.statusFor(action.id), cfg.command);
 		const decorated: FeedbackPayload = {
+			// When the id cannot be resolved we leave the slot alone rather than blanking
+			// it: `""` would clear the layout's own icon with no way back.
 			...effective,
-			icon: overlay?.image ? { value: overlay.image, opacity } : { opacity },
+			icon: iconValue ? { value: iconValue, opacity } : { opacity },
 		};
 		for (const key of ["title", "value"] as const) {
 			const item = effective[key];

@@ -38,6 +38,13 @@ export class NowPlayingKeyAction extends KeyActionBase<NowPlayingSettings> {
 
 	constructor() {
 		super("NowPlayingKey");
+		// Taken from the spec rather than typed again, because typing it again is
+		// exactly what went wrong: the catalog said `showsState: false` and this class
+		// silently kept the base default of `true`, so every bind queried `NTC QSTN` —
+		// a command that has no QSTN — and sat through a 5 s timeout before showing
+		// anything. Visible in the log as
+		// "bindKey: query NTC failed: … timed out after 5000 ms".
+		this.showsState = SPEC.showsState;
 	}
 
 	protected override getKeyConfig(settings: NowPlayingSettings): KeyConfig | undefined {

@@ -297,3 +297,16 @@ export function keyImageName(onState: boolean, dim: boolean): string {
 export function keyImagePath(id: string, onState: boolean, dim: boolean): string {
 	return `imgs/actions/${id}/${keyImageName(onState, dim)}.svg`;
 }
+
+/**
+ * The small transparent glyph, which is also what a touch strip shows in its icon
+ * slot (the manifest's `Icon` field, without the extension).
+ *
+ * Needed as an explicit path because a layout item keeps whatever it was last given:
+ * once the plugin writes a cover into a dial's icon slot there is no "unset", so the
+ * way back is to write this again. Deliberately `icon.svg` and not `key.svg` — the
+ * key image carries a dark rounded background that would show as a tile on the strip.
+ */
+export function listIconPath(id: string): string {
+	return `imgs/actions/${id}/icon.svg`;
+}

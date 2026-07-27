@@ -6,7 +6,7 @@ import { isIP } from "node:net";
 
 import { COMMAND_REGISTRY, getValueName } from "../adapter/eiscp/command-registry.ts";
 import type { DeviceStatus } from "../adapter/eiscp/device-status.ts";
-import { keyImagePath } from "./dedicated/catalog.ts";
+import { keyImagePath, listIconPath } from "./dedicated/catalog.ts";
 
 /** JSON-compatible value (mirrors the SDK's JsonValue; undefined is allowed). */
 type JsonValue = string | number | boolean | null | undefined | JsonValue[] | { [key: string]: JsonValue };
@@ -411,6 +411,26 @@ export function keyImageFor(
 	const id = actionIdFromManifestId(manifestId);
 	if (!id || !isDimmedFor(status, command)) return undefined;
 	return keyImagePath(id, state === 1, true);
+}
+
+/**
+ * The picture a dial's icon slot should hold when nothing special is being shown.
+ *
+ * A layout item keeps whatever it was last given, so once the plugin has written a
+ * cover into the icon slot there is no way to *unset* it — the only way back is to
+ * write the original again. That is not hypothetical: the track-change preview left
+ * the cover on the touch strip permanently until this existed.
+ *
+ * Returns `undefined` when the action id cannot be resolved, and callers must then
+ * leave the slot untouched rather than blanking it: writing `""` would remove the
+ * layout's own icon with no way to restore it.
+ */
+export function dialIconFor(manifestId: string | undefined, status: DeviceStatus, command?: string): string | undefined {
+	const id = actionIdFromManifestId(manifestId);
+	if (!id) return undefined;
+	// Dimmed in standby/offline for the same reason keys are — the strip should not
+	// look livelier than the receiver is.
+	return isDimmedFor(status, command) ? keyImagePath(id, false, true) : listIconPath(id);
 }
 
 /**
