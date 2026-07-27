@@ -123,6 +123,43 @@ export function overlayProgress(state: NowPlaying): number | undefined {
 }
 
 /**
+ * Composed images, shared across every element showing the same cover.
+ *
+ * One track change notifies every configured element at once, and each was composing
+ * its own copy: for a 97 KB cover that is two base64 passes over ~100 and ~260 KB, per
+ * element, at the exact moment the receiver is streaming ~1 800 frames a second at us.
+ * With eight keys that is eight times the work and eight times the garbage for eight
+ * byte-identical strings.
+ *
+ * Keyed on the art's `Buffer` identity because the tracker hands the *same* `ArtImage`
+ * object to every listener, and held weakly so a superseded cover is collected with
+ * the transfer it came from. The inner key is the composition options, since a key
+ * (144x144, with glyph) and a strip (200x100) legitimately differ.
+ */
+const composedByArt = new WeakMap<Buffer, Map<string, string | undefined>>();
+
+function composeShared(art: NonNullable<NowPlaying["art"]>, options: OverlayFaceOptions): string | undefined {
+	let byOptions = composedByArt.get(art.bytes);
+	if (!byOptions) {
+		byOptions = new Map();
+		composedByArt.set(art.bytes, byOptions);
+	}
+	const key = `${options.width ?? ""}x${options.height ?? ""}|${options.glyph ?? ""}|${options.scrimOpacity ?? ""}|${options.slice?.index ?? ""}/${options.slice?.count ?? ""}`;
+	if (byOptions.has(key)) return byOptions.get(key);
+
+	const composed = composeCoverImage({
+		art,
+		glyph: options.glyph,
+		scrimOpacity: options.scrimOpacity,
+		slice: options.slice,
+		width: options.width,
+		height: options.height,
+	});
+	byOptions.set(key, composed);
+	return composed;
+}
+
+/**
  * Build the replacement face, or `undefined` when there would be nothing to show.
  *
  * Returning `undefined` matters: an element that hid its own useful content behind
@@ -143,16 +180,7 @@ export function buildOverlayFace(state: NowPlaying, options: OverlayFaceOptions 
 
 	// Over budget the composer returns undefined; fall back to the placeholder so the
 	// element still says "something is playing" rather than going blank.
-	const composed = state.art
-		? composeCoverImage({
-				art: state.art,
-				glyph: options.glyph,
-				scrimOpacity: options.scrimOpacity,
-				slice: options.slice,
-				width: options.width,
-				height: options.height,
-			})
-		: undefined;
+	const composed = state.art ? composeShared(state.art, options) : undefined;
 	const image =
 		composed ?? composePlaceholder({ glyph: options.glyph ?? "music", width: options.width, height: options.height });
 

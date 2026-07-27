@@ -194,6 +194,15 @@ interface HostEntry {
 const PRIME_COMMANDS = ["NTI", "NAT", "NAL", "NTM", "NST", "NMS"] as const;
 
 /**
+ * How long a completed pre-fill counts as current.
+ *
+ * Long, because it only has to cover the burst of elements binding together at
+ * startup or on a profile switch; after that the receiver pushes changes by itself
+ * and there is nothing to ask for.
+ */
+export const PRIME_COOLDOWN_MS = 60_000;
+
+/**
  * Per-host now-playing state, shared by every action bound to that host.
  *
  * Subscribing is how interest is declared, and here that is not just tidiness: the
@@ -204,6 +213,9 @@ const PRIME_COMMANDS = ["NTI", "NAT", "NAL", "NTM", "NST", "NMS"] as const;
 export class NowPlayingTracker {
 	private readonly hosts = new Map<string, HostEntry>();
 	private readonly art = new JacketArtAccumulator();
+	/** In-flight pre-fills, so simultaneous binds share one round of queries. */
+	private readonly priming = new Map<string, Promise<void>>();
+	private readonly primedAt = new Map<string, number>();
 	private readonly deps: NowPlayingDeps;
 	private readonly maxHosts: number;
 	private readonly cooldownMs: number;
@@ -266,16 +278,47 @@ export class NowPlayingTracker {
 	}
 
 	/**
-	 * Ask the receiver for the current metadata once.
+	 * Ask the receiver for the current metadata once **per host**.
 	 *
 	 * Needed because none of these commands is volunteered on connect — only on a
 	 * track change — so a freshly placed key would otherwise stay blank until the
-	 * song ends. Failures are ignored on purpose: a missing pre-fill costs one blank
-	 * display, and this must not become a reason a key fails to bind.
+	 * song ends.
+	 *
+	 * The de-duplication is not tidiness. Every element that watches metadata calls
+	 * this when it binds, and they all bind at once when the plugin starts or a
+	 * profile is switched: eight elements meant **48 simultaneous queries** at a
+	 * receiver that answers one connection. Repeats are folded into the in-flight
+	 * request, and a completed prime is not repeated within `PRIME_COOLDOWN_MS` —
+	 * after that the pushed updates have long taken over anyway.
+	 *
+	 * Queries are issued **one at a time** for the same reason. Failures are ignored
+	 * on purpose: a missing pre-fill costs one blank display, and this must never be
+	 * why a key fails to bind.
 	 */
 	async prime(host: string): Promise<void> {
 		this.entry(host);
-		await Promise.allSettled(PRIME_COMMANDS.map((command) => this.deps.queryCommand(host, command)));
+		const inFlight = this.priming.get(host);
+		if (inFlight) return inFlight;
+		const last = this.primedAt.get(host);
+		if (last !== undefined && this.now() - last < PRIME_COOLDOWN_MS) return;
+
+		const run = (async () => {
+			for (const command of PRIME_COMMANDS) {
+				try {
+					await this.deps.queryCommand(host, command);
+				} catch {
+					// A command this source does not implement simply times out; the next
+					// one is still worth asking for.
+				}
+			}
+		})();
+		this.priming.set(host, run);
+		try {
+			await run;
+		} finally {
+			this.priming.delete(host);
+			this.primedAt.set(host, this.now());
+		}
 	}
 
 	private handle(host: string, command: string, parameter: string): void {

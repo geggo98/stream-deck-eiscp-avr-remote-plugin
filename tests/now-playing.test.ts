@@ -20,6 +20,7 @@ import {
 	parsePlayStatus,
 	parseTimeField,
 	parseTimeInfo,
+	PRIME_COOLDOWN_MS,
 	TRACK_CHANGE_COOLDOWN_MS,
 	type NowPlaying,
 	type NowPlayingChange,
@@ -100,7 +101,7 @@ interface Harness {
 	setNow(ms: number): void;
 }
 
-function harness(options: { maxHosts?: number } = {}): Harness {
+function harness(options: { maxHosts?: number; failCommands?: string[] } = {}): Harness {
 	let messageCb: ((host: string, command: string, parameter: string) => void) | undefined;
 	let connectionCb: ((host: string, event: ConnectionEvent) => void) | undefined;
 	const queried: string[] = [];
@@ -118,6 +119,7 @@ function harness(options: { maxHosts?: number } = {}): Harness {
 			},
 			queryCommand: async (host, command) => {
 				queried.push(`${host} ${command}`);
+				if (options.failCommands?.includes(command)) throw new Error(`${command} timed out`);
 				return "";
 			},
 		},
@@ -206,7 +208,7 @@ describe("NowPlayingTracker", () => {
 		h.tracker.onUpdate("10.0.0.1", () => {});
 		// The receiver prefixes display payloads with 0x1a; control bytes must not
 		// reach a Stream Deck title.
-		h.send("10.0.0.1", "NTI", "Grüße aus Köln ");
+		h.send("10.0.0.1", "NTI", "\u001aGrüße aus Köln\u0000");
 		assert.equal(h.tracker.get("10.0.0.1").track, "Grüße aus Köln");
 
 		h.send("10.0.0.1", "NAT", "A".repeat(200));
@@ -372,11 +374,11 @@ describe("NowPlayingTracker: lifecycle and bounds", () => {
 		assert.equal(h.tracker.get("10.0.0.1").art, undefined);
 	});
 
-	it("queries the commands the receiver never volunteers", () => {
+	it("queries the commands the receiver never volunteers", async () => {
 		// None of these is pushed on connect (measured), only on a track change — so a
 		// freshly placed key would stay blank for the rest of the song without this.
 		const h = harness();
-		h.tracker.prime("10.0.0.1");
+		await h.tracker.prime("10.0.0.1");
 		assert.deepEqual(h.queried, [
 			"10.0.0.1 NTI",
 			"10.0.0.1 NAT",
@@ -385,5 +387,39 @@ describe("NowPlayingTracker: lifecycle and bounds", () => {
 			"10.0.0.1 NST",
 			"10.0.0.1 NMS",
 		]);
+	});
+
+	it("folds simultaneous pre-fills into one round of queries", async () => {
+		// The reason this matters: every element that watches metadata primes when it
+		// binds, and they all bind together at startup or on a profile switch. Eight
+		// elements meant 48 queries at once, at a receiver that answers one connection.
+		const h = harness();
+		await Promise.all([
+			h.tracker.prime("10.0.0.1"),
+			h.tracker.prime("10.0.0.1"),
+			h.tracker.prime("10.0.0.1"),
+			h.tracker.prime("10.0.0.1"),
+		]);
+		assert.equal(h.queried.length, 6, `expected one round, got ${h.queried.join(", ")}`);
+	});
+
+	it("does not re-prime a host it has just primed", async () => {
+		const h = harness();
+		await h.tracker.prime("10.0.0.1");
+		await h.tracker.prime("10.0.0.1");
+		assert.equal(h.queried.length, 6, "the second call is inside the cooldown");
+
+		h.setNow(10_000 + PRIME_COOLDOWN_MS + 1);
+		await h.tracker.prime("10.0.0.1");
+		assert.equal(h.queried.length, 12, "past the cooldown it asks again");
+	});
+
+	it("keeps asking the rest after one command times out", async () => {
+		// NTC has no QSTN and simply times out; that must not stop the pre-fill. (This
+		// is the shape of a real defect: a now-playing key that queried a command with
+		// no QSTN sat through a 5 s timeout on every bind.)
+		const h = harness({ failCommands: ["NAT"] });
+		await h.tracker.prime("10.0.0.1");
+		assert.equal(h.queried.length, 6);
 	});
 });
