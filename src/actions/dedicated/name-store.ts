@@ -177,8 +177,19 @@ interface HostState {
  * A veto list, so a command missing from it only means the old behaviour rather
  * than a new failure. `LMD` is absent on purpose: mode names are the *other*
  * branch of noteFld and have their own window.
+ *
+ * `RES` joined the list when the 4K-upscaling key arrived, and it is the one entry
+ * here that threatens the **mode** branch rather than the input one: its readout is
+ * `"Upscaling:Auto"` / `"Upscaling:Off "`, which does *not* end in digits, so
+ * `endsWithVolume` sends it to the LMD side — the same shape that once learned a
+ * scrolling track title as mode 82. Measured on a VSX-S520D (2026-08-08), a `RES`
+ * set produces exactly two frames and no `LMD` of its own: the echo at ~148 ms and
+ * the display text at ~175 ms, symmetrically in both directions. The 27 ms between
+ * them is what makes this entry work — the echo marks the display taken before the
+ * text arrives — and the absence of an `LMD` is why the hole needs an *unrelated*
+ * mode change to open at all.
  */
-const DISPLAY_OWNING_COMMANDS: readonly string[] = ["MVL", "AMT", "TFR", "TFW", "PRS", "CTL", "SWL", "DIM"];
+const DISPLAY_OWNING_COMMANDS: readonly string[] = ["MVL", "AMT", "TFR", "TFW", "PRS", "CTL", "SWL", "DIM", "RES"];
 
 /**
  * Commands that mean "this source is streaming something and putting its metadata on
