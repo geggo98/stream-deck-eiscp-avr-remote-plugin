@@ -8,6 +8,11 @@
                 "moduleResolution": "Bundler",
                 "noImplicitOverride": true,
                 "noUncheckedIndexedAccess": true,
+                // `return` followed by a newline is a `return;` — the expression on the
+                // next line becomes dead code, silently. A declared return type already
+                // catches it, but a `void` function gets no warning at all without this.
+                // TS reports it as a suggestion by default; here it is an error.
+                "allowUnreachableCode": false,
                 "allowImportingTsExtensions": true,
                 "rewriteRelativeImportExtensions": true,
                 "types": ["node"],
