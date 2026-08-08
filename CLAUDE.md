@@ -363,7 +363,44 @@ ever assigned one cover segment: unreachable configuration is worse than none.
 
 `text-fit.ts` shrinks through a size ladder, then splits across segments at **word**
 boundaries, and only then clips — the layout offers no font family (so the width
-estimate is an estimate, biased pessimistic) and no marquee at all.
+estimate is an estimate, biased pessimistic) and no marquee at all. The order of
+preference throughout the feature is **spread, then shrink, then clip**.
+
+### Cooperating panels across adjacent dials
+
+Adjacent dials with the track-change display switched on become **one** display: one
+panel shows the cover, the others the title, artist and album, and the whole row comes
+back together. Membership *is* the opt-in — a neighbour that does not want it breaks
+the run rather than leaving a hole. `contiguousGroups` splits on a column gap **and on
+a change of `host`**: two receivers on one deck have no shared "what is playing".
+
+- **`enabled` is settable at runtime**, and that is what makes this affordable.
+  `FeedbackPayloadItem` is `Partial<Omit<T, "key"|"rect"|"type">>` — only those three
+  are immutable — so `layouts/np-panel.json` carries the dial's own face *and* the
+  panel and switches between them with `enabled`. There is **no `setFeedbackLayout`
+  per track change**; it happens once per bind and only for dials that opted in.
+- **A layout switch has no undo**, so `manifestLayout()` reads the original from
+  `encoderLayoutFor` (`catalog.ts`) — the same table the manifest is generated from.
+  Restoring a `$B1` dial to `$A1` would cost it its progress bar for good.
+- **`rolesForGroupSize` alone never spread on real hardware.** It gives the title a
+  second segment only from **five** panels up; a Stream Deck + has **four**. So
+  `planPanels` plans against the strings that are playing: surplus goes to whichever of
+  title/artist is too long, and the album gives way to it. A leftover panel is `"none"`
+  and keeps its own face — cutting a one-word title in half, or leaving a blank segment
+  mid-row, both look like a crash.
+- **The group takes the longest duration any member is set to.** A row that came up
+  together and then fell apart panel by panel reads as a fault, not as a setting.
+- The overlay now freezes the receiver's **state**, not the finished picture. Still a
+  snapshot (the 1 Hz `NTM` cannot get in), but the face is built at render time — which
+  is what lets a dial become the cover when its left-hand neighbour is pulled out
+  mid-display.
+- **The schema's overlap rule is per layout; the one that bites is per face.** Items
+  sharing a `zOrder` may not overlap, and this layout deliberately overlaps *across*
+  z-orders. That legality hid a real collision: the lone-dial role shows an artist line
+  and an elapsed time at once, and those two rects sat on top of each other.
+  `tests/layout-json.test.ts` builds every role and checks what it actually switches on
+  — plus that every key the code writes exists, because Stream Deck ignores an unknown
+  key in silence and the panel just would not appear.
 
 ### Generated files contain only generated content
 

@@ -1,0 +1,249 @@
+/**
+ * What one cooperating touch-strip panel draws.
+ *
+ * `strip-group.ts` decides *which* part of the display a dial is responsible for;
+ * this turns that decision plus the receiver's state into concrete content — which
+ * layout items are on, what stands in them, at what size.
+ *
+ * Two things it deliberately is not:
+ *
+ *   - **It does not send anything.** It returns a plain object and
+ *     `DialActionBase.sendFeedback` maps it onto `layouts/np-panel.json`. Same split as
+ *     `track-overlay.ts`, and for the same reason: this file has to stay free of
+ *     `@elgato/streamdeck` so its tests can be too (importing the SDK rotates its log
+ *     files as a module side effect, which races between parallel test processes).
+ *   - **It does not build markup.** The cover arrives as an already-composed data URI
+ *     from `composeCoverImage`; titles and artists go into layout text items, which
+ *     Stream Deck renders and escapes itself. No string off the wire is ever
+ *     interpolated into an `<svg>` here — see the note in `cover-image.ts`.
+ *
+ * ## Why a panel can decline
+ *
+ * `passive` says "this dial keeps its own face". It is not a failure path: a group can
+ * be wider than the receiver has text (a one-word title with no artist and no album),
+ * and the alternatives are both worse — cutting a word in half, or leaving a blank
+ * panel in the middle of a row, which reads as a crash rather than as a layout.
+ *
+ * ## No elapsed time and no progress bar
+ *
+ * Both were here, and both were wrong on the hardware. This display freezes the state
+ * at the moment of the change, and at that moment the receiver's elapsed time is still
+ * the **previous** track's. `NTM` ticks once a second, so waiting does not help; asking
+ * for it did not either, which was measured rather than assumed — the unit has nothing
+ * useful to give that early. A bar showing where the last song had got to is worse than
+ * no bar at all.
+ *
+ * It is barely worth having here anyway: a track that has just started is at zero.
+ * Where a bar does earn its place is a **permanent** now-playing display, which is why
+ * the layout keeps its `time` and `progress` items — `panelItems` switches them off
+ * explicitly on every send, exactly like everything else it is not using.
+ */
+
+import type { NowPlaying } from "../adapter/eiscp/now-playing.ts";
+import { PANEL_TEXT_LINES, PANEL_TEXT_WIDTH, STRIP_HEIGHT, STRIP_SEGMENT_WIDTH } from "./cover-image.ts";
+import type { StripAssignment, StripRole } from "./strip-group.ts";
+import { fitLines, splitTextAcross } from "./text-fit.ts";
+import { buildOverlayFace, overlayTexts, type OverlayFaceOptions } from "./track-overlay.ts";
+
+/** Path of the layout that carries both faces, relative to the plugin folder. */
+export const PANEL_LAYOUT = "layouts/np-panel.json";
+
+/**
+ * The layout's items and what kind each one is.
+ *
+ * The kind is not decoration: a `bar` takes a number and a `text` takes a string, and
+ * the two are indistinguishable once they are in a `FeedbackPayload`. Keeping it here
+ * lets `panelItems` be checked against the layout rather than trusted.
+ */
+const PANEL_ITEM_KINDS = { cover: "pixmap", line1: "text", line2: "text", time: "text", progress: "bar" } as const;
+
+/**
+ * Items the dial's own face uses; hidden while the panel is up.
+ *
+ * Both lists are written out in full on every send, in both directions. That is not
+ * belt and braces: a layout item keeps whatever it was last given, so there is no way
+ * to *unset* one — leaving an item out is how a cover once stuck to a touch strip for
+ * good. The way back has to be said as plainly as the way there.
+ *
+ * The dial's label is keyed **`label`, not `title`**, and that is load-bearing. A text
+ * item keyed `title` is special: Stream Deck binds it to the action's own title
+ * property, styles it from the user's Property Inspector settings and keeps it
+ * rendered — `enabled: false` in a feedback payload does not take it away. Measured on
+ * a real Stream Deck +: the dial's own label stayed on screen underneath the panel
+ * text and the two were unreadable on top of each other.
+ */
+const NORMAL_ITEM_KINDS = { icon: "pixmap", label: "text", value: "text", indicator: "bar" } as const;
+
+/**
+ * Where a `buildFeedback` payload's `title` goes on the panel layout.
+ *
+ * The implementations all speak the built-in layouts' vocabulary, so the rename is
+ * absorbed at the boundary rather than pushed into every dial.
+ */
+export const PANEL_TITLE_KEY = "label";
+
+/** Items only the panel display uses; hidden the rest of the time. */
+export const PANEL_ITEM_KEYS = Object.keys(PANEL_ITEM_KINDS) as (keyof typeof PANEL_ITEM_KINDS)[];
+export const NORMAL_ITEM_KEYS = Object.keys(NORMAL_ITEM_KINDS) as (keyof typeof NORMAL_ITEM_KINDS)[];
+
+/** One rendered line of a panel, with the size the fitter settled on. */
+export interface PanelLine {
+	text: string;
+	fontSize: number;
+}
+
+export interface PanelFace {
+	/** Full-bleed cover as a data URI; absent on a text panel. */
+	cover?: string;
+	/** Wide text lines, top to bottom. At most `PANEL_TEXT_LINES`. */
+	lines: PanelLine[];
+	/**
+	 * True when this dial takes no part in the group display this time round and
+	 * should keep its own face.
+	 */
+	passive: boolean;
+}
+
+export interface PanelFaceOptions {
+	/** Usable text width inside the panel; defaults to the layout's own. */
+	width?: number;
+	/** Lines the layout offers; defaults to the layout's own. */
+	maxLines?: number;
+	/** Passed through to the cover composition. */
+	scrimOpacity?: number;
+}
+
+const PASSIVE: PanelFace = { lines: [], passive: true };
+
+/** Roles that carry the picture. Exactly one per group, plus the lone-dial case. */
+function showsCover(role: StripRole): boolean {
+	return role === "cover" || role === "all";
+}
+
+/** The string a text role is responsible for, before any splitting. */
+function textForRole(state: NowPlaying, role: StripRole): string | undefined {
+	const { primary } = overlayTexts(state);
+	if (role === "title") return primary;
+	if (role === "artist") return state.artist;
+	if (role === "album") return state.album;
+	return undefined;
+}
+
+/**
+ * What one layout item is to be set to. Mapped onto a `FeedbackPayload` by the caller.
+ *
+ * Discriminated so a bar's numeric value and a text's string can never be swapped —
+ * they are the same field name in the payload, and Stream Deck simply ignores the one
+ * it cannot use.
+ */
+export type PanelItem =
+	| { kind: "text"; enabled: boolean; value?: string; font?: { size: number } }
+	| { kind: "pixmap"; enabled: boolean; value?: string }
+	| { kind: "bar"; enabled: boolean; value?: number };
+
+/**
+ * Turn a face into the layout items that express it.
+ *
+ * Every key of both lists appears in the result every time, so the two faces cannot
+ * bleed into each other: switching to the panel display says "the icon is off" as
+ * explicitly as it says "the cover is on".
+ */
+export function panelItems(face: PanelFace): Record<string, PanelItem> {
+	const items: Record<string, PanelItem> = {};
+	for (const [key, kind] of Object.entries(PANEL_ITEM_KINDS)) items[key] = { kind, enabled: false };
+	for (const [key, kind] of Object.entries(NORMAL_ITEM_KINDS)) {
+		// Hidden text is also blanked, not merely switched off. `enabled` is one
+		// mechanism and the caller adds `opacity: 0` as a second, but neither is worth
+		// betting a legible display on: an empty string cannot overlap anything even if
+		// both are ignored. Not the pixmap — `""` there would clear the layout's own
+		// icon with no way back (see `sendFeedback`).
+		items[key] =
+			kind === "text" && !face.passive ? { kind, enabled: false, value: "" } : { kind, enabled: face.passive };
+	}
+	if (face.passive) return items;
+
+	if (face.cover) items["cover"] = { kind: "pixmap", enabled: true, value: face.cover };
+	const [first, second] = face.lines;
+	if (first) items["line1"] = { kind: "text", enabled: true, value: first.text, font: { size: first.fontSize } };
+	if (second) items["line2"] = { kind: "text", enabled: true, value: second.text, font: { size: second.fontSize } };
+	// `time` and `progress` stay off; see the note on `PanelFace`.
+	return items;
+}
+
+/**
+ * Two strings that belong on their own lines (title above artist).
+ *
+ * Fitted separately but drawn at one size — the smaller of the two — because two
+ * lines of the same block at different sizes reads as a rendering fault rather than
+ * as emphasis.
+ */
+function fitSeparateLines(strings: readonly string[], width: number, maxLines: number): PanelLine[] {
+	const fits = strings.slice(0, maxLines).map((text) => fitLines(text, width, 1));
+	const fontSize = Math.min(...fits.map((f) => f.fontSize));
+	return fits.map((f) => ({ text: f.lines[0] ?? "", fontSize }));
+}
+
+/** One string wrapped over the lines the panel has. */
+function fitOneString(text: string, width: number, maxLines: number): PanelLine[] {
+	const fitted = fitLines(text, width, maxLines);
+	return fitted.lines.map((line) => ({ text: line, fontSize: fitted.fontSize }));
+}
+
+/**
+ * Build the face for one panel.
+ *
+ * `undefined` is never returned: a dial that is a member of a group always gets an
+ * answer, and "nothing to show" is expressed as `passive` so the caller has one code
+ * path rather than two.
+ */
+export function buildPanelFace(
+	state: NowPlaying,
+	assignment: StripAssignment,
+	options: PanelFaceOptions = {},
+): PanelFace {
+	const width = options.width ?? PANEL_TEXT_WIDTH;
+	const maxLines = options.maxLines ?? PANEL_TEXT_LINES;
+	const { role } = assignment;
+	if (role === "none") return PASSIVE;
+
+	const faceOptions: OverlayFaceOptions = {
+		width: STRIP_SEGMENT_WIDTH,
+		height: STRIP_HEIGHT,
+		// A 200x100 segment against square album art: cropping to fill would show only
+		// the middle band of the cover, so the whole picture is fitted instead and the
+		// backdrop shows either side of it.
+		fit: "contain",
+		...(options.scrimOpacity !== undefined ? { scrimOpacity: options.scrimOpacity } : {}),
+	};
+	// Only the cover roles pay for the composition; `buildOverlayFace` shares and
+	// caches it per transfer, so the one panel that needs it composes once for the
+	// whole group. Its time and progress are ignored here — see the note on `PanelFace`.
+	const composed = showsCover(role) ? buildOverlayFace(state, faceOptions) : undefined;
+	if (showsCover(role) && !composed) return PASSIVE;
+
+	const lines: string[] = [];
+	if (role === "text" || role === "all") {
+		const { primary, secondary } = overlayTexts(state);
+		if (primary) lines.push(primary);
+		if (secondary) lines.push(secondary);
+	} else if (role !== "cover") {
+		const whole = textForRole(state, role);
+		// A part index only ever comes with a count above one (see `assignRoles`), so
+		// this is the "several panels share this string" case.
+		const part = assignment.textPart ? splitTextAcross(whole ?? "", assignment.textPart.count)[assignment.textPart.index] : whole;
+		if (part) lines.push(part);
+	}
+
+	// A text panel with nothing in it would be a blank segment in the middle of the
+	// row. Defensive: `planPanels` only hands out roles it has text for, but the
+	// plan and the state are read at different moments.
+	if (!showsCover(role) && lines.length === 0) return PASSIVE;
+
+	const rendered = lines.length > 1 ? fitSeparateLines(lines, width, maxLines) : fitOneString(lines[0] ?? "", width, maxLines);
+
+	return {
+		...(composed?.image !== undefined ? { cover: composed.image } : {}),
+		lines: rendered,
+		passive: false,
+	};
+}

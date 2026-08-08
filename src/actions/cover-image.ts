@@ -61,6 +61,27 @@ export const STRIP_SEGMENT_WIDTH = 200;
 export const STRIP_HEIGHT = 100;
 
 /**
+ * The text geometry of one cooperating panel (`layouts/np-panel.json`).
+ *
+ * Here rather than next to the planner because it describes the strip, like the two
+ * constants above, and because both the planner (how many panels a title needs) and the
+ * renderer (how large to set the type) have to agree on it — a disagreement would show
+ * up as text that spills onto a second panel and then still gets clipped.
+ */
+export const PANEL_TEXT_WIDTH = STRIP_SEGMENT_WIDTH - 12;
+/** `line1` + `line2`; a third line at a readable size does not fit under them. */
+export const PANEL_TEXT_LINES = 2;
+/**
+ * The size below which another panel beats smaller type.
+ *
+ * Not the bottom of `FONT_SIZE_LADDER`: that ladder was picked for the cramped built-in
+ * layouts, where shrinking was the only option. With panels to hand the order is spread
+ * first, shrink second, clip last — so this is the point at which spreading wins, not
+ * the point at which text becomes unreadable.
+ */
+export const PANEL_PREFERRED_FONT_SIZE = 20;
+
+/**
  * Largest composed image we will hand to Stream Deck.
  *
  * Measured cost for a real 97 KB cover is 173 KB, so this is ~3x headroom. It exists
@@ -87,6 +108,16 @@ export interface CoverSlice {
 	count: number;
 }
 
+/**
+ * How the art fills its box when the two shapes disagree.
+ *
+ * `cover` crops to fill, `contain` fits the whole picture and leaves the rest of the
+ * box showing. A square key never sees the difference; a 200x100 strip segment with a
+ * square cover very much does — `cover` there would show only the middle band of the
+ * artwork, which is where the title usually is not.
+ */
+export type CoverFit = "cover" | "contain";
+
 export interface ComposeOptions {
 	/** The assembled cover; absent means "draw the placeholder". */
 	art?: ArtImage;
@@ -98,7 +129,66 @@ export interface ComposeOptions {
 	slice?: CoverSlice;
 	width?: number;
 	height?: number;
+	/** Defaults to `cover`, which is what a square key wants. */
+	fit?: CoverFit;
 }
+
+/**
+ * Intrinsic size of the art, from its own header.
+ *
+ * Needed because **`preserveAspectRatio` cannot be relied on**: Stream Deck renders
+ * with Qt, whose SVG support is partial, and a nested `<image>` came out stretched to
+ * the box on a real Stream Deck + — a square cover drawn 200x100 wide. Computing the
+ * geometry here removes the dependency on an attribute the renderer may ignore.
+ *
+ * Returns `undefined` when the header cannot be read; the caller then falls back to
+ * filling the box, which is the old behaviour and no worse than it was.
+ *
+ * This parses device-controlled bytes, so the marker walk is bounded and every read is
+ * range-checked.
+ */
+export function imageSize(art: ArtImage): { width: number; height: number } | undefined {
+	const b = art.bytes;
+	if (art.type === "bmp") {
+		// BITMAPINFOHEADER: signed 32-bit width/height at 18 and 22; a negative height
+		// means the rows are stored top-down, which says nothing about the size.
+		if (b.length < 26) return undefined;
+		const width = b.readInt32LE(18);
+		const height = Math.abs(b.readInt32LE(22));
+		return width > 0 && height > 0 ? { width, height } : undefined;
+	}
+	// JPEG: walk the segment markers to the frame header, which carries the size.
+	let pos = 2;
+	for (let steps = 0; steps < MAX_JPEG_MARKERS && pos + 3 < b.length; steps++) {
+		if (b[pos] !== 0xff) return undefined;
+		const marker = b[pos + 1]!;
+		// Fill bytes and the standalone markers carry no length field.
+		if (marker === 0xff) {
+			pos++;
+			continue;
+		}
+		if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+			pos += 2;
+			continue;
+		}
+		const length = b.readUInt16BE(pos + 2);
+		if (length < 2) return undefined;
+		// SOF0..SOF15, except the four that are not frame headers (DHT, JPG, DAC, and
+		// the restart-interval marker do not carry a size).
+		const isFrame = marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker);
+		if (isFrame) {
+			if (pos + 9 > b.length) return undefined;
+			const height = b.readUInt16BE(pos + 5);
+			const width = b.readUInt16BE(pos + 7);
+			return width > 0 && height > 0 ? { width, height } : undefined;
+		}
+		pos += 2 + length;
+	}
+	return undefined;
+}
+
+/** Segments walked before giving up; a real header reaches the frame in a handful. */
+const MAX_JPEG_MARKERS = 64;
 
 function clampScrim(value: number | undefined): number {
 	if (value === undefined || !Number.isFinite(value)) return DEFAULT_SCRIM;
@@ -142,14 +232,30 @@ function svgToDataUri(svg: string): string {
  * 100, far wider than the square source, and letterboxing four strips would waste
  * most of them. The stretch is the point.
  */
-function artElement(art: ArtImage, width: number, height: number, slice?: CoverSlice): string {
+function artElement(art: ArtImage, width: number, height: number, slice?: CoverSlice, fit: CoverFit = "cover"): string {
 	const href = `data:${mimeFor(art)};base64,${art.bytes.toString("base64")}`;
-	if (!slice || slice.count <= 1) {
+	if (slice && slice.count > 1) {
+		const total = width * slice.count;
+		const offset = -width * Math.min(Math.max(slice.index, 0), slice.count - 1);
+		return `<image x="${offset}" y="0" width="${total}" height="${height}" preserveAspectRatio="none" href="${href}"/>`;
+	}
+	const size = imageSize(art);
+	if (!size) {
+		// Unreadable header: fill the box and ask the renderer to do the right thing.
+		// No worse than before, and it keeps a cover on screen rather than none.
 		return `<image x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" href="${href}"/>`;
 	}
-	const total = width * slice.count;
-	const offset = -width * Math.min(Math.max(slice.index, 0), slice.count - 1);
-	return `<image x="${offset}" y="0" width="${total}" height="${height}" preserveAspectRatio="none" href="${href}"/>`;
+	// The geometry, done here rather than declared: see `imageSize`. Everything outside
+	// the viewBox is clipped by the outer <svg>, so `cover` needs no clip path.
+	const scale =
+		fit === "contain"
+			? Math.min(width / size.width, height / size.height)
+			: Math.max(width / size.width, height / size.height);
+	const drawn = { w: size.width * scale, h: size.height * scale };
+	const x = (width - drawn.w) / 2;
+	const y = (height - drawn.h) / 2;
+	const round = (n: number): string => n.toFixed(2);
+	return `<image x="${round(x)}" y="${round(y)}" width="${round(drawn.w)}" height="${round(drawn.h)}" preserveAspectRatio="none" href="${href}"/>`;
 }
 
 /**
@@ -167,7 +273,10 @@ export function composeCoverImage(options: ComposeOptions): string | undefined {
 		: "";
 
 	const layers = options.art
-		? artElement(options.art, width, height, options.slice) +
+		? // The backdrop shows wherever `contain` leaves the box unfilled; without it a
+			// letterboxed cover would sit on whatever the strip drew last.
+			`<rect width="${width}" height="${height}" fill="${PLACEHOLDER_BG}"/>` +
+			artElement(options.art, width, height, options.slice, options.fit) +
 			`<rect width="${width}" height="${height}" fill="#000000" opacity="${clampScrim(options.scrimOpacity)}"/>`
 		: `<rect width="${width}" height="${height}" fill="${PLACEHOLDER_BG}"/>`;
 

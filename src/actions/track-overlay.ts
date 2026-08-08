@@ -22,7 +22,24 @@
 
 import type { DeviceStatus } from "../adapter/eiscp/device-status.ts";
 import type { NowPlaying } from "../adapter/eiscp/now-playing.ts";
-import { composeCoverImage, composePlaceholder, type CoverSlice } from "./cover-image.ts";
+import { composeCoverImage, composePlaceholder, type CoverFit, type CoverSlice } from "./cover-image.ts";
+import { wrapToChars } from "./text-fit.ts";
+
+/**
+ * How much of a track title a Stream Deck **key** title can hold.
+ *
+ * An estimate, and it has to be: the app draws key titles in the user's own font at
+ * the user's own size, neither of which is knowable from a plugin. What *is* known is
+ * that the app neither wraps a long line nor shrinks it — the title simply runs off
+ * the key and paints over its neighbours, which is what "Cruel Summer / Taylor Swift"
+ * did to the Play key next to it. So the string has to arrive short enough.
+ *
+ * Biased low for the same reason `AVG_CHAR_WIDTH_RATIO` is: too small is a shorter
+ * title, too large is a title on top of another key.
+ */
+export const KEY_TITLE_CHARS = 10;
+/** Two for the track, one for the artist. */
+export const KEY_TITLE_TRACK_LINES = 2;
 
 /** Seconds the replacement face stays up. */
 export const DEFAULT_TRACK_CHANGE_SECONDS = 5;
@@ -94,6 +111,8 @@ export interface OverlayFaceOptions {
 	scrimOpacity?: number;
 	/** Glyph drawn over the art; omit for none. */
 	glyph?: string;
+	/** `contain` on the wide touch strip, so a square cover is not cropped in half. */
+	fit?: CoverFit;
 }
 
 /** `68` -> `1:08`, `3800` -> `1:03:20`. */
@@ -144,7 +163,7 @@ function composeShared(art: NonNullable<NowPlaying["art"]>, options: OverlayFace
 		byOptions = new Map();
 		composedByArt.set(art.bytes, byOptions);
 	}
-	const key = `${options.width ?? ""}x${options.height ?? ""}|${options.glyph ?? ""}|${options.scrimOpacity ?? ""}|${options.slice?.index ?? ""}/${options.slice?.count ?? ""}`;
+	const key = `${options.width ?? ""}x${options.height ?? ""}|${options.glyph ?? ""}|${options.scrimOpacity ?? ""}|${options.slice?.index ?? ""}/${options.slice?.count ?? ""}|${options.fit ?? ""}`;
 	if (byOptions.has(key)) return byOptions.get(key);
 
 	const composed = composeCoverImage({
@@ -154,9 +173,24 @@ function composeShared(art: NonNullable<NowPlaying["art"]>, options: OverlayFace
 		slice: options.slice,
 		width: options.width,
 		height: options.height,
+		fit: options.fit,
 	});
 	byOptions.set(key, composed);
 	return composed;
+}
+
+/**
+ * The two lines every face is built from, with the stand-ins applied.
+ *
+ * Shared with the cooperating strip panels (`strip-panel.ts`) so a group and a lone
+ * element cannot disagree about what "the title" is when the receiver only sent an
+ * album.
+ */
+export function overlayTexts(state: NowPlaying): { primary?: string; secondary: string } {
+	return {
+		primary: state.track ?? state.artist ?? state.album,
+		secondary: state.track ? (state.artist ?? state.album ?? "") : (state.album ?? ""),
+	};
 }
 
 /**
@@ -167,11 +201,10 @@ function composeShared(art: NonNullable<NowPlaying["art"]>, options: OverlayFace
  * with no text and no art produces no overlay at all.
  */
 export function buildOverlayFace(state: NowPlaying, options: OverlayFaceOptions = {}): OverlayFace | undefined {
-	const primary = state.track ?? state.artist ?? state.album;
+	const { primary, secondary } = overlayTexts(state);
 	const hasText = primary !== undefined;
 	if (!hasText && !state.art) return undefined;
 
-	const secondary = state.track ? (state.artist ?? state.album ?? "") : (state.album ?? "");
 	const progress = overlayProgress(state);
 	const time =
 		progress !== undefined && state.elapsed !== undefined && state.total !== undefined
@@ -188,8 +221,23 @@ export function buildOverlayFace(state: NowPlaying, options: OverlayFaceOptions 
 		image,
 		primary: primary ?? "",
 		secondary,
-		keyTitle: [primary ?? "", secondary].filter(Boolean).join("\n"),
+		keyTitle: keyTitleFor(primary, secondary),
 		time,
 		progress,
 	};
+}
+
+/**
+ * Wrap a track and artist into something a key can actually hold.
+ *
+ * Three lines at most: the track gets two, the artist one. Anything longer is cut
+ * rather than allowed to spill — a title painted across the neighbouring key looks
+ * like a fault in the neighbour, not in this one.
+ */
+export function keyTitleFor(primary: string | undefined, secondary: string): string {
+	const lines = [
+		...(primary ? wrapToChars(primary, KEY_TITLE_CHARS, KEY_TITLE_TRACK_LINES).lines : []),
+		...(secondary ? wrapToChars(secondary, KEY_TITLE_CHARS, 1).lines : []),
+	];
+	return lines.filter(Boolean).join("\n");
 }

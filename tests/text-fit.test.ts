@@ -15,8 +15,10 @@ import { describe, it } from "node:test";
 import {
 	AVG_CHAR_WIDTH_RATIO,
 	charBudget,
+	fitLines,
 	fitText,
 	FONT_SIZE_LADDER,
+	PANEL_FONT_SIZE_LADDER,
 	splitTextAcross,
 } from "../src/actions/text-fit.ts";
 
@@ -164,5 +166,75 @@ describe("splitTextAcross", () => {
 	it("never returns more parts than asked for, however many words there are", () => {
 		const many = Array.from({ length: 30 }, (_, i) => `w${i}`).join(" ");
 		assert.equal(splitTextAcross(many, 3).length, 3);
+	});
+});
+
+describe("fitLines", () => {
+	/** The width one cooperating panel offers (`PANEL_TEXT_WIDTH`). */
+	const PANEL = 188;
+
+	it("starts far larger than the built-in layouts allow", () => {
+		// The panel ladder exists because a cooperating segment has a full 188 px and two
+		// lines, where $A1 had a corner. Starting at 16 there would waste the space.
+		assert.ok(PANEL_FONT_SIZE_LADDER[0]! > FONT_SIZE_LADDER[0]!);
+	});
+
+	it("keeps a short string on one line at the largest size", () => {
+		const fitted = fitLines("Lover", PANEL, 2);
+		assert.deepEqual(fitted.lines, ["Lover"]);
+		assert.equal(fitted.fontSize, PANEL_FONT_SIZE_LADDER[0]);
+		assert.equal(fitted.clipped, false);
+	});
+
+	it("wraps at a word rather than shrinking, while there is a line left", () => {
+		const fitted = fitLines("Bohemian Rhapsody", PANEL, 2);
+		assert.deepEqual(fitted.lines, ["Bohemian", "Rhapsody"]);
+		assert.equal(fitted.fontSize, PANEL_FONT_SIZE_LADDER[0], "wrapping came before shrinking");
+	});
+
+	it("shrinks only once wrapping has run out of lines", () => {
+		// The same string, once with a second line to use and once without: the second
+		// line is what buys the larger type. (Both bottom out at the smallest size for a
+		// string long enough, which is why this uses one that does not.)
+		const twoLines = fitLines("Bohemian Rhapsody", PANEL, 2);
+		const oneLine = fitLines("Bohemian Rhapsody", PANEL, 1);
+		assert.equal(oneLine.clipped, false, "it still fits, just smaller");
+		assert.ok(oneLine.fontSize < twoLines.fontSize, `${oneLine.fontSize} should be under ${twoLines.fontSize}`);
+	});
+
+	it("loses nothing it did not have to", () => {
+		// Every word that went in comes back out, in order, unless the fit was clipped.
+		const text = "One Two Three Four Five Six Seven Eight";
+		const fitted = fitLines(text, PANEL, 2);
+		assert.equal(fitted.clipped, false);
+		assert.equal(fitted.lines.join(" "), text);
+	});
+
+	it("cuts a single unsplittable word instead of giving up", () => {
+		// Nothing wraps here, so the ladder cannot help; the honest answer is to show
+		// what fits and say it was clipped.
+		const fitted = fitLines("Supercalifragilisticexpialidocious", PANEL, 2);
+		assert.equal(fitted.clipped, true);
+		assert.ok(fitted.lines.length > 0);
+		assert.ok(fitted.lines.every((l) => l.length <= charBudget(PANEL, fitted.fontSize)));
+	});
+
+	it("has nothing to lay out for an empty string", () => {
+		for (const nothing of ["", "   "]) {
+			assert.deepEqual(fitLines(nothing, PANEL, 2).lines, [], JSON.stringify(nothing));
+		}
+	});
+
+	it("never returns more lines than it was allowed", () => {
+		const long = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
+		for (const max of [1, 2, 3]) {
+			assert.ok(fitLines(long, PANEL, max).lines.length <= max, `max ${max}`);
+		}
+	});
+
+	it("survives a width that fits nothing", () => {
+		const fitted = fitLines("Cruel Summer", 0, 2);
+		assert.deepEqual(fitted.lines, []);
+		assert.equal(fitted.clipped, true, "it must say so rather than look successful");
 	});
 });

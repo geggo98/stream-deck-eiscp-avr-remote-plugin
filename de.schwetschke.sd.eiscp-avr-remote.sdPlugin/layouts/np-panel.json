@@ -1,0 +1,95 @@
+{
+	"$schema": "https://schemas.elgato.com/streamdeck/plugins/layout.json",
+	"id": "np-panel",
+	"items": [
+		{
+			"key": "cover",
+			"type": "pixmap",
+			"rect": [0, 0, 200, 100],
+			"zOrder": 0,
+			"enabled": false
+		},
+		{
+			"key": "label",
+			"type": "text",
+			"rect": [0, 10, 200, 24],
+			"zOrder": 10,
+			"alignment": "center",
+			"text-overflow": "ellipsis",
+			"font": { "weight": 600 },
+			"value": ""
+		},
+		{
+			"key": "icon",
+			"type": "pixmap",
+			"rect": [16, 35, 50, 50],
+			"zOrder": 10
+		},
+		{
+			"key": "value",
+			"type": "text",
+			"rect": [76, 35, 116, 30],
+			"zOrder": 10,
+			"alignment": "center",
+			"text-overflow": "ellipsis",
+			"font": { "size": 18, "weight": 400 },
+			"value": ""
+		},
+		{
+			"key": "indicator",
+			"type": "bar",
+			"rect": [76, 70, 116, 14],
+			"zOrder": 10,
+			"value": 0,
+			"subtype": 4,
+			"bar_bg_c": "#1A1A1A",
+			"bar_fill_c": "#4CAF50",
+			"border_w": 1
+		},
+		{
+			"key": "line1",
+			"type": "text",
+			"rect": [6, 6, 188, 32],
+			"zOrder": 20,
+			"enabled": false,
+			"alignment": "center",
+			"text-overflow": "ellipsis",
+			"font": { "size": 24, "weight": 600 },
+			"value": ""
+		},
+		{
+			"key": "line2",
+			"type": "text",
+			"rect": [6, 40, 188, 30],
+			"zOrder": 20,
+			"enabled": false,
+			"alignment": "center",
+			"text-overflow": "ellipsis",
+			"font": { "size": 20, "weight": 400 },
+			"value": ""
+		},
+		{
+			"key": "time",
+			"type": "text",
+			"rect": [6, 72, 188, 14],
+			"zOrder": 20,
+			"enabled": false,
+			"alignment": "center",
+			"text-overflow": "clip",
+			"font": { "size": 12, "weight": 400 },
+			"value": ""
+		},
+		{
+			"key": "progress",
+			"type": "bar",
+			"rect": [6, 88, 188, 8],
+			"zOrder": 20,
+			"enabled": false,
+			"value": 0,
+			"subtype": 4,
+			"bar_bg_c": "#000000",
+			"bar_fill_c": "#FFFFFF",
+			"border_w": 1
+		}
+	]
+}

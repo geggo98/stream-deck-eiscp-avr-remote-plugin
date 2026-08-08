@@ -13,6 +13,8 @@ import { describe, it } from "node:test";
 import type { NowPlaying } from "../src/adapter/eiscp/now-playing.ts";
 import {
 	buildOverlayFace,
+	KEY_TITLE_CHARS,
+	keyTitleFor,
 	DEFAULT_TRACK_CHANGE_SECONDS,
 	formatTime,
 	MAX_TRACK_CHANGE_SECONDS,
@@ -128,7 +130,8 @@ describe("the overlay face", () => {
 		assert.ok(face);
 		assert.equal(face.primary, "Cruel Summer");
 		assert.equal(face.secondary, "Taylor Swift");
-		assert.equal(face.keyTitle, "Cruel Summer\nTaylor Swift");
+		// The key title is wrapped, not the raw strings: see `keyTitleFor`.
+		assert.equal(face.keyTitle, "Cruel\nSummer\nTaylor…");
 		assert.equal(face.time, "1:08/3:41");
 		assert.equal(face.progress, 68 / 221);
 	});
@@ -220,5 +223,48 @@ describe("composing is shared, not repeated per element", () => {
 		const a = buildOverlayFace(playing({ art: art(1024) }))!;
 		const b = buildOverlayFace(playing({ art: art(2048) }))!;
 		assert.notEqual(a.image, b.image);
+	});
+});
+
+describe("the key title", () => {
+	// Measured on a real Stream Deck +: the app draws key titles in the user's own font
+	// and neither wraps nor shrinks them, so "Cruel Summer / Taylor Swift" ran off the
+	// key and painted over the Play key next to it. Nothing here can ask how wide a
+	// character is — the only lever is handing over a string that is already short.
+
+	it("never lets a line exceed the budget, whatever it is given", () => {
+		const cases: [string, string][] = [
+			["Cruel Summer", "Taylor Swift"],
+			["Lover", ""],
+			["Supercalifragilisticexpialidocious", "X"],
+			["Everything I Wanted But Never Really Needed At All", "Billie Eilish"],
+			["   ", "   "],
+			["Björk Guðmundsdóttir", "Homogenic"],
+		];
+		for (const [track, artist] of cases) {
+			for (const line of keyTitleFor(track, artist).split("\n")) {
+				assert.ok(line.length <= KEY_TITLE_CHARS, `"${line}" (${line.length}) from "${track}"`);
+			}
+		}
+	});
+
+	it("wraps on a word before it cuts one", () => {
+		assert.equal(keyTitleFor("Bohemian Rhapsody", ""), "Bohemian\nRhapsody");
+	});
+
+	it("keeps to three lines, so the title cannot grow past the key", () => {
+		const long = keyTitleFor("Everything I Wanted But Never Really Needed", "Billie Eilish Connell");
+		assert.ok(long.split("\n").length <= 3, long);
+	});
+
+	it("cuts a single unsplittable word rather than letting it run", () => {
+		const out = keyTitleFor("Supercalifragilisticexpialidocious", "");
+		assert.ok(out.length < "Supercalifragilisticexpialidocious".length);
+		assert.ok(out.includes("…"), out);
+	});
+
+	it("has nothing to show for nothing", () => {
+		assert.equal(keyTitleFor(undefined, ""), "");
+		assert.equal(keyTitleFor("   ", "  "), "");
 	});
 });

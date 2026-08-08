@@ -19,6 +19,7 @@ import {
 	composePlaceholder,
 	DEFAULT_SCRIM,
 	glyphMarkup,
+	imageSize,
 	KEY_SIZE,
 	MAX_RENDER_BYTES,
 	MAX_SCRIM,
@@ -211,5 +212,120 @@ describe("cover image: budget", () => {
 			svgOf(composeCoverImage({ art: art(), width: STRIP_SEGMENT_WIDTH, height: STRIP_HEIGHT })),
 			new RegExp(`width="${STRIP_SEGMENT_WIDTH}" height="${STRIP_HEIGHT}"`),
 		);
+	});
+});
+
+/** A JPEG carrying nothing but a frame header of the given size. */
+function jpegOf(width: number, height: number, extraSegments = 0): ArtImage {
+	const parts: Buffer[] = [Buffer.from([0xff, 0xd8])];
+	for (let i = 0; i < extraSegments; i++) {
+		// APP0-ish filler, to prove the marker walk steps over what it does not need.
+		const payload = Buffer.alloc(16, 0x20);
+		parts.push(Buffer.from([0xff, 0xe0, 0x00, payload.length + 2]), payload);
+	}
+	const sof = Buffer.alloc(15);
+	sof.writeUInt16BE(0xffc0, 0);
+	sof.writeUInt16BE(13, 2); // segment length
+	sof.writeUInt8(8, 4); // precision
+	sof.writeUInt16BE(height, 5);
+	sof.writeUInt16BE(width, 7);
+	parts.push(sof, Buffer.from([0xff, 0xd9]));
+	const bytes = Buffer.concat(parts);
+	return { type: "jpeg", bytes, frames: 1, hash: "sized" };
+}
+
+function bmpOf(width: number, height: number): ArtImage {
+	const bytes = Buffer.alloc(64);
+	bytes.write("BM", 0, "ascii");
+	bytes.writeInt32LE(width, 18);
+	bytes.writeInt32LE(height, 22);
+	return { type: "bmp", bytes, frames: 1, hash: "bmp" };
+}
+
+describe("reading the art's own size", () => {
+	// Needed because `preserveAspectRatio` cannot be relied on: Stream Deck renders with
+	// Qt, and on a real Stream Deck + a nested <image> came out stretched to the box —
+	// a square cover drawn 200 wide and 100 tall. The geometry is computed here instead,
+	// which means the intrinsic size has to be read from the file.
+
+	it("reads a JPEG frame header, past whatever segments precede it", () => {
+		assert.deepEqual(imageSize(jpegOf(512, 512)), { width: 512, height: 512 });
+		assert.deepEqual(imageSize(jpegOf(640, 480, 3)), { width: 640, height: 480 });
+	});
+
+	it("reads a BMP header, including the top-down form", () => {
+		assert.deepEqual(imageSize(bmpOf(300, 200)), { width: 300, height: 200 });
+		// A negative height means the rows are stored top-down; it is not a size.
+		assert.deepEqual(imageSize(bmpOf(300, -200)), { width: 300, height: 200 });
+	});
+
+	it("gives up rather than guessing on anything it cannot parse", () => {
+		// These bytes come off the wire, so "cannot parse" is a normal outcome, not a bug.
+		assert.equal(imageSize(art(64)), undefined, "not a real header");
+		assert.equal(imageSize({ ...art(2), bytes: Buffer.from([0xff, 0xd8]) }), undefined, "truncated");
+		assert.equal(imageSize(bmpOf(0, 0)), undefined, "a zero dimension is not a size");
+	});
+
+	it("terminates on bytes designed to keep it walking", () => {
+		// A marker walk over attacker-shaped input has to be bounded. A file of nothing
+		// but 0xFF fill bytes would otherwise step one byte at a time forever.
+		const evil: ArtImage = { type: "jpeg", bytes: Buffer.alloc(8192, 0xff), frames: 1, hash: "evil" };
+		const started = Date.now();
+		assert.equal(imageSize(evil), undefined);
+		assert.ok(Date.now() - started < 200, "bounded");
+	});
+});
+
+describe("fitting the art into a box that is not its shape", () => {
+	/** The x/y/width/height the composer gave the <image>. */
+	function geometry(uri: string | undefined): { x: number; y: number; w: number; h: number } {
+		const m = /<image x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"/.exec(svgOf(uri));
+		assert.ok(m, "expected an <image> with explicit geometry");
+		return { x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: Number(m[4]) };
+	}
+
+	it("keeps a square cover square on a 200x100 strip segment", () => {
+		// The bug the user saw: the cover was drawn stretched to the full segment.
+		const g = geometry(
+			composeCoverImage({
+				art: jpegOf(512, 512),
+				width: STRIP_SEGMENT_WIDTH,
+				height: STRIP_HEIGHT,
+				fit: "contain",
+			}),
+		);
+		assert.equal(g.w, g.h, `expected a square, got ${g.w}x${g.h}`);
+		assert.equal(g.h, STRIP_HEIGHT, "and as tall as the segment allows");
+		assert.equal(g.x, (STRIP_SEGMENT_WIDTH - g.w) / 2, "centred");
+		assert.equal(g.y, 0);
+	});
+
+	it("fills a square key with a square cover, edge to edge", () => {
+		const g = geometry(composeCoverImage({ art: jpegOf(512, 512) }));
+		assert.deepEqual(g, { x: 0, y: 0, w: KEY_SIZE, h: KEY_SIZE });
+	});
+
+	it("crops rather than letterboxes where the box is square", () => {
+		// `cover` is the key's default: a wide cover on a square key fills it and loses
+		// the sides, which beats black bars on a 144x144 button.
+		const g = geometry(composeCoverImage({ art: jpegOf(1000, 500) }));
+		assert.equal(g.h, KEY_SIZE);
+		assert.ok(g.w > KEY_SIZE, "wider than the box, so the sides are cropped");
+		assert.ok(g.x < 0 && g.y === 0, "and centred by overhanging both sides");
+	});
+
+	it("never leaves the backdrop showing through where nothing was drawn", () => {
+		// `contain` deliberately does not fill the box; without a backdrop the gap would
+		// show whatever the strip drew last.
+		const svg = svgOf(
+			composeCoverImage({ art: jpegOf(512, 512), width: STRIP_SEGMENT_WIDTH, height: STRIP_HEIGHT, fit: "contain" }),
+		);
+		assert.ok(svg.indexOf("<rect") < svg.indexOf("<image"), "the backdrop is drawn first");
+	});
+
+	it("still composes when the header cannot be read", () => {
+		// Falling back to the old behaviour keeps a cover on screen; refusing would not.
+		const svg = svgOf(composeCoverImage({ art: art(64), width: STRIP_SEGMENT_WIDTH, height: STRIP_HEIGHT }));
+		assert.match(svg, /preserveAspectRatio="xMidYMid slice"/);
 	});
 });

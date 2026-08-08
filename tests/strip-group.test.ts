@@ -12,6 +12,8 @@ import { describe, it } from "node:test";
 import {
 	assignRoles,
 	contiguousGroups,
+	panelCapacity,
+	planPanels,
 	rolesForGroupSize,
 	StripRegistry,
 	type StripMember,
@@ -20,6 +22,13 @@ import {
 
 function members(...columns: number[]): StripMember[] {
 	return columns.map((column) => ({ id: `dial-${column}`, column }));
+}
+
+/** A string of exactly `n` characters that still has words to split on. */
+function words(n: number): string {
+	const out: string[] = [];
+	for (let len = 0; len < n; len += 5) out.push("Abcd");
+	return out.join(" ").slice(0, n);
 }
 
 function rolesOf(assigned: Map<string, { role: StripRole }>, ids: string[]): StripRole[] {
@@ -65,6 +74,25 @@ describe("contiguous groups", () => {
 	it("has nothing to group when there is nothing", () => {
 		assert.deepEqual(contiguousGroups([]), []);
 	});
+
+	it("splits on a change of receiver, not only on a gap", () => {
+		// Two receivers on one deck is a supported setup. Adjacent dials watching
+		// different ones have no shared "what is playing" to spread across them, so
+		// joining them would present two tracks as one.
+		const groups = contiguousGroups([
+			{ id: "a", column: 0, host: "10.0.0.1" },
+			{ id: "b", column: 1, host: "10.0.0.1" },
+			{ id: "c", column: 2, host: "10.0.0.2" },
+			{ id: "d", column: 3, host: "10.0.0.2" },
+		]);
+		assert.deepEqual(
+			groups.map((g) => g.map((m) => m.id)),
+			[
+				["a", "b"],
+				["c", "d"],
+			],
+		);
+	});
 });
 
 describe("role layout", () => {
@@ -107,6 +135,73 @@ describe("role layout", () => {
 	it("never returns an empty layout, whatever it is handed", () => {
 		for (const size of [0, -1, Number.NaN]) {
 			assert.deepEqual(rolesForGroupSize(size), ["all"], `size ${size}`);
+		}
+	});
+});
+
+describe("planPanels", () => {
+	const short = { track: "Cruel Summer", artist: "Taylor Swift", album: "Lover" };
+	const cap = panelCapacity();
+
+	it("falls back to the size-only layout when nothing is playing yet", () => {
+		for (let size = 1; size <= 6; size++) {
+			assert.deepEqual(planPanels(size), rolesForGroupSize(size), `size ${size}`);
+		}
+	});
+
+	it("keeps the album when the title and artist both fit", () => {
+		assert.deepEqual(planPanels(4, short), ["cover", "title", "artist", "album"]);
+		assert.deepEqual(planPanels(3, short), ["cover", "title", "artist"]);
+	});
+
+	it("pushes the album off a four-panel group rather than squeezing a long title", () => {
+		// The whole reason this function exists: rolesForGroupSize gives the title a
+		// second segment only from five panels up, and a Stream Deck + has four — so on
+		// the hardware this targets, a long title never spread at all.
+		const long = { ...short, track: words(cap + 10) };
+		assert.deepEqual(planPanels(4, long), ["cover", "title", "title", "artist"]);
+	});
+
+	it("spreads an overlong artist too, once the title is satisfied", () => {
+		const long = { ...short, artist: words(cap + 10) };
+		assert.deepEqual(planPanels(4, long), ["cover", "title", "artist", "artist"]);
+	});
+
+	it("will not buy title space with the artist on a three-panel group", () => {
+		// Two panels after the cover, and losing the artist entirely to gain half a title
+		// is the worse trade.
+		const long = { ...short, track: words(cap + 10) };
+		assert.deepEqual(planPanels(3, long), ["cover", "title", "artist"]);
+		// With no artist there is nothing to lose, so it does spread.
+		assert.deepEqual(planPanels(3, { track: words(cap + 10) }), ["cover", "title", "title"]);
+	});
+
+	it("spends a spare panel on bigger type rather than leaving it idle", () => {
+		// Four panels, no album: the surplus goes to the title, so "Cruel" / "Summer"
+		// each get a whole segment instead of sharing one.
+		assert.deepEqual(planPanels(4, { track: "Cruel Summer", artist: "Taylor Swift" }), [
+			"cover",
+			"title",
+			"title",
+			"artist",
+		]);
+	});
+
+	it("leaves a dial alone when there is genuinely nothing left for it", () => {
+		// A one-word title cannot be split without cutting it, and a blank panel in the
+		// middle of a group reads as a fault.
+		const roles = planPanels(4, { track: "Lover" });
+		assert.deepEqual(roles, ["cover", "title", "none", "none"]);
+	});
+
+	it("always returns exactly one role per panel, with one cover", () => {
+		const cases = [short, { track: words(80), artist: words(60), album: "X" }, { track: "A" }, {}];
+		for (const texts of cases) {
+			for (let size = 1; size <= 5; size++) {
+				const roles = planPanels(size, texts);
+				assert.equal(roles.length, size, `${size}: ${JSON.stringify(texts)}`);
+				assert.equal(roles.filter((r) => r === "cover").length, size === 1 ? 0 : 1, `${size}`);
+			}
 		}
 	});
 });
@@ -218,5 +313,51 @@ describe("StripRegistry", () => {
 		reg.add("plus", "a", 0);
 		assert.equal(reg.deviceOf("a"), "plus");
 		assert.equal(reg.deviceOf("nope"), undefined);
+	});
+
+	it("notifies on a real change and stays quiet on a repeat", () => {
+		// A repeated willAppear (profile switch, deck reconnect) re-announces the same
+		// position; repainting a whole group for that would be noise.
+		const reg = new StripRegistry();
+		let calls = 0;
+		const off = reg.onGroupChange("dev", () => calls++);
+
+		reg.add("dev", "a", 0);
+		assert.equal(calls, 1);
+		reg.add("dev", "a", 0);
+		assert.equal(calls, 1, "re-announcing the same position notifies nobody");
+		reg.add("dev", "a", 0, { host: "10.0.0.1" });
+		assert.equal(calls, 2, "binding to a receiver is a change: it can split the group");
+		reg.remove("dev", "a");
+		assert.equal(calls, 3);
+		reg.remove("dev", "a");
+		assert.equal(calls, 3);
+
+		off();
+		reg.add("dev", "b", 1);
+		assert.equal(calls, 3, "unsubscribed");
+	});
+
+	it("gives a group the longest duration any of its members asked for", () => {
+		// A display that comes up together and then falls apart panel by panel reads as
+		// a fault rather than as a setting.
+		const reg = new StripRegistry();
+		reg.add("dev", "a", 0, { host: "h", seconds: 3 });
+		reg.add("dev", "b", 1, { host: "h", seconds: 10 });
+		// A separate group two columns away keeps its own answer.
+		reg.add("dev", "c", 5, { host: "h", seconds: 4 });
+
+		assert.equal(reg.groupDurationMs("dev", "a"), 10_000);
+		assert.equal(reg.groupDurationMs("dev", "b"), 10_000);
+		assert.equal(reg.groupDurationMs("dev", "c"), 4_000);
+		assert.equal(reg.groupDurationMs("dev", "gone"), undefined);
+	});
+
+	it("has no duration to offer when no member carries one", () => {
+		// The caller then falls back to its own setting rather than to zero, which
+		// would make the panels vanish the instant they appeared.
+		const reg = new StripRegistry();
+		reg.add("dev", "a", 0);
+		assert.equal(reg.groupDurationMs("dev", "a"), undefined);
 	});
 });

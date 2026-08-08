@@ -30,9 +30,12 @@ import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import { getDeviceStatusTracker, type DeviceStatus } from "../adapter/eiscp/device-status.ts";
 import { getNowPlayingTracker } from "../adapter/eiscp/now-playing.ts";
+import type { NowPlaying } from "../adapter/eiscp/now-playing.ts";
 import { BindCoordinator, REBIND_DEBOUNCE_MS } from "./bind-coordinator.ts";
 import { onNamesChanged } from "./dedicated/name-store.ts";
 import { STRIP_HEIGHT, STRIP_SEGMENT_WIDTH } from "./cover-image.ts";
+import { getStripRegistry } from "./strip-group.ts";
+import { buildPanelFace, PANEL_LAYOUT, PANEL_TITLE_KEY, panelItems, type PanelFace } from "./strip-panel.ts";
 import {
 	buildOverlayFace,
 	overlayIsActive,
@@ -43,7 +46,9 @@ import {
 } from "./track-overlay.ts";
 import { handleDeviceListMessage, rememberDevice } from "./pi-devices.ts";
 import { handleWakeSettingMessage } from "./pi-wake.ts";
+import { encoderLayoutFor } from "./dedicated/catalog.ts";
 import {
+	actionIdFromManifestId,
 	deviceIpToAdopt,
 	dialIconFor,
 	type EiscpActionSettings,
@@ -73,6 +78,15 @@ import {
  * command, which this wait doubles as.
  */
 const WAKE_TIMEOUT_MS = 3000;
+
+/** A track-change display that is currently up, and everything needed to redraw it. */
+interface ActiveOverlay {
+	/** The receiver's state at the moment of the change; deliberately frozen. */
+	state: NowPlaying;
+	until: number;
+	/** How this action composes its picture (key 144x144, strip 200x100). */
+	options: OverlayFaceOptions;
+}
 
 /** Behavior for a two-state on/off command (power, mute, ...). */
 export interface ToggleConfig {
@@ -121,15 +135,20 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 */
 	private readonly paintedImages = new Map<string, string>();
 	/**
-	 * The short "what just started playing" face, per action, while it is up.
+	 * The short "what just started playing" display, per action, while it is up.
 	 *
 	 * Held as state rather than written directly, because the display must be a
 	 * *function of the current state inside the normal render* rather than a second
 	 * writer. Two stuck-title regressions in this repo (`3e0b685`) came from a
 	 * separate write path that needed its own clearing path; here an expired overlay
 	 * cannot leave anything behind, because the next render simply stops finding one.
+	 *
+	 * What is frozen is the **receiver's state**, not the finished picture. It is still
+	 * a snapshot — the once-a-second `NTM` tick cannot get into it — but the face is
+	 * built at render time, which is what lets a dial pick up a new role when a
+	 * neighbour appears or disappears midway through (see `DialActionBase`).
 	 */
-	private readonly overlays = new Map<string, { face: OverlayFace; until: number }>();
+	private readonly overlays = new Map<string, ActiveOverlay>();
 	private readonly overlayTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 	// Explicit scope string (class names are mangled by terser in release builds).
@@ -314,18 +333,29 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 		this.trackSub(
 			actionId,
 			tracker.onTrackChange(host, (state) => {
-				const face = buildOverlayFace(state, faceOptions);
 				// Nothing worth showing: leave the element's own content alone rather
 				// than hiding it behind an empty box.
-				if (!face) return;
-				this.overlays.set(actionId, { face, until: Date.now() + seconds * 1000 });
-				this.armOverlayTimer(actionId, seconds * 1000, repaint);
+				if (!buildOverlayFace(state, faceOptions)) return;
+				const ms = this.overlayDurationMs(actionId) ?? seconds * 1000;
+				this.overlays.set(actionId, { state, until: Date.now() + ms, options: faceOptions });
+				this.armOverlayTimer(actionId, ms, repaint);
 				repaint();
 			}),
 		);
 		// A pre-fill so the very first change has a track title and a cover to show;
 		// failures are ignored (see NowPlayingTracker.prime).
 		void tracker.prime(host);
+	}
+
+	/**
+	 * How long this action should hold the display, when something other than its own
+	 * setting decides.
+	 *
+	 * Only dials override it: a row of cooperating panels that came up together and
+	 * then fell apart one by one would read as a fault rather than as a setting.
+	 */
+	protected overlayDurationMs(_actionId: string): number | undefined {
+		return undefined;
 	}
 
 	private armOverlayTimer(actionId: string, ms: number, repaint: () => void): void {
@@ -347,7 +377,7 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 	 * actually on. Checked here rather than at trigger time so a receiver that goes
 	 * away mid-overlay stops showing it immediately.
 	 */
-	protected overlayFace(actionId: string): OverlayFace | undefined {
+	protected overlayState(actionId: string): ActiveOverlay | undefined {
 		const active = this.overlays.get(actionId);
 		if (!active) return undefined;
 		const now = Date.now();
@@ -356,7 +386,12 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 			this.overlays.delete(actionId);
 			return undefined;
 		}
-		return overlayIsActive(active.until, now, this.statusFor(actionId)) ? active.face : undefined;
+		return overlayIsActive(active.until, now, this.statusFor(actionId)) ? active : undefined;
+	}
+
+	protected overlayFace(actionId: string): OverlayFace | undefined {
+		const active = this.overlayState(actionId);
+		return active ? buildOverlayFace(active.state, active.options) : undefined;
 	}
 
 	private clearOverlay(actionId: string): void {
@@ -780,8 +815,25 @@ export abstract class KeyActionBase<TSettings extends EiscpActionSettings> exten
 
 export abstract class DialActionBase<TSettings extends EiscpActionSettings> extends EiscpActionBase<TSettings> {
 	private readonly pressState = new Map<string, string>();
+	/** Which deck each dial sits on, so a removal can find its group again. */
+	private readonly deviceIds = new Map<string, string>();
+	/** The layout each dial is currently on, so an unchanged one is not re-sent. */
+	private readonly layouts = new Map<string, string>();
 
 	protected abstract getDialConfig(settings: TSettings): DialConfig | undefined;
+
+	/**
+	 * The layout this dial's manifest entry declares.
+	 *
+	 * Needed because switching the cooperating panels on replaces it, and switching
+	 * them off has to put it back — there is no "revert to the manifest" call. Read
+	 * from the catalog the manifest itself is generated from rather than repeated per
+	 * class, so a dial cannot be restored to a layout it never had. `$A1` is the
+	 * fallback for the same reason it is the majority: it is the one with no bar.
+	 */
+	protected manifestLayout(): string {
+		return encoderLayoutFor(actionIdFromManifestId(this.manifestId)) ?? "$A1";
+	}
 
 	/**
 	 * Build the touch-strip feedback. Implemented per layout ($A1 text vs $B1 bar).
@@ -798,57 +850,156 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 	): FeedbackPayload;
 
 	/**
+	 * This dial's share of the group display, or `undefined` for its own face.
+	 *
+	 * The role is looked up **at render time** rather than remembered at trigger time,
+	 * which is what lets a dial become the cover when its left-hand neighbour is pulled
+	 * out mid-display. The plan is made against the strings that are actually playing,
+	 * so a long title takes a second panel instead of shrinking (see `planPanels`).
+	 */
+	private panelFor(action: DialAction<TSettings>): PanelFace | undefined {
+		const active = this.overlayState(action.id);
+		if (!active) return undefined;
+		const deviceId = this.deviceIds.get(action.id);
+		const { state } = active;
+		// Not registered (no host yet, or panels switched off): a lone dial shows the
+		// whole thing itself, which is the one-segment case of the same layout.
+		const assignment = deviceId
+			? getStripRegistry()
+					.assignments(deviceId, { texts: { track: state.track, artist: state.artist, album: state.album } })
+					.get(action.id)
+			: undefined;
+		const face = buildPanelFace(state, assignment ?? { role: "all", position: 0, groupSize: 1 });
+		return face.passive ? undefined : face;
+	}
+
+	/**
 	 * Send a dial's feedback with the receiver's state applied.
 	 *
 	 * Every item gets an explicit opacity, including the normal one: the layout
 	 * keeps what it was last given, so returning to normal has to be said out loud
-	 * or a dimmed strip stays dimmed forever.
+	 * or a dimmed strip stays dimmed forever. The same rule is why the panel items are
+	 * written on every send while this dial is on the panel layout — leaving one out is
+	 * not "no change", it is "keep showing the old thing".
 	 */
 	protected sendFeedback(action: DialAction<TSettings>, cfg: DialConfig, payload: FeedbackPayload): void {
 		const { opacity, title } = feedbackStatusStyle(this.statusFor(action.id), cfg.command);
-		const overlay = this.overlayFace(action.id);
-		// The short track-change display works inside whatever layout the dial already
-		// has: $A1 gives icon/title/value, $B1 adds the bar. Deliberately no
-		// setFeedbackLayout here — swapping layouts once per track change would flicker.
-		const effective: FeedbackPayload = overlay
-			? {
-					...payload,
-					title: overlay.primary,
-					value: overlay.time ?? overlay.secondary,
-					// Only touch the bar on a layout that has one ($B1), and only with the
-					// value at the moment of the change: this is a snapshot, so it does not
-					// creep forward while it is up.
-					...(overlay.progress !== undefined && payload["indicator"] !== undefined
-						? { indicator: { value: Math.round(overlay.progress * 100) } }
-						: {}),
-				}
-			: payload;
+		// The panel display only exists on the layout that has the items for it. If the
+		// layout switch failed (it is logged), the dial keeps its own face for the few
+		// seconds instead of writing into keys that are not there and going blank.
+		const onPanelLayout = this.layouts.get(action.id) === PANEL_LAYOUT;
+		const panel = onPanelLayout ? this.panelFor(action) : undefined;
+		const items: FeedbackPayload = {};
+		if (onPanelLayout) {
+			for (const [key, { kind: _kind, ...item }] of Object.entries(panelItems(panel ?? { lines: [], passive: true }))) {
+				// A hidden item gets `opacity: 0` as well as `enabled: false`. Belt and
+				// braces on purpose: one of the two mechanisms already turned out not to
+				// apply to every item type, and a stale line drawn over the panel text is
+				// exactly the failure this is meant to prevent.
+				items[key] = { ...item, opacity: item.enabled ? opacity : 0 };
+			}
+		}
+		if (panel) {
+			// The panel display owns the whole segment; the dial's own face is switched
+			// off by `panelItems`, so nothing from `payload` applies.
+			fireAndLog(action.setFeedback(items), this.logger, "setFeedback");
+			return;
+		}
+
 		// The icon slot needs a value in BOTH directions, and getting that wrong is how
 		// a cover stuck to the touch strip for good: a layout item keeps whatever it was
 		// last given, so there is no way to *unset* the picture — writing only
 		// `{ opacity }` left the previous image in place forever. The way back is to
 		// write the action's own icon again.
-		const iconValue = overlay?.image ?? dialIconFor(this.manifestId, this.statusFor(action.id), cfg.command);
-		const decorated: FeedbackPayload = {
-			// When the id cannot be resolved we leave the slot alone rather than blanking
-			// it: `""` would clear the layout's own icon with no way back.
-			...effective,
-			icon: iconValue ? { value: iconValue, opacity } : { opacity },
-		};
-		for (const key of ["title", "value"] as const) {
-			const item = effective[key];
-			// The five implementations all pass plain strings; wrap them so the opacity
-			// can ride along, and let "Offline" take over the title. An item that is
-			// already an object keeps its other properties.
-			const base = typeof item === "object" && item !== null ? item : typeof item === "string" ? { value: item } : {};
+		//
+		// A *fallback*, though, not an override: `buildFeedback` returns a whole payload,
+		// and an implementation that draws its own icon — to show a press state, say —
+		// must not have it silently dropped here.
+		const ownIcon = dialIconFor(this.manifestId, this.statusFor(action.id), cfg.command);
+		const decorated: FeedbackPayload = { ...items, ...payload };
+		for (const key of ["icon", "title", "value"] as const) {
+			const item = payload[key];
+			// The implementations all pass plain strings; wrap them so the opacity can
+			// ride along, and let "Offline" take over the title. An item that is already
+			// an object keeps its other properties.
+			const base: Record<string, unknown> =
+				typeof item === "object" && item !== null ? { ...item } : typeof item === "string" ? { value: item } : {};
+			// When neither the payload nor the catalog offers an icon we leave the slot
+			// alone rather than blanking it: `""` would clear it with no way back.
+			if (key === "icon" && base["value"] === undefined && ownIcon) base["value"] = ownIcon;
 			const override = key === "title" && title !== undefined ? { value: title } : {};
-			decorated[key] = { ...base, ...override, opacity };
+			// The panel layout calls the label something else on purpose — a text item
+			// keyed `title` belongs to Stream Deck, which keeps it on screen whatever the
+			// payload says. `title` is still written for the built-in layouts.
+			const target = key === "title" && onPanelLayout ? PANEL_TITLE_KEY : key;
+			if (target !== key) delete decorated[key];
+			decorated[target] = { ...base, ...override, opacity, enabled: true };
 		}
-		const indicator = effective["indicator"];
-		if (indicator !== undefined && typeof indicator === "object") {
-			decorated["indicator"] = { ...indicator, opacity };
-		}
+		const indicator = payload["indicator"];
+		// On the panel layout the bar exists for every dial, including the `$A1` ones
+		// that never fill it — so "this dial has no bar" has to be said, or they would
+		// grow an empty one. An implementation that disabled it itself keeps its answer.
+		decorated["indicator"] =
+			indicator !== undefined && typeof indicator === "object"
+				? { enabled: true, ...indicator, opacity }
+				: { enabled: false };
 		fireAndLog(action.setFeedback(decorated), this.logger, "setFeedback");
+	}
+
+	/**
+	 * Put this dial on (or off) the cooperating-panel layout.
+	 *
+	 * Once per bind, never per track change: the panel and the dial's own face live in
+	 * the *same* layout and are switched with `enabled`, so nothing here runs while
+	 * music is playing. Seeded from `manifestLayout()` so a dial that never uses panels
+	 * sends no layout message at all and looks exactly as it did before.
+	 */
+	private async applyLayout(action: DialAction<TSettings>, panels: boolean): Promise<void> {
+		const wanted = panels ? PANEL_LAYOUT : this.manifestLayout();
+		const current = this.layouts.get(action.id) ?? this.manifestLayout();
+		if (current === wanted) {
+			this.layouts.set(action.id, wanted);
+			return;
+		}
+		this.layouts.set(action.id, wanted);
+		try {
+			await action.setFeedbackLayout(wanted);
+			// Worth an INFO line although it is the happy path: it happens once per bind,
+			// and "the touch strip looks wrong" is otherwise indistinguishable from "the
+			// layout never changed".
+			this.logger.info(`touch strip on ${wanted} (was ${current})`);
+		} catch (err) {
+			// Leave the map on the old value so the next bind tries again rather than
+			// believing a layout that was never applied.
+			this.layouts.set(action.id, current);
+			this.logger.error(`could not switch the touch strip to ${wanted}: ${err}`);
+		}
+	}
+
+	/**
+	 * Announce (or withdraw) this dial's place in its deck's panel group.
+	 *
+	 * Membership *is* the opt-in: only dials with the track-change display switched on
+	 * take part, so a neighbour that does not want it also breaks the run rather than
+	 * silently leaving a hole in the middle of the picture.
+	 */
+	private joinStrip(action: DialAction<TSettings>, settings: TSettings, host: string | undefined): void {
+		const deviceId = action.device.id;
+		this.deviceIds.set(action.id, deviceId);
+		const registry = getStripRegistry();
+		if (!trackOverlayEnabled(settings) || !host) {
+			registry.remove(deviceId, action.id);
+			return;
+		}
+		registry.add(deviceId, action.id, action.coordinates?.column ?? 0, {
+			host,
+			seconds: trackOverlaySeconds(settings),
+		});
+	}
+
+	protected override overlayDurationMs(actionId: string): number | undefined {
+		const deviceId = this.deviceIds.get(actionId);
+		return deviceId ? getStripRegistry().groupDurationMs(deviceId, actionId) : undefined;
 	}
 
 	protected isPressOn(actionId: string, cfg: DialConfig): boolean {
@@ -909,15 +1060,25 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		const fresh = () => this.isCurrentBind(actionId, generation);
 		const settings = await this.syncDeviceMemory(action, rawSettings);
 		if (!fresh()) return;
+		const host = resolveDeviceIp(settings);
+		// Before the config check: a dial that lost its command still has a place on the
+		// deck, and leaving it in the registry would let it claim a role it never draws.
+		this.joinStrip(action, settings, host);
 		const cfg = this.getDialConfig(settings);
 		if (!cfg) {
 			this.logger.warn("bind: no command configured, skipping");
 			return;
 		}
-		const host = resolveDeviceIp(settings);
 		// Drop stale subs/press-state on a repeated bind (no disappear).
 		this.clearSubs(actionId);
 		this.pressState.delete(actionId);
+		// Before anything renders: the first feedback has to land against the layout it
+		// was built for, or the panel items would be written to a layout without them.
+		// A dial with no receiver goes back to its own layout even with the display
+		// switched on — it has nothing to take part with, and leaving it on the panel
+		// layout would strand whatever was last drawn there.
+		await this.applyLayout(action, trackOverlayEnabled(settings) && host !== undefined);
+		if (!fresh()) return;
 		if (!host) {
 			this.logger.warn("bind: no device IP configured");
 			fireAndLog(action.setFeedback({ title: UNCONFIGURED_TITLE, value: "" }), this.logger, "setFeedback");
@@ -942,6 +1103,12 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			width: STRIP_SEGMENT_WIDTH,
 			height: STRIP_HEIGHT,
 		});
+		// A neighbour appearing or disappearing changes this dial's role, and the role is
+		// read at render time — so the only thing needed is a repaint.
+		this.trackSub(
+			actionId,
+			getStripRegistry().onGroupChange(action.device.id, () => repaint()),
+		);
 
 		if (this.rerendersOnNameChange()) {
 			this.watchNames(actionId, host, () => {
@@ -996,6 +1163,14 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 	override async onWillDisappear(ev: WillDisappearEvent<TSettings>): Promise<void> {
 		await super.onWillDisappear(ev);
 		this.pressState.delete(ev.action.id);
+		const deviceId = this.deviceIds.get(ev.action.id);
+		// Leaving the group re-plans it, and the survivors repaint through onGroupChange.
+		if (deviceId) getStripRegistry().remove(deviceId, ev.action.id);
+		this.deviceIds.delete(ev.action.id);
+		// Forgotten rather than kept: Stream Deck may put the dial back on its manifest
+		// layout when it reappears, and believing a layout that is no longer applied
+		// would leave the panel items writing into nothing.
+		this.layouts.delete(ev.action.id);
 	}
 
 	override async onDialRotate(ev: DialRotateEvent<TSettings>): Promise<void> {

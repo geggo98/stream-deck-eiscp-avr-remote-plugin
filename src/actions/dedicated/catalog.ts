@@ -271,6 +271,24 @@ export function dedicatedPropertyInspector(spec: DedicatedSpec): string {
 	return "ui/dedicated.html";
 }
 
+/**
+ * The encoder layout an action's manifest entry declares, by catalog id.
+ *
+ * Read at runtime rather than repeated in each dial class, because it is needed to
+ * *undo* a layout switch: turning the cooperating touch-strip panels off has to put
+ * the dial back, and there is no "revert to the manifest" call. Deriving it from the
+ * same table the manifest is generated from is the only way the two cannot drift.
+ */
+const ENCODER_LAYOUTS: Record<string, string> = Object.fromEntries(
+	[...DEDICATED_SPECS, ...GENERIC_SPECS].flatMap((spec) =>
+		"encoderLayout" in spec && typeof spec.encoderLayout === "string" ? [[spec.id, spec.encoderLayout] as const] : [],
+	),
+);
+
+export function encoderLayoutFor(id: string | undefined): string | undefined {
+	return id ? ENCODER_LAYOUTS[id] : undefined;
+}
+
 /** Accent background color for a toggle's ON state. */
 export function onStateColor(command: string): string {
 	return command === "AMT" ? "#F44336" : "#4CAF50";

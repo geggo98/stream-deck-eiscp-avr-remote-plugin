@@ -71,14 +71,124 @@ export function fitText(
 	const smallest = sizes[sizes.length - 1]!;
 	const budget = charBudget(width, smallest);
 	if (budget <= 0) return { text: "", fontSize: smallest, clipped: trimmed.length > 0 };
-	if (trimmed.length <= budget) return { text: trimmed, fontSize: smallest, clipped: false };
-	// Cut on a word boundary when one is close enough to the limit; a title cut
-	// mid-word reads as corruption, which this repo has already been bitten by
-	// ("...Baby One M" learned as a listening-mode name).
+	return { ...clipToChars(trimmed, budget, ellipsis), fontSize: smallest };
+}
+
+/**
+ * Cut a string to `budget` characters, on a word boundary where one is near enough.
+ *
+ * A title cut mid-word reads as corruption, which this repo has already been bitten by
+ * ("...Baby One M" learned as a listening-mode name). Shared by both fitters so the
+ * two cannot disagree about what "too long" does.
+ */
+export function clipToChars(text: string, budget: number, ellipsis = "…"): { text: string; clipped: boolean } {
+	const trimmed = text.trim();
+	if (budget <= 0) return { text: "", clipped: trimmed.length > 0 };
+	if (trimmed.length <= budget) return { text: trimmed, clipped: false };
 	const hard = trimmed.slice(0, Math.max(0, budget - ellipsis.length));
 	const lastSpace = hard.lastIndexOf(" ");
 	const body = lastSpace >= hard.length - 8 && lastSpace > 0 ? hard.slice(0, lastSpace) : hard;
-	return { text: `${body}${ellipsis}`, fontSize: smallest, clipped: true };
+	return { text: `${body}${ellipsis}`, clipped: true };
+}
+
+/** Sizes for a cooperating panel, which has a full segment rather than a corner. */
+export const PANEL_FONT_SIZE_LADDER: readonly number[] = [24, 20, 18, 16, 14];
+
+export interface FittedLines {
+	/** At most `maxLines` entries; empty for empty input. */
+	lines: string[];
+	fontSize: number;
+	clipped: boolean;
+}
+
+/**
+ * Wrap to a character budget, cutting only when nothing else works.
+ *
+ * The char-based core the two fitters share. It exists as its own export because one
+ * caller has no pixels to work with at all: a Stream Deck **key title** is drawn by
+ * the app in the *user's* font at the *user's* size, and neither is knowable from
+ * here — but it is also not wrapped or shrunk by the app, so a long title runs off the
+ * key and over its neighbours. All this side can do is hand over a string that is
+ * already short enough.
+ */
+export function wrapToChars(text: string, charsPerLine: number, maxLines: number): FittedLines {
+	const trimmed = text.trim();
+	if (!trimmed || charsPerLine <= 0 || maxLines <= 0) {
+		return { lines: [], fontSize: 0, clipped: trimmed.length > 0 };
+	}
+	const wrapped = wrapWords(trimmed, charsPerLine, maxLines);
+	if (wrapped) return { lines: wrapped, fontSize: 0, clipped: false };
+
+	const lines: string[] = [];
+	let rest = trimmed;
+	while (rest && lines.length < maxLines) {
+		if (lines.length === maxLines - 1) {
+			lines.push(clipToChars(rest, charsPerLine).text);
+			break;
+		}
+		lines.push(rest.slice(0, charsPerLine));
+		rest = rest.slice(charsPerLine);
+	}
+	return { lines, fontSize: 0, clipped: true };
+}
+
+/**
+ * Greedy word wrap into at most `maxLines` lines of `budget` characters.
+ *
+ * Returns `undefined` when it does not fit, which is what drives the size ladder in
+ * `fitLines`: "try the next size down" rather than "wrap it badly at this one".
+ */
+function wrapWords(text: string, budget: number, maxLines: number): string[] | undefined {
+	const lines: string[] = [];
+	let current = "";
+	for (const word of text.split(/\s+/).filter(Boolean)) {
+		// A single word wider than the line can only be cut, which is a job for the
+		// clipping path, not for the wrapper.
+		if (word.length > budget) return undefined;
+		const candidate = current ? `${current} ${word}` : word;
+		if (candidate.length <= budget) {
+			current = candidate;
+			continue;
+		}
+		lines.push(current);
+		if (lines.length >= maxLines) return undefined;
+		current = word;
+	}
+	if (current) lines.push(current);
+	return lines.length <= maxLines ? lines : undefined;
+}
+
+/**
+ * Lay a string out over the lines a panel offers, largest size that still fits.
+ *
+ * The panel counterpart to `fitText`: a cooperating touch-strip segment has two full
+ * lines rather than one narrow one, so the size ladder can start far larger. Same
+ * order of preference throughout the feature — spread across panels first (see
+ * `planPanels`), then shrink here, then clip.
+ */
+export function fitLines(
+	text: string,
+	width: number,
+	maxLines = 2,
+	options: { sizes?: readonly number[]; ellipsis?: string } = {},
+): FittedLines {
+	const sizes = options.sizes?.length ? options.sizes : PANEL_FONT_SIZE_LADDER;
+	const smallest = sizes[sizes.length - 1]!;
+	const trimmed = text.trim();
+	if (!trimmed) return { lines: [], fontSize: sizes[0]!, clipped: false };
+
+	for (const fontSize of sizes) {
+		const budget = charBudget(width, fontSize);
+		if (budget <= 0) continue;
+		const wrapped = wrapWords(trimmed, budget, maxLines);
+		if (wrapped) return { lines: wrapped, fontSize, clipped: false };
+	}
+
+	// Nothing fitted: fill the lines at the smallest size and cut the last one. Done
+	// here rather than left to `text-overflow` so the caller knows it happened.
+	const budget = charBudget(width, smallest);
+	if (budget <= 0) return { lines: [], fontSize: smallest, clipped: true };
+	return { ...wrapToChars(trimmed, budget, maxLines), fontSize: smallest };
 }
 
 /**
