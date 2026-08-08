@@ -554,8 +554,10 @@ export class SuperResDialAction extends DialActionBase<EiscpActionSettings> {
 		// Named for what the receiver is actually doing, not for what the dial
 		// adjusts: with upscaling off the signal is passed through untouched and the
 		// dial changes nothing, so calling it "Super Res" there would label a control
-		// that does not exist yet.
-		const title = pressOn ? "Super Res" : "4K Passthrough";
+		// that does not exist yet. The on label names the feature the receiver's own
+		// menu does ("1080p -> 4K Upscaling") and keeps the setting the dial actually
+		// moves in parentheses.
+		const title = pressOn ? "1080p Upscaling (Super Res)" : "4K Passthrough";
 		const icon = keyImagePath("super-res-dial", pressOn, false);
 		const level = superResLevel(rawValue);
 		if (level === undefined) {
