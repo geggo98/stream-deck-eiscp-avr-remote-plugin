@@ -45,8 +45,8 @@ command, the rest of the plugin will most likely work.
   text or numeric values).
 - **Dedicated actions** — Power, Mute, Volume Up/Down, a Volume dial (press to
   mute), Next/Previous Input, Next/Previous Listening Mode, tuner Preset
-  controls, Bass/Treble, and 4K Upscaling — pre-wired so they work without
-  configuration.
+  controls, Bass/Treble, 4K Upscaling, and a Super Resolution dial — pre-wired so
+  they work without configuration.
 
 Most actions subscribe to the receiver and reflect its current state on the key.
 
@@ -62,6 +62,11 @@ One caveat, measured on the VSX-S520D: unlike input or volume, this setting is
 not reported back. Change it with the receiver's own remote and the receiver
 keeps telling the network the *previous* value, so the key can show a stale state
 until you press it. Driven from the deck it stays correct.
+
+**Super Resolution** is the sharpening level that rides on top of it, on a dial
+(0–3). It only does anything while 4K upscaling is on — press the dial to switch
+that on. With upscaling off the receiver refuses the change and says so, and the
+dial shows `N/A` rather than a number that would not mean anything.
 
 ## Requirements
 

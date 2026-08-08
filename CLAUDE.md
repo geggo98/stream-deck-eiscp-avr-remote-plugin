@@ -1287,13 +1287,38 @@ everything afterwards. Device quirks worth knowing:
   The key is therefore authoritative for changes *it* made, which is the normal
   case, and can show a stale state after someone uses the receiver's own remote.
   Do not "fix" this by polling `RES`: polling returns the shadow value too.
-- `SPR` (Super Resolution) answers too — measured `02`, and the OSD confirms 2.
-  Not exposed: its YAML key is the range `[0, 3]`, so the generator classifies it
-  as a stepper and emits no concrete values. Needs generator work, not just an
-  `INCLUDED_COMMANDS` entry. Note the dependency before building a dial for it:
-  with upscaling **off** the OSD greys "Super Resolution" out and shows no value —
-  but `SPR QSTN` still answers `02` regardless, so the query cannot be used to
-  detect whether the setting is live.
+- **`SPR` (Super Resolution) behaves nothing like its neighbour, and every claim
+  below is measured** (2026-08-08) because the pessimistic reading of `RES` would
+  have said not to build the dial at all:
+
+  | sent | answer | front panel |
+  |---|---|---|
+  | `SPR UP` while `RES 00` | `!1SPRN/A`, value unchanged | **`Not Available `** |
+  | `SPR UP` while `RES 01` | `!1SPR03` after ~80 ms | `Super Res   :3` (~108 ms) |
+  | `SPR 01` | `!1SPR01` | `Super Res   :1` |
+  | `SPR 1` | **`!1SPRN/A`** | — |
+
+  Three things follow, and each one killed an objection to the dial:
+  - **Liveness needs no guessing.** The receiver *says* the setting is dead. That
+    matters because `SPR QSTN` answers `02` whether upscaling is on or off, so the
+    query never could have told you — but a rotation always does.
+  - **It echoes its own sets**, unlike `RES`, which broadcasts nothing at all. That
+    is the subscription `DialActionBase` repaints from; without it the strip would
+    freeze after every rotation.
+  - **Two digits are mandatory.** `SPR 1` is refused, so `normalizeParam`'s padding
+    is load-bearing and `SPR` must never join `NO_HEX_PAD`.
+
+  The registry entry needs three lines in the generator and nothing more: `"SPR"`
+  in `INCLUDED_COMMANDS`, a `CODE_CATEGORY`, and `STEPPER_MAX: 3` — without that
+  last one it inherits the default 24 and a 0-3 setting paints as a bar stuck in
+  the left eighth. Do **not** expand the range key into `00`..`03`: `extractValues`
+  skipping it is what keeps `formatCommandValue` from rendering the range's shared
+  name `no-0-3` as the level.
+
+  Still unverified, so not in any tooltip: **wrap-around**. It is inferred from
+  `description: "sets Super Resolution Wrap-Around Up"`, and that phrase is
+  boilerplate in this YAML — it is attached to `AMT TG` and `DIR TG`, which are
+  toggles, and to `SPB UP` on a unit that ignores `SPB` entirely.
 - **`UPS` is not what its name suggests.** It is called "Upsampling" and its
   `QSTN` description even reads "gets The Upscaling State" — but it is *audio*
   (x1/x2/x4/x8). The video control is `RES`.

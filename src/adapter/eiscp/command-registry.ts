@@ -615,6 +615,20 @@ export const COMMAND_REGISTRY: Record<string, CommandDef> = {
 		hasQuery: true,
 		hasUpDown: true,
 	},
+	SPR: {
+		code: "SPR",
+		name: "super-resolution",
+		description: "Super Resolution",
+		category: "Display / Video",
+		actionType: "stepper",
+		values: [
+			{ param: "UP", name: "up", description: "sets Super Resolution Wrap-Around Up" },
+			{ param: "DOWN", name: "down", description: "sets Super Resolution Wrap-Around DOWN" },
+		],
+		hasQuery: true,
+		hasUpDown: true,
+		maxValue: 3,
+	},
 };
 
 export function getCommandDef(code: string): CommandDef | undefined {

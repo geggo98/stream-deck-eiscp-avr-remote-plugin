@@ -1436,5 +1436,24 @@ window.EISCP_COMMANDS = [
     ],
     "hasQuery": true,
     "hasUpDown": true
+  },
+  {
+    "code": "SPR",
+    "name": "super-resolution",
+    "description": "Super Resolution",
+    "category": "Display / Video",
+    "actionType": "stepper",
+    "values": [
+      {
+        "param": "UP",
+        "name": "up"
+      },
+      {
+        "param": "DOWN",
+        "name": "down"
+      }
+    ],
+    "hasQuery": true,
+    "hasUpDown": true
   }
 ];

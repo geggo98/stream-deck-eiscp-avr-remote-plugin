@@ -21,6 +21,8 @@ import {
 	presetLabel,
 	resolveDeviceIp,
 	resolveDialPress,
+	SUPER_RES_MAX,
+	superResLevel,
 	toneFeedback,
 	UNCONFIGURED_TITLE,
 } from "../eiscp-base.ts";
@@ -514,6 +516,54 @@ export class TrebleDialAction extends ToneDialAction {
 
 /** Tuner preset dial: rotate steps presets (PRS), press jumps to the Tuner input. */
 @action({ UUID: uuidFor("preset-dial") })
+/**
+ * Super Resolution, 0-3, on a progress bar.
+ *
+ * The value is rendered from the raw parameter rather than through
+ * `formatCommandValue` because the interesting reading is not a number: while 4K
+ * upscaling is off the receiver refuses every rotation with `N/A`, and that is the
+ * one state the strip has to show honestly — a stale "2" beside a dead bar would
+ * read as a dial that simply stopped working.
+ */
+export class SuperResDialAction extends DialActionBase<EiscpActionSettings> {
+	constructor() {
+		super("SuperResDial");
+	}
+
+	protected getDialConfig(): DialConfig {
+		const s = SPEC_BY_ID["super-res-dial"];
+		return {
+			command: s.command,
+			upParam: s.upParam,
+			downParam: s.downParam,
+			pressCommand: s.pressCommand,
+			pressParam: s.pressParam,
+		};
+	}
+
+	protected buildFeedback(
+		_cfg: DialConfig,
+		rawValue: string,
+		_settings: EiscpActionSettings,
+		_pressOn: boolean,
+	): FeedbackPayload {
+		const level = superResLevel(rawValue);
+		if (level === undefined) {
+			// "N/A": the receiver's own word for "upscaling is off, this does nothing".
+			return {
+				title: "Super Res",
+				value: "N/A",
+				indicator: { value: 0, bar_fill_c: "#9E9E9E" },
+			};
+		}
+		return {
+			title: "Super Res",
+			value: String(level),
+			indicator: { value: (level / SUPER_RES_MAX) * 100, bar_fill_c: "#4CAF50" },
+		};
+	}
+}
+
 export class PresetDialAction extends DialActionBase<EiscpActionSettings> {
 	constructor() {
 		super("PresetDial");
@@ -560,6 +610,7 @@ export const DEDICATED_ACTIONS = [
 	new PresetNextAction(),
 	new PresetPrevAction(),
 	new Upscale4kAction(),
+	new SuperResDialAction(),
 	new InputDialAction(),
 	new ModeDialAction(),
 	new BassDialAction(),

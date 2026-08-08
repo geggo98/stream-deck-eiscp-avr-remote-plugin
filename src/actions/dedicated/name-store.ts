@@ -188,8 +188,17 @@ interface HostState {
  * them is what makes this entry work — the echo marks the display taken before the
  * text arrives — and the absence of an `LMD` is why the hole needs an *unrelated*
  * mode change to open at all.
+ *
+ * `SPR` (Super Resolution) is the more dangerous of the pair and threatens the
+ * **input** branch, because its readout `"Super Res   :2"` ends in a digit — the
+ * same shape as `"Volume      14"`, which is how an input once came to be called
+ * "Bass : +". Strip the trailing digits and you get an input named
+ * `"Super Res   :"`. Measured the same day: `SPR` echoes at ~80 ms and its text
+ * follows at ~108 ms, so the ordering that makes this work holds here too.
  */
-const DISPLAY_OWNING_COMMANDS: readonly string[] = ["MVL", "AMT", "TFR", "TFW", "PRS", "CTL", "SWL", "DIM", "RES"];
+const DISPLAY_OWNING_COMMANDS: readonly string[] = [
+	"MVL", "AMT", "TFR", "TFW", "PRS", "CTL", "SWL", "DIM", "RES", "SPR",
+];
 
 /**
  * Commands that mean "this source is streaming something and putting its metadata on

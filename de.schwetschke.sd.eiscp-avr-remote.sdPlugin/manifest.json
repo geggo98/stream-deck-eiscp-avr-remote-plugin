@@ -539,6 +539,29 @@
       }
     },
     {
+      "Name": "Super Resolution",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.super-res-dial",
+      "Icon": "imgs/actions/super-res-dial/icon",
+      "Tooltip": "Rotate to set Super Resolution (0-3); press to switch 4K upscaling on, which this setting needs.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/super-res-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Press",
+          "Rotate": "Adjust super resolution"
+        }
+      }
+    },
+    {
       "Name": "Preset",
       "UUID": "de.schwetschke.sd.eiscp-avr-remote.preset-dial",
       "Icon": "imgs/actions/preset-dial/icon",

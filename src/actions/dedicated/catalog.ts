@@ -209,6 +209,21 @@ export const DEDICATED_SPECS = [
 		states: 1, icon: { primary: "audio-waveform" },
 	},
 	{
+		// Measured on a VSX-S520D (2026-08-08). Two findings shape this entry. The
+		// receiver **announces** when the setting is dead: with upscaling off, `SPR UP`
+		// answers `!1SPRN/A` and the panel writes "Not Available " — so the dial does
+		// not have to guess at liveness, and `SPR QSTN` could not tell it anyway (it
+		// answers `02` either way). And `SPR` **echoes** its own sets (~80 ms), which
+		// is what DialActionBase repaints from; without that the strip would freeze
+		// after every rotation. Hence the press: it sends `RES 01`, the one thing that
+		// makes the dial do anything at all.
+		id: "super-res-dial", name: "Super Resolution",
+		tooltip: "Rotate to set Super Resolution (0-3); press to switch 4K upscaling on, which this setting needs.",
+		kind: "dial", controller: "Encoder", command: "SPR", upParam: "UP", downParam: "DOWN",
+		pressCommand: "RES", pressParam: "01", encoderLayout: "$B1",
+		states: 1, icon: { primary: "focus" },
+	},
+	{
 		id: "preset-dial", name: "Preset", tooltip: "Rotate to change the tuner preset; press to select the Tuner input.",
 		kind: "dial", controller: "Encoder", command: "PRS", upParam: "UP", downParam: "DOWN",
 		pressCommand: "SLI", pressParam: "26", encoderLayout: "$A1",

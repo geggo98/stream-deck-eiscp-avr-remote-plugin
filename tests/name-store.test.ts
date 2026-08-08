@@ -352,6 +352,19 @@ describe("name-store: a playing source is not a mode name", () => {
 		assert.equal(nameFor(host, "SLI", "2B"), "NET");
 	});
 
+	it("does not learn the Super Resolution readout as an input name", async () => {
+		// This one is shaped like the volume readout, not like a mode name: measured
+		// as "Super Res   :2", trailing digit and all, so endsWithVolume claims it and
+		// strips the digits — which is exactly how an input came to be called
+		// "Bass : +". Fails if SPR leaves DISPLAY_OWNING_COMMANDS (verified).
+		const host = "ns-super-res";
+		noteChange(host, "SLI", "10");
+		await tick();
+		noteDisplayChange(host, "SPR"); // the echo takes the display over
+		assert.equal(noteFld(host, hex("Super Res   :2")), false);
+		assert.notEqual(nameFor(host, "SLI", "10"), "Super Res   :");
+	});
+
 	it("still refuses a swept name while the volume is on the display", async () => {
 		// The other family is unchanged: that one does block the sweep.
 		const host = "ns-sweep-volume";
