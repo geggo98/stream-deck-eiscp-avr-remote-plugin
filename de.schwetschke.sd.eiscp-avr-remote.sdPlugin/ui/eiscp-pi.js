@@ -16,6 +16,8 @@
 	const COMMANDS = () => window.EISCP_COMMANDS || [];
 
 	/** How long to wait for the plugin's device-list reply before offering a way out. */
+	/** The appended block of plugin-wide settings; one per panel. */
+	const SHARED_SETTINGS_ID = "eiscpSharedSettings";
 	const DEVICE_LIST_TIMEOUT_MS = 6000;
 
 	// Anything that depends on "is a usable device IP configured?" registers here:
@@ -106,6 +108,19 @@
 			'<sdpi-item label="Custom IP" id="customIpItem" style="display:none;">' +
 			'  <sdpi-textfield setting="customIp" placeholder="192.168.1.100"></sdpi-textfield>' +
 			"</sdpi-item>" +
+			"";
+
+		// Everything below is the same for every action, and it belongs *after* whatever
+		// the page itself offers: the device comes first, then what this element does,
+		// then the settings that apply to the whole plugin. Appended to the body rather
+		// than injected at the top, so no Property Inspector has to spell the order out.
+		let extras = document.getElementById(SHARED_SETTINGS_ID);
+		if (!extras) {
+			extras = document.createElement("div");
+			extras.id = SHARED_SETTINGS_ID;
+			document.body.appendChild(extras);
+		}
+		extras.innerHTML =
 			'<sdpi-item label="Standby">' +
 			'  <div class="pi-check">' +
 			'    <input type="checkbox" id="wakeOnPress" checked>' +
@@ -115,19 +130,6 @@
 			'<div class="pi-hint">' +
 			"  In standby the receiver ignores everything except power and input selection," +
 			"  so keys are shown dimmed and a press wakes it first." +
-			"</div>" +
-			'<sdpi-item label="Cover art">' +
-			'  <div class="pi-check">' +
-			'    <input type="checkbox" id="coverOverHttp" checked>' +
-			'    <label for="coverOverHttp">Fetch cover art from the receiver\'s web server</label>' +
-			"  </div>" +
-			"</sdpi-item>" +
-			'<div class="pi-hint">' +
-			"  Faster and far lighter on the receiver than the copy it streams over the" +
-			"  control connection, and it means a cover is there straight away instead of" +
-			"  only after the next track. Whichever way the receiver is set to deliver" +
-			"  artwork is left alone \u2014 that setting is shared with every other app on" +
-			"  your network." +
 			"</div>" +
 			// Now-playing preview. Bound with plain `setting=` because these are
 			// per-action settings — deliberately NOT sdpi's `global` attribute, which
@@ -146,6 +148,25 @@
 			"  Replaces this element's own face with the title, artist and cover art for a" +
 			"  few seconds, then puts it back. Only on a track change — not while the" +
 			"  time counts up." +
+			"</div>" +
+			'<div class="pi-hint">' +
+			"  Dials that sit next to each other and watch the same receiver share one" +
+			"  display: one shows the cover, the others the title and artist, and a title" +
+			"  too long for one of them carries on across the next. They come back together," +
+			"  after the longest time any of them is set to." +
+			"</div>" +
+			'<sdpi-item label="Cover art">' +
+			'  <div class="pi-check">' +
+			'    <input type="checkbox" id="coverOverHttp" checked>' +
+			'    <label for="coverOverHttp">Fetch cover art from the receiver\'s web server</label>' +
+			"  </div>" +
+			"</sdpi-item>" +
+			'<div class="pi-hint">' +
+			"  Faster and far lighter on the receiver than the copy it streams over the" +
+			"  control connection, and it means a cover is there straight away instead of" +
+			"  only after the next track. Whichever way the receiver is set to deliver" +
+			"  artwork is left alone \u2014 that setting is shared with every other app on" +
+			"  your network." +
 			"</div>";
 
 		// The manual field must be reachable *without* the plugin: it used to appear
@@ -169,7 +190,7 @@
 		// written back through the plugin (see src/actions/pi-wake.ts): a
 		// `global`-bound component would rewrite the whole settings object from a
 		// snapshot taken when this panel opened, and take the learned names with it.
-		const wake = c.querySelector("#wakeOnPress");
+		const wake = extras.querySelector("#wakeOnPress");
 		if (wake) {
 			try {
 				SDPIComponents.streamDeckClient
@@ -200,8 +221,8 @@
 
 		// Only offer the duration once the preview is switched on: an inert slider
 		// invites the reading that it does something on its own.
-		const trackToggle = c.querySelector('[setting="showOnTrackChange"]');
-		const secondsItem = c.querySelector("#trackChangeSecondsItem");
+		const trackToggle = extras.querySelector('[setting="showOnTrackChange"]');
+		const secondsItem = extras.querySelector("#trackChangeSecondsItem");
 		if (trackToggle && secondsItem) {
 			const sync = () => {
 				// The value arrives late (settings are fetched after the upgrade), so read
@@ -221,7 +242,7 @@
 
 		// Same round trip as the wake switch above, for the same reason: a `global`-bound
 		// input would rewrite the whole settings object from a stale snapshot.
-		const cover = c.querySelector("#coverOverHttp");
+		const cover = extras.querySelector("#coverOverHttp");
 		if (cover) {
 			try {
 				SDPIComponents.streamDeckClient
