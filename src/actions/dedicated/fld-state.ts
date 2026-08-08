@@ -73,22 +73,66 @@ function normalise(value: string): string {
  * without this module at all.
  */
 export function parseFldState(text: string, anchor: FldStateAnchor): "on" | "off" | undefined {
-	const colon = text.indexOf(":");
-	if (colon < 0) return undefined;
-
-	const label = text.slice(0, colon);
-	const state = text.slice(colon + 1);
-	// Bound before normalising: the panel is 14 characters, but this text comes off
-	// the wire and only decodeDisplayText's cap stands between it and here.
-	if (label.length > MAX_LABEL_LENGTH || state.length > MAX_STATE_LENGTH) return undefined;
-
-	if (normalise(label) !== normalise(anchor.label)) return undefined;
-
-	const word = normalise(state);
-	if (!word) return undefined;
+	const word = readFldField(text, anchor.label);
+	if (word === undefined) return undefined;
 	if (matches(word, GENERIC_ON, anchor.onWords)) return "on";
 	if (matches(word, GENERIC_OFF, anchor.offWords)) return "off";
 	return undefined;
+}
+
+/** How a numeric setting announces itself, e.g. `"Super Res   :2"`. */
+export interface FldLevelAnchor {
+	/** Text left of the colon, as the panel prints it. */
+	label: string;
+	/** Highest level the setting takes; a reading outside 0..max is ignored. */
+	max: number;
+}
+
+/**
+ * The level a display line announces for `anchor`, or `undefined`.
+ *
+ * Same anchoring as `parseFldState` and for the same reason — this is the display
+ * that also prints `"CBL/SAT      2"`, which is a *volume* of 2 beside an input
+ * name. Only a line that names the setting is read, and only when what follows is
+ * a plain number inside the setting's own range: out of range is refused rather
+ * than clamped, since a value this code does not understand should not become a
+ * confident bar position.
+ */
+export function parseFldLevel(text: string, anchor: FldLevelAnchor): number | undefined {
+	const field = readFldField(text, anchor.label);
+	if (field === undefined) return undefined;
+	// The same state has two spellings, and which one you see depends on how it was
+	// changed. Measured on a VSX-S520D: `SPR 00` sent over the protocol makes the
+	// panel print "Super Res   :0", while switching the same setting off in the
+	// receiver's own menu prints "Super Res   :Off". A level scale starting at zero
+	// has no room for those to be different states — the range key is [0, 3], i.e.
+	// four values for the menu's Off/1/2/3 — so both read as zero.
+	if (GENERIC_OFF.includes(field)) return 0;
+	if (!/^[0-9]{1,2}$/.test(field)) return undefined;
+	const level = Number(field);
+	return level >= 0 && level <= anchor.max ? level : undefined;
+}
+
+/**
+ * The normalised text right of the colon, when the text left of it is `label`.
+ *
+ * The anchoring both parsers share. Returns `undefined` for anything that is not
+ * a `Label:Value` line naming this exact setting — which is most of what this
+ * display carries.
+ */
+function readFldField(text: string, label: string): string | undefined {
+	const colon = text.indexOf(":");
+	if (colon < 0) return undefined;
+
+	const printed = text.slice(0, colon);
+	const field = text.slice(colon + 1);
+	// Bound before normalising: the panel is 14 characters, but this text comes off
+	// the wire and only decodeDisplayText's cap stands between it and here.
+	if (printed.length > MAX_LABEL_LENGTH || field.length > MAX_STATE_LENGTH) return undefined;
+	if (normalise(printed) !== normalise(label)) return undefined;
+
+	const value = normalise(field);
+	return value || undefined;
 }
 
 function matches(word: string, generic: readonly string[], extra: readonly string[] | undefined): boolean {

@@ -13,8 +13,18 @@ import { describe, it } from "node:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseFldState, type FldStateAnchor } from "../src/actions/dedicated/fld-state.ts";
-import { DEDICATED_SPECS, type DedicatedSpec, type ToggleSpec } from "../src/actions/dedicated/catalog.ts";
+import {
+	parseFldLevel,
+	parseFldState,
+	type FldLevelAnchor,
+	type FldStateAnchor,
+} from "../src/actions/dedicated/fld-state.ts";
+import {
+	DEDICATED_SPECS,
+	type DedicatedSpec,
+	type DialSpec,
+	type ToggleSpec,
+} from "../src/actions/dedicated/catalog.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -89,6 +99,52 @@ describe("parseFldState", () => {
 		assert.ok(texts.some((t) => t.includes(":")), "corpus should contain the colon-bearing mode name");
 		for (const text of texts) {
 			assert.equal(parseFldState(text, UPSCALING), undefined, `misread ${JSON.stringify(text)} as a state`);
+		}
+	});
+});
+
+describe("parseFldLevel", () => {
+	const SUPER_RES: FldLevelAnchor = (DEDICATED_SPECS as readonly DedicatedSpec[])
+		.filter((s): s is DialSpec => s.kind === "dial")
+		.find((s) => s.id === "super-res-dial")!.fldValue!;
+
+	it("reads the level the receiver prints", () => {
+		// Measured: "Super Res   :2", padding inside the label and all.
+		assert.equal(parseFldLevel("Super Res   :2", SUPER_RES), 2);
+		assert.equal(parseFldLevel("Super Res : 0", SUPER_RES), 0);
+		assert.equal(parseFldLevel("Super Res:3", SUPER_RES), 3);
+	});
+
+	it("refuses a level outside the setting's own range rather than clamping", () => {
+		assert.equal(parseFldLevel("Super Res   :4", SUPER_RES), undefined);
+		assert.equal(parseFldLevel("Super Res   :99", SUPER_RES), undefined);
+	});
+
+	it("reads the receiver's two spellings of the same zero", () => {
+		// Measured, and the discrepancy is the receiver's: `SPR 00` sent over the
+		// protocol prints "Super Res   :0", while switching it off in the receiver's
+		// own menu prints "Super Res   :Off". Four wire values for the menu's
+		// Off/1/2/3 leaves no room for those to be different states.
+		assert.equal(parseFldLevel("Super Res   :0", SUPER_RES), 0);
+		assert.equal(parseFldLevel("Super Res   :Off", SUPER_RES), 0);
+		assert.equal(parseFldLevel("Super Res :Aus", SUPER_RES), 0);
+	});
+
+	it("refuses anything that is neither a number nor an off word", () => {
+		assert.equal(parseFldLevel("Super Res   :Auto", SUPER_RES), undefined);
+		assert.equal(parseFldLevel("Super Res   :", SUPER_RES), undefined);
+	});
+
+	it("does not read a level out of another setting's readout", () => {
+		// The trap this anchoring exists for: the input readout is a name beside a
+		// NUMBER, and "CBL/SAT      2" means volume 2, not super resolution 2.
+		assert.equal(parseFldLevel("CBL/SAT      2", SUPER_RES), undefined);
+		assert.equal(parseFldLevel("Upscaling:Off", SUPER_RES), undefined);
+	});
+
+	it("finds no level in any display text ever recorded from the receiver", () => {
+		for (const text of recordedDisplayTexts()) {
+			assert.equal(parseFldLevel(text, SUPER_RES), undefined, `misread ${JSON.stringify(text)} as a level`);
 		}
 	});
 });

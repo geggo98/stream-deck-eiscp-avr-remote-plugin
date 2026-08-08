@@ -15,8 +15,8 @@ import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
 import { decodeDisplayText, type EiscpActionSettings, fireAndLog, resolveDeviceIp } from "../eiscp-base.ts";
-import { DEDICATED_SPECS, type DedicatedSpec, type ToggleSpec } from "./catalog.ts";
-import { parseFldState } from "./fld-state.ts";
+import { DEDICATED_SPECS, type DedicatedSpec, type DialSpec, type ToggleSpec } from "./catalog.ts";
+import { parseFldLevel, parseFldState } from "./fld-state.ts";
 import {
 	hasLearnedName,
 	nameFor,
@@ -49,6 +49,11 @@ const FLD_STATE_TOGGLES: readonly ToggleSpec[] = (DEDICATED_SPECS as readonly De
 	.filter((spec): spec is ToggleSpec => spec.kind === "toggle")
 	.filter((spec) => spec.fldState !== undefined);
 
+/** Dials whose level the receiver likewise only admits on its front panel. */
+const FLD_VALUE_DIALS: readonly DialSpec[] = (DEDICATED_SPECS as readonly DedicatedSpec[])
+	.filter((spec): spec is DialSpec => spec.kind === "dial")
+	.filter((spec) => spec.fldValue !== undefined);
+
 /**
  * Correct a toggle's believed state from a line of display text.
  *
@@ -58,13 +63,21 @@ const FLD_STATE_TOGGLES: readonly ToggleSpec[] = (DEDICATED_SPECS as readonly De
  * — the key would look right and then behave wrong, which is worse than either.
  */
 function applyFldState(mgr: ConnectionManager, host: string, parameter: string): void {
-	if (FLD_STATE_TOGGLES.length === 0) return;
+	if (FLD_STATE_TOGGLES.length === 0 && FLD_VALUE_DIALS.length === 0) return;
 	const text = decodeDisplayText(parameter);
 	if (!text) return;
 	for (const spec of FLD_STATE_TOGGLES) {
 		const state = parseFldState(text, spec.fldState!);
 		if (state === undefined) continue;
 		mgr.publishDerivedValue(host, spec.command, state === "on" ? spec.onValue : spec.offValue);
+	}
+	for (const spec of FLD_VALUE_DIALS) {
+		const level = parseFldLevel(text, spec.fldValue!);
+		if (level === undefined) continue;
+		// Two digits, because that is the only form the wire uses: the receiver
+		// reports "02" and refuses the single-digit `SPR 1` outright, so publishing
+		// "2" would seed the cache with a value no set could ever produce.
+		mgr.publishDerivedValue(host, spec.command, String(level).padStart(2, "0"));
 	}
 }
 

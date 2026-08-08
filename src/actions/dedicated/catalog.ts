@@ -10,7 +10,7 @@
  * class decorator, the manifest, and the generated images can never drift.
  */
 
-import type { FldStateAnchor } from "./fld-state.ts";
+import type { FldLevelAnchor, FldStateAnchor } from "./fld-state.ts";
 
 export const PLUGIN_ID = "de.schwetschke.sd.eiscp-avr-remote";
 export const uuidFor = (id: DedicatedId | GenericId): string => `${PLUGIN_ID}.${id}`;
@@ -75,6 +75,16 @@ export interface DialSpec extends DedicatedSpecBase {
 	/** Default press behavior (several dials let the PI override it). */
 	pressCommand: string;
 	pressParam: string;
+	/**
+	 * Press flips between these instead of sending `pressParam`, when both are set.
+	 *
+	 * `pressParam` stays as the value a cold, unreadable press falls back to.
+	 * `pressOnValue` alone still just lights the strip (see `isPressOn`).
+	 */
+	pressOnValue?: string;
+	pressOffValue?: string;
+	/** Front-panel readout that reveals this setting's level (see fld-state.ts). */
+	fldValue?: FldLevelAnchor;
 	encoderLayout: string;
 	states: 1;
 }
@@ -234,9 +244,16 @@ export const DEDICATED_SPECS = [
 		// after every rotation. Hence the press: it sends `RES 01`, the one thing that
 		// makes the dial do anything at all.
 		id: "super-res-dial", name: "Super Resolution",
-		tooltip: "Rotate to set Super Resolution (0-3); press to switch 4K upscaling on, which this setting needs.",
+		tooltip: "Rotate to set Super Resolution (0-3); press toggles 4K upscaling, which this setting needs.",
 		kind: "dial", controller: "Encoder", command: "SPR", upParam: "UP", downParam: "DOWN",
-		pressCommand: "RES", pressParam: "01", encoderLayout: "$B1",
+		// The press toggles rather than only switching on: the two settings belong
+		// together, and a one-way press left no way back from the same key.
+		pressCommand: "RES", pressParam: "01", pressOnValue: "01", pressOffValue: "00",
+		// Same story as the toggle above — `SPR` is not reported either, so a change
+		// made at the receiver is only visible as "Super Res   :2" on the panel. Max
+		// mirrors STEPPER_MAX.SPR in the generator; both come from the same range key.
+		fldValue: { label: "Super Res", max: 3 },
+		encoderLayout: "$B1",
 		states: 1, icon: { primary: "focus" },
 	},
 	{

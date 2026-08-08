@@ -58,15 +58,16 @@ all — the key uses the two values a Pioneer VSX-S520D accepts, and a model tha
 wants a different one can be driven from the generic *Button* or *Toggle*, where
 every resolution the protocol defines is offered.
 
-One caveat, measured on the VSX-S520D: unlike input or volume, this setting is
-not reported back. Change it with the receiver's own remote and the receiver
-keeps telling the network the *previous* value, so the key can show a stale state
-until you press it. Driven from the deck it stays correct.
-
 **Super Resolution** is the sharpening level that rides on top of it, on a dial
-(0–3). It only does anything while 4K upscaling is on — press the dial to switch
-that on. With upscaling off the receiver refuses the change and says so, and the
+(0–3). It only does anything while 4K upscaling is on — pressing the dial toggles
+that. With upscaling off the receiver refuses the change and says so, and the
 dial shows `N/A` rather than a number that would not mean anything.
+
+Neither setting is reported back on this receiver: change one with its own remote
+and it keeps telling the network the *previous* value, however often you ask. So
+the plugin reads them off the receiver's front-panel display instead, which is
+where the change does show up — the key and the dial follow the receiver even
+when you use its own menu.
 
 ## Requirements
 

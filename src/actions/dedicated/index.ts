@@ -537,28 +537,33 @@ export class SuperResDialAction extends DialActionBase<EiscpActionSettings> {
 			downParam: s.downParam,
 			pressCommand: s.pressCommand,
 			pressParam: s.pressParam,
+			// Both set, so the press flips upscaling instead of only switching it on —
+			// and the same pair lights the strip while it is on.
+			pressOnValue: s.pressOnValue,
+			pressOffValue: s.pressOffValue,
+			pressLabel: "UPSCALING",
 		};
 	}
 
 	protected buildFeedback(
-		_cfg: DialConfig,
+		cfg: DialConfig,
 		rawValue: string,
 		_settings: EiscpActionSettings,
-		_pressOn: boolean,
+		pressOn: boolean,
 	): FeedbackPayload {
+		const title = pressOn ? (cfg.pressLabel ?? "ON") : "Super Res";
 		const level = superResLevel(rawValue);
 		if (level === undefined) {
 			// "N/A": the receiver's own word for "upscaling is off, this does nothing".
-			return {
-				title: "Super Res",
-				value: "N/A",
-				indicator: { value: 0, bar_fill_c: "#9E9E9E" },
-			};
+			return { title, value: "N/A", indicator: { value: 0, bar_fill_c: "#9E9E9E" } };
 		}
 		return {
-			title: "Super Res",
+			title,
 			value: String(level),
-			indicator: { value: (level / SUPER_RES_MAX) * 100, bar_fill_c: "#4CAF50" },
+			indicator: {
+				value: (level / SUPER_RES_MAX) * 100,
+				bar_fill_c: pressOn ? "#4CAF50" : "#9E9E9E",
+			},
 		};
 	}
 }

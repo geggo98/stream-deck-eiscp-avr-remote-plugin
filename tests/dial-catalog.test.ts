@@ -143,10 +143,23 @@ describe("Super Resolution dial", () => {
 		assert.equal(cmd.actionType === "stepper" && cmd.maxValue, SUPER_RES_MAX);
 	});
 
-	it("presses to switch upscaling on, because that is what makes it work", () => {
-		// Measured: with upscaling off, every SPR set comes back `!1SPRN/A`.
+	it("presses to toggle upscaling, because that is what makes it work", () => {
+		// Measured: with upscaling off, every SPR set comes back `!1SPRN/A`. Both press
+		// values are set, which is what turns the press from a one-way switch into a
+		// flip — a dial that could only ever enable it left no way back from the key.
 		assert.equal(spec?.pressCommand, "RES");
+		assert.equal(spec?.pressOnValue, "01");
+		assert.equal(spec?.pressOffValue, "00");
+		// Still the fallback for a press that cannot read the current value.
 		assert.equal(spec?.pressParam, "01");
+	});
+
+	it("tracks the level from the panel, since the receiver will not report it", () => {
+		// Same defect as RES: a change made at the receiver is never broadcast, so the
+		// display text is the only evidence. Max must agree with the registry, or the
+		// parser and the bar would disagree about what "full" means.
+		assert.equal(spec?.fldValue?.label, "Super Res");
+		assert.equal(spec?.fldValue?.max, SUPER_RES_MAX);
 	});
 
 	it("emits no concrete values, so nothing invents a spelling for them", () => {
