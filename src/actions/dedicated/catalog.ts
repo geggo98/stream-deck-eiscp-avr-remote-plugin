@@ -254,7 +254,11 @@ export const DEDICATED_SPECS = [
 		// mirrors STEPPER_MAX.SPR in the generator; both come from the same range key.
 		fldValue: { label: "Super Res", max: 3 },
 		encoderLayout: "$B1",
-		states: 1, icon: { primary: "focus" },
+		// The same visual language as the 4K key, because it reports the same thing:
+		// a plain monitor while the signal passes through, the upscale glyph while it
+		// is being scaled. `onPrimary` is also what makes the icon generator emit the
+		// ON pair for a dial (see generate-icons.ts).
+		states: 1, icon: { primary: "monitor", onPrimary: "image-upscale" },
 	},
 	{
 		id: "preset-dial", name: "Preset", tooltip: "Rotate to change the tuner preset; press to select the Tuner input.",

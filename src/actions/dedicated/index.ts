@@ -34,7 +34,7 @@ import {
 	type KeyConfig,
 	type ToggleConfig,
 } from "../eiscp-action-base.ts";
-import { SPEC_BY_ID, uuidFor, type DedicatedIdOfKind, type ToggleSpec } from "./catalog.ts";
+import { keyImagePath, SPEC_BY_ID, uuidFor, type DedicatedIdOfKind, type ToggleSpec } from "./catalog.ts";
 import { nameFor, type TrackedCommand } from "./name-store.ts";
 import { handleDiscoverMessage } from "./discovery.ts";
 import { handleOptionNamesMessage } from "./pi-names.ts";
@@ -551,13 +551,19 @@ export class SuperResDialAction extends DialActionBase<EiscpActionSettings> {
 		_settings: EiscpActionSettings,
 		pressOn: boolean,
 	): FeedbackPayload {
-		const title = pressOn ? (cfg.pressLabel ?? "ON") : "Super Res";
+		// Named for what the receiver is actually doing, not for what the dial
+		// adjusts: with upscaling off the signal is passed through untouched and the
+		// dial changes nothing, so calling it "Super Res" there would label a control
+		// that does not exist yet.
+		const title = pressOn ? "Super Res" : "4K Passthrough";
+		const icon = keyImagePath("super-res-dial", pressOn, false);
 		const level = superResLevel(rawValue);
 		if (level === undefined) {
 			// "N/A": the receiver's own word for "upscaling is off, this does nothing".
-			return { title, value: "N/A", indicator: { value: 0, bar_fill_c: "#9E9E9E" } };
+			return { icon, title, value: "N/A", indicator: { value: 0, bar_fill_c: "#9E9E9E" } };
 		}
 		return {
+			icon,
 			title,
 			value: String(level),
 			indicator: {

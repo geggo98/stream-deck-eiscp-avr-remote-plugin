@@ -124,7 +124,11 @@ for (const spec of DEDICATED_SPECS) {
 	written += 1;
 	written += writeKeyImages(dir, icon, BG_DARK, false);
 
-	if (spec.states === 2) {
+	// Two-state keys always need the ON pair for their manifest States. A dial has
+	// only one manifest state, but its touch strip carries an icon that can still
+	// have two looks — the Super Resolution dial shows the receiver's upscaling
+	// state the same way the 4K key does. Declaring `onPrimary` is the opt-in.
+	if (spec.states === 2 || icon.onPrimary) {
 		written += writeKeyImages(dir, icon, onStateColor(spec.command), true);
 	}
 	console.log(`  ${spec.id}: ${icon.primary}${icon.badge ? " + " + icon.badge : ""}`);

@@ -15,6 +15,7 @@ import { resolve } from "node:path";
 import {
 	DEDICATED_SPECS,
 	GENERIC_SPECS,
+	type IconSpec,
 	keyImagePath,
 	onStateColor,
 } from "../src/actions/dedicated/catalog.ts";
@@ -40,18 +41,38 @@ describe("key image variants", () => {
 		assert.deepEqual(missing, [], "run npm run generate:icons");
 	});
 
-	it("ships both ON images for the toggles that use distinct state images", () => {
-		// Only the dedicated toggles do: the generic one paints its ON state with a
-		// generated background, so it has no -on file and must not be asked for one.
+	it("ships both ON images for everything that shows a distinct ON look", () => {
+		// Two-state keys need them for their manifest States. A dial has one manifest
+		// state but can still put two looks on its touch strip — the Super Resolution
+		// dial shows the receiver's upscaling state the way the 4K key does — and it
+		// asks for the file by path at render time, so a missing one is a blank icon
+		// rather than an error. Declaring `onPrimary` is the opt-in on both sides.
+		// The generic actions paint their ON state with a generated background and
+		// have no -on file at all, so they must not be asked for one.
 		const missing: string[] = [];
 		for (const spec of DEDICATED_SPECS) {
-			if (spec.states !== 2) continue;
+			const icon: IconSpec = spec.icon;
+			if (spec.states !== 2 && !icon.onPrimary) continue;
 			for (const dim of [false, true]) {
 				const path = keyImagePath(spec.id, true, dim);
 				if (!existsSync(fileFor(path))) missing.push(path);
 			}
 		}
 		assert.deepEqual(missing, [], "run npm run generate:icons");
+	});
+
+	it("gives the Super Resolution dial the two looks its strip switches between", () => {
+		// Guards the pair end to end: the catalog declares onPrimary, the generator
+		// emits the ON files for a one-state action because of it, and buildFeedback
+		// hands setFeedback these exact paths.
+		const spec = DEDICATED_SPECS.find((s) => s.id === "super-res-dial");
+		const icon: IconSpec | undefined = spec?.icon;
+		assert.equal(icon?.primary, "monitor");
+		assert.equal(icon?.onPrimary, "image-upscale");
+		for (const on of [false, true]) {
+			const path = keyImagePath("super-res-dial", on, false);
+			assert.ok(existsSync(fileFor(path)), `missing ${path}`);
+		}
 	});
 
 	it("resolves what keyImageFor actually returns", () => {
