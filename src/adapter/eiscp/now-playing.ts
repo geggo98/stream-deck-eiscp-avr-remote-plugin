@@ -31,6 +31,13 @@ import { JacketArtAccumulator, type ArtImage } from "./jacket-art.ts";
 
 const logger = scopedLogger("NowPlaying");
 
+/** Unref'd: a pending settle window must never be the reason a process stays alive. */
+function defaultSchedule(fn: () => void, ms: number): () => void {
+	const timer = setTimeout(fn, ms);
+	timer.unref?.();
+	return () => clearTimeout(timer);
+}
+
 /** Spec: "64 Unicode letters [UTF-8 encoded] max" for NTI/NAT/NAL. */
 export const MAX_TEXT_LENGTH = 64;
 /** Hosts tracked at once; bounded like every other map fed from the wire. */
@@ -39,10 +46,45 @@ export const MAX_NOW_PLAYING_HOSTS = 8;
  * A track change is announced by several commands in a row. Measured spread for one
  * change: art at +0 ms, then NTI +761, NAL +773, NAT +848 — plus NMS/NFI/NTR/FLD
  * within another 300 ms. Without coalescing, one change would fire four or more
- * times; this window collapses them into one, leading edge first so a display
- * reacts immediately rather than a second late.
+ * times; this window collapses them into one.
  */
 export const TRACK_CHANGE_COOLDOWN_MS = 1_500;
+
+/**
+ * How long to let the announcement finish before telling anyone about it.
+ *
+ * This used to fire on the **leading** edge, "so a display reacts immediately rather
+ * than a second late" — and that was wrong, in a way only the hardware showed. The
+ * fields do not arrive together: measured 87 ms between `NTI` (title) and `NAT`
+ * (artist). A consumer that *freezes* the state — which the track-change display does,
+ * deliberately — therefore captured the new title beside the **previous song's
+ * artist**. Seen in the wild: "Sweet About Me" credited to the artist before it.
+ *
+ * So the edge is now trailing. 300 ms is ~3.4x the measured spread and far below what
+ * anyone reads as a delay; being right matters more here than being early, because the
+ * wrong answer is not "late", it is a plausible-looking lie.
+ */
+export const TRACK_CHANGE_SETTLE_MS = 300;
+
+/**
+ * Longest the display may be held back waiting for an announcement to finish.
+ *
+ * The settle window is re-armed by every field, so without a bound a source that sent
+ * one field a second would postpone the display forever. Past this the state that has
+ * arrived is what gets shown, and a later field simply starts a fresh burst — which
+ * corrects a display that is still up rather than leaving it wrong.
+ */
+export const TRACK_CHANGE_MAX_WAIT_MS = 2_000;
+
+/** Command each text field came from, for the diagnostic line only. */
+const COMMAND_OF = { track: "NTI", artist: "NAT", album: "NAL" } as const;
+
+/** The three fields, and the command that answers for each. */
+const TEXT_QUERIES = [
+	["track", "NTI"],
+	["artist", "NAT"],
+	["album", "NAL"],
+] as const satisfies readonly (readonly ["track" | "artist" | "album", string])[];
 
 /**
  * Shortest gap between two cover downloads for one receiver.
@@ -182,8 +224,17 @@ export interface NowPlayingDeps {
 export interface NowPlayingOptions {
 	maxHosts?: number;
 	cooldownMs?: number;
+	settleMs?: number;
+	maxWaitMs?: number;
 	/** Injected for tests; production uses `Date.now`. */
 	now?: () => number;
+	/**
+	 * Injected for tests; production uses `setTimeout`. Returns the canceller.
+	 *
+	 * The tracker runs on an injected clock, so a real timer would make the settle
+	 * window untestable — and untested is exactly what let the leading edge ship.
+	 */
+	schedule?: (fn: () => void, ms: number) => () => void;
 	/**
 	 * Whether the cover may be fetched from the receiver's web server.
 	 *
@@ -206,8 +257,14 @@ interface HostEntry {
 	identity: string;
 	/** Whether this host has ever reported a track; see applyText. */
 	primed: boolean;
-	/** Leading-edge cooldown timestamp. */
-	lastTrackChangeAt: number;
+	/** While the initial fill is still arriving, nothing is announced. */
+	suppressUntil: number;
+	/** When the current announcement burst began, for the max-wait bound. */
+	burstStartedAt?: number;
+	/** Which commands arrived and when, for the diagnostic line. Never their values. */
+	burstShape?: string[];
+	/** Cancels the pending settle window, if one is armed. */
+	cancelSettle?: () => void;
 }
 
 /** Commands that are queried once when a host is first watched. */
@@ -245,13 +302,24 @@ export class NowPlayingTracker {
 	private readonly deps: NowPlayingDeps;
 	private readonly maxHosts: number;
 	private readonly cooldownMs: number;
+	private readonly settleMs: number;
+	private readonly maxWaitMs: number;
+	private readonly schedule: (fn: () => void, ms: number) => () => void;
 	private readonly now: () => number;
 	private unsubscribe: (() => void)[] = [];
+	/**
+	 * The most recent announcement, so a test can await the confirmation round trip.
+	 * Production never needs it: the listeners fire when it resolves.
+	 */
+	private settled: Promise<void> = Promise.resolve();
 
 	constructor(deps: NowPlayingDeps, options: NowPlayingOptions = {}) {
 		this.deps = deps;
 		this.maxHosts = options.maxHosts ?? MAX_NOW_PLAYING_HOSTS;
 		this.cooldownMs = options.cooldownMs ?? TRACK_CHANGE_COOLDOWN_MS;
+		this.settleMs = options.settleMs ?? TRACK_CHANGE_SETTLE_MS;
+		this.maxWaitMs = options.maxWaitMs ?? TRACK_CHANGE_MAX_WAIT_MS;
+		this.schedule = options.schedule ?? defaultSchedule;
 		this.now = options.now ?? Date.now;
 		this.httpEnabled = options.httpEnabled ?? (() => true);
 		this.fetchOptions = options.fetchOptions ?? {};
@@ -269,9 +337,18 @@ export class NowPlayingTracker {
 		);
 	}
 
+	/**
+	 * Resolves once the pending announcement (including its confirmation queries) is
+	 * out. For tests; production has no reason to wait for it.
+	 */
+	whenSettled(): Promise<void> {
+		return this.settled;
+	}
+
 	stop(): void {
 		this.unsubscribe.forEach((u) => u());
 		this.unsubscribe = [];
+		for (const entry of this.hosts.values()) entry.cancelSettle?.();
 		this.hosts.clear();
 	}
 
@@ -480,13 +557,64 @@ export class NowPlayingTracker {
 		// arriving burst fall into the same window that coalesces a real change.
 		if (!entry.primed) {
 			entry.primed = true;
-			entry.lastTrackChangeAt = now;
+			entry.suppressUntil = now + this.cooldownMs;
 			logger.debug(`${host}: now playing "${value ?? ""}" (initial, no notification)`);
 			return;
 		}
+		// The rest of the initial fill, which is a burst like any other.
+		if (now < entry.suppressUntil) return;
 
-		if (now - entry.lastTrackChangeAt < this.cooldownMs) return;
-		entry.lastTrackChangeAt = now;
+		// Re-armed by **every** field of the burst, not just the first. A fixed window
+		// started by the title assumes the artist is inside it, and the whole point of
+		// this code is that that assumption is what went wrong: the fields arrive apart,
+		// and how far apart is the receiver's business, not ours. Bounded from the first
+		// field so a source that dribbles cannot postpone the display indefinitely.
+		if (entry.burstStartedAt === undefined) {
+			entry.burstStartedAt = now;
+			entry.burstShape = [];
+		}
+		entry.burstShape?.push(`${COMMAND_OF[field]}@${now - entry.burstStartedAt}`);
+		const wait = Math.max(0, Math.min(this.settleMs, entry.burstStartedAt + this.maxWaitMs - now));
+		entry.cancelSettle?.();
+		entry.cancelSettle = this.schedule(() => {
+			const startedAt = entry.burstStartedAt ?? now;
+			const shape = (entry.burstShape ?? []).join(" ");
+			entry.cancelSettle = undefined;
+			entry.burstStartedAt = undefined;
+			entry.burstShape = undefined;
+			this.settled = this.announce(host, entry, startedAt, shape);
+		}, wait);
+	}
+
+	/**
+	 * Confirm what is playing, then tell everyone.
+	 *
+	 * The pushed fields are **fragments**: they arrive separately, at a spacing the
+	 * receiver chooses, and this display freezes whatever it is handed. Waiting longer
+	 * made that less likely but could not make it certain — and it cannot help at all
+	 * with a field the receiver simply does not push for a given track, which leaves the
+	 * *previous* song's value sitting in the state.
+	 *
+	 * So the state is confirmed against the device before it goes out. `NTI`/`NAT`/`NAL`
+	 * all answer `QSTN` (measured; `prime` already relies on it), which makes this a
+	 * question rather than an assembly. Three queries per track change, behind the
+	 * ConnectionManager's per-host rate limit.
+	 *
+	 * Best-effort throughout: a query that fails leaves the pushed value in place, which
+	 * is exactly what would have been shown anyway.
+	 */
+	private async announce(host: string, entry: HostEntry, startedAt: number, shape: string): Promise<void> {
+		// Nobody is looking; the queries would be pure cost.
+		if (entry.trackChanges.size === 0) return;
+		const before = trackIdentity(entry.state);
+		await this.confirmText(host, entry);
+		const after = trackIdentity(entry.state);
+		// Content-free on purpose: which commands arrived and when, never what they said.
+		// `corrected` is the interesting bit — it says the pushed fragments alone would
+		// have been wrong.
+		logger.info(
+			`${host}: track change after ${this.now() - startedAt} ms [${shape}]${before === after ? "" : " corrected by query"}`,
+		);
 		for (const listener of entry.trackChanges) {
 			try {
 				listener(entry.state);
@@ -494,6 +622,38 @@ export class NowPlayingTracker {
 				logger.warn(`track-change listener threw: ${err instanceof Error ? err.message : String(err)}`);
 			}
 		}
+	}
+
+	/**
+	 * Read the three text fields back from the receiver and apply the answers.
+	 *
+	 * Deliberately not routed through `applyText`: that is the push path, and re-entering
+	 * it would start a fresh burst for the very announcement being made. The identity is
+	 * re-stamped afterwards so a later push of the same value is correctly seen as no
+	 * change.
+	 */
+	private async confirmText(host: string, entry: HostEntry): Promise<void> {
+		const answers = await Promise.allSettled(TEXT_QUERIES.map(([, command]) => this.deps.queryCommand(host, command)));
+		// Deliberately text only. `NTM` was in here briefly, to stop a frozen progress bar
+		// showing the previous track's position — and it did not fix it: at the moment of
+		// a change the receiver has no useful elapsed time to give, pushed or asked for.
+		// The display now leaves the bar out instead (see `buildPanelFace`), which is also
+		// the more honest answer, since a track that just started is at zero anyway.
+		answers.forEach((answer, i) => {
+			if (answer.status !== "fulfilled") return;
+			const field = TEXT_QUERIES[i]![0];
+			const value = sanitiseDeviceText(answer.value, MAX_TEXT_LENGTH) || undefined;
+			// An empty answer never clears a value the receiver pushed. "The device said
+			// nothing" is weaker evidence than "the device announced this a moment ago" —
+			// a firmware that does not implement the query, or a reply lost in the middle
+			// of a cover transfer, would otherwise wipe a perfectly good artist. A track
+			// that genuinely has none arrives as an empty *push*, which does clear it.
+			if (value === undefined) return;
+			if (entry.state[field] === value) return;
+			entry.state = { ...entry.state, [field]: value };
+			this.notify(entry, "text");
+		});
+		entry.identity = trackIdentity(entry.state);
 	}
 
 	private notify(entry: HostEntry, change: NowPlayingChange): void {
@@ -515,6 +675,7 @@ export class NowPlayingTracker {
 			const idle = [...this.hosts].find(([, e]) => e.updates.size === 0 && e.trackChanges.size === 0);
 			const victim = idle?.[0] ?? this.hosts.keys().next().value;
 			if (victim !== undefined) {
+				this.hosts.get(victim)?.cancelSettle?.();
 				this.hosts.delete(victim);
 				this.art.forget(victim);
 			}
@@ -525,7 +686,7 @@ export class NowPlayingTracker {
 			trackChanges: new Set(),
 			identity: trackIdentity(EMPTY_NOW_PLAYING),
 			primed: false,
-			lastTrackChangeAt: 0,
+			suppressUntil: 0,
 		};
 		this.hosts.set(host, entry);
 		return entry;
@@ -534,6 +695,7 @@ export class NowPlayingTracker {
 	private dropIfUnwatched(host: string, entry: HostEntry): void {
 		if (entry.updates.size > 0 || entry.trackChanges.size > 0) return;
 		// Nothing is looking any more, so stop paying for the cover-art stream.
+		entry.cancelSettle?.();
 		this.hosts.delete(host);
 		this.art.forget(host);
 	}

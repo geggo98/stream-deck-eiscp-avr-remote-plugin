@@ -100,6 +100,15 @@ interface Harness {
 	queried: string[];
 	fetched: string[];
 	setNow(ms: number): void;
+	/**
+	 * Run whatever the tracker scheduled.
+	 *
+	 * The track-change notification is deliberately on the *trailing* edge of the
+	 * announcement burst (see `TRACK_CHANGE_SETTLE_MS`), so a test that never lets the
+	 * window expire sees nothing — which is the point: it is the same "has the burst
+	 * finished?" question the real thing has to answer.
+	 */
+	settle(): Promise<void>;
 }
 
 /** A distinct JPEG for the HTTP path, so it cannot be confused with the inline one. */
@@ -108,13 +117,21 @@ function httpJpeg(): Buffer {
 }
 
 function harness(
-	options: { maxHosts?: number; failCommands?: string[]; httpEnabled?: boolean; httpBody?: Buffer | null } = {},
+	options: {
+		maxHosts?: number;
+		failCommands?: string[];
+		httpEnabled?: boolean;
+		httpBody?: Buffer | null;
+		/** What a query answers with, by command. Absent means the empty reply. */
+		answers?: Record<string, string>;
+	} = {},
 ): Harness {
 	const fetched: string[] = [];
 	let messageCb: ((host: string, command: string, parameter: string) => void) | undefined;
 	let connectionCb: ((host: string, event: ConnectionEvent) => void) | undefined;
 	const queried: string[] = [];
 	let clock = 10_000;
+	let pending: (() => void)[] = [];
 
 	const tracker = new NowPlayingTracker(
 		{
@@ -129,12 +146,18 @@ function harness(
 			queryCommand: async (host, command) => {
 				queried.push(`${host} ${command}`);
 				if (options.failCommands?.includes(command)) throw new Error(`${command} timed out`);
-				return "";
+				return options.answers?.[command] ?? "";
 			},
 		},
 		{
 			...options,
 			now: () => clock,
+			schedule: (fn) => {
+				pending.push(fn);
+				return () => {
+					pending = pending.filter((p) => p !== fn);
+				};
+			},
 			httpEnabled: () => options.httpEnabled ?? false,
 			fetchOptions: {
 				fetchImpl: (async (url: string | URL) => {
@@ -159,6 +182,14 @@ function harness(
 		connection: (host, event) => connectionCb?.(host, event),
 		queried,
 		setNow: (ms) => (clock = ms),
+		settle: async () => {
+			const due = pending;
+			pending = [];
+			for (const fn of due) fn();
+			// The announcement confirms itself against the receiver before it goes out,
+			// so settling is not synchronous any more.
+			await tracker.whenSettled();
+		},
 	};
 }
 
@@ -263,9 +294,13 @@ describe("NowPlayingTracker: track changes", () => {
 		assert.equal(fired.length, 0);
 	});
 
-	it("fires exactly once for a real change, coalescing the burst", () => {
-		// Measured spread for one change: NTI +761 ms after the art, NAL +12 ms after
-		// NTI, NAT +75 ms after that. Three fields, one change.
+	it("waits for the whole announcement before reporting it", async () => {
+		// The regression this exists for, found on the hardware: the fields do not arrive
+		// together (measured 87 ms between NTI and NAT), and the notification used to go
+		// out with the first of them. A consumer that freezes the state — the
+		// track-change display does, on purpose — then showed the new title beside the
+		// **previous song's artist**. Seen in the wild: "Sweet About Me" credited to the
+		// artist before it.
 		const h = harness();
 		const fired: NowPlaying[] = [];
 		h.tracker.onTrackChange("10.0.0.1", (s) => fired.push(s));
@@ -274,23 +309,152 @@ describe("NowPlayingTracker: track changes", () => {
 		h.send("10.0.0.1", "NTI", "What the Hell");
 		h.send("10.0.0.1", "NAT", "Avril Lavigne");
 		h.send("10.0.0.1", "NAL", "Goodbye Lullaby");
+		await h.settle();
 		assert.equal(fired.length, 0, "still the initial fill");
 
 		h.setNow(200_000);
 		h.send("10.0.0.1", "NTI", "Cruel Summer");
+		assert.equal(fired.length, 0, "nothing goes out while the burst is still arriving");
 		h.setNow(200_012);
 		h.send("10.0.0.1", "NAL", "Lover");
 		h.setNow(200_087);
 		h.send("10.0.0.1", "NAT", "Taylor Swift");
+		assert.equal(fired.length, 0);
 
+		await h.settle();
 		assert.equal(fired.length, 1, "one track change, one notification");
-		// Leading edge: the notification comes with the first field, so a display
-		// reacts at once. The rest of the burst arrives through onUpdate.
 		assert.equal(fired[0]!.track, "Cruel Summer");
-		assert.equal(h.tracker.get("10.0.0.1").artist, "Taylor Swift");
+		// The whole point: the artist in the notification is this song's, not the last.
+		assert.equal(fired[0]!.artist, "Taylor Swift");
+		assert.equal(fired[0]!.album, "Lover");
 	});
 
-	it("fires again for the next track, once the cooldown has passed", () => {
+	it("waits for a field that arrives after the window would have closed", async () => {
+		// The second round of the same bug. A *fixed* window started by the title assumes
+		// the artist is inside it — and how far apart the receiver spaces its fields is
+		// the receiver's business. So every field re-arms the window.
+		const h = harness();
+		const fired: NowPlaying[] = [];
+		h.tracker.onTrackChange("10.0.0.1", (s) => fired.push(s));
+
+		h.setNow(10_000);
+		h.send("10.0.0.1", "NTI", "First");
+		h.send("10.0.0.1", "NAT", "First Artist");
+		await h.settle();
+		assert.equal(fired.length, 0, "the initial fill");
+
+		h.setNow(200_000);
+		h.send("10.0.0.1", "NTI", "Cruel Summer");
+		// Far beyond TRACK_CHANGE_SETTLE_MS: a fixed window would already have fired,
+		// carrying "First Artist" with it.
+		h.setNow(201_200);
+		h.send("10.0.0.1", "NAT", "Taylor Swift");
+		await h.settle();
+
+		assert.equal(fired.length, 1, "still one notification for one change");
+		assert.equal(fired[0]!.artist, "Taylor Swift");
+	});
+
+	it("stops waiting once the burst has had long enough", async () => {
+		// The bound on the above: a source that sends one field at a time must not be
+		// able to hold the display back for ever.
+		const h = harness();
+		const fired: NowPlaying[] = [];
+		h.tracker.onTrackChange("10.0.0.1", (s) => fired.push(s));
+
+		h.setNow(10_000);
+		h.send("10.0.0.1", "NTI", "First");
+		await h.settle();
+
+		h.setNow(200_000);
+		h.send("10.0.0.1", "NTI", "Second");
+		for (let i = 1; i <= 10; i++) {
+			h.setNow(200_000 + i * 500);
+			h.send("10.0.0.1", "NAL", `Album ${i}`);
+		}
+		await h.settle();
+		assert.ok(fired.length >= 1, "it gave up waiting and showed what it had");
+	});
+
+	it("asks the receiver before it announces, and takes that answer", async () => {
+		// The reason waiting alone is not enough: a field the receiver never pushes for
+		// this track leaves the *previous* song's value in the state, and no window
+		// length can fix that. NTI/NAT/NAL all answer QSTN, so the display asks rather
+		// than assembling fragments.
+		const h = harness({ answers: { NTI: "Cruel Summer", NAT: "Taylor Swift", NAL: "Lover" } });
+		const fired: NowPlaying[] = [];
+		h.tracker.onTrackChange("10.0.0.1", (s) => fired.push(s));
+
+		h.setNow(10_000);
+		h.send("10.0.0.1", "NTI", "Sweet About Me");
+		h.send("10.0.0.1", "NAT", "Miss Kenichi");
+		await h.settle();
+		assert.equal(fired.length, 0, "the initial fill");
+
+		// Only the title is pushed; the artist in the state is still the previous song's.
+		h.setNow(200_000);
+		h.send("10.0.0.1", "NTI", "Cruel Summer");
+		await h.settle();
+
+		assert.equal(fired.length, 1);
+		assert.equal(fired[0]!.artist, "Taylor Swift", "the query supplied what the push did not");
+		assert.notEqual(fired[0]!.artist, "Miss Kenichi");
+	});
+
+	it("keeps a pushed value when the query comes back empty", async () => {
+		// A firmware that does not answer, or a reply lost in a cover transfer, must not
+		// wipe what the receiver announced a moment earlier.
+		const h = harness({ answers: {} });
+		const fired: NowPlaying[] = [];
+		h.tracker.onTrackChange("10.0.0.1", (s) => fired.push(s));
+
+		h.setNow(10_000);
+		h.send("10.0.0.1", "NTI", "First");
+		await h.settle();
+
+		h.setNow(200_000);
+		h.send("10.0.0.1", "NTI", "Cruel Summer");
+		h.send("10.0.0.1", "NAT", "Taylor Swift");
+		await h.settle();
+
+		assert.equal(fired.length, 1);
+		assert.equal(fired[0]!.track, "Cruel Summer");
+		assert.equal(fired[0]!.artist, "Taylor Swift");
+	});
+
+	it("announces anyway when the receiver will not answer at all", async () => {
+		// Best-effort: a failed confirmation costs the correction, never the display.
+		const h = harness({ failCommands: ["NTI", "NAT", "NAL"] });
+		const fired: NowPlaying[] = [];
+		h.tracker.onTrackChange("10.0.0.1", (s) => fired.push(s));
+
+		h.setNow(10_000);
+		h.send("10.0.0.1", "NTI", "First");
+		await h.settle();
+		h.setNow(200_000);
+		h.send("10.0.0.1", "NTI", "Cruel Summer");
+		await h.settle();
+
+		assert.equal(fired.length, 1);
+		assert.equal(fired[0]!.track, "Cruel Summer");
+	});
+
+	it("does not query for a host nobody is watching", async () => {
+		// The interest gate, again: an unwatched host must cost nothing at all.
+		const h = harness({ answers: { NTI: "x" } });
+		const off = h.tracker.onTrackChange("10.0.0.1", () => {});
+		h.setNow(10_000);
+		h.send("10.0.0.1", "NTI", "First");
+		await h.settle();
+		h.setNow(200_000);
+		h.send("10.0.0.1", "NTI", "Second");
+		off();
+		const before = h.queried.length;
+		await h.settle();
+		assert.equal(h.queried.length, before, "no confirmation queries once nothing is listening");
+	});
+
+	it("fires again for the next track, once the cooldown has passed", async () => {
 		const h = harness();
 		let count = 0;
 		h.tracker.onTrackChange("10.0.0.1", () => count++);
@@ -299,14 +463,16 @@ describe("NowPlayingTracker: track changes", () => {
 		h.send("10.0.0.1", "NTI", "First");
 		h.setNow(100_000);
 		h.send("10.0.0.1", "NTI", "Second");
+		await h.settle();
 		assert.equal(count, 1);
 
 		h.setNow(100_000 + TRACK_CHANGE_COOLDOWN_MS + 1);
 		h.send("10.0.0.1", "NTI", "Third");
+		await h.settle();
 		assert.equal(count, 2);
 	});
 
-	it("is not fired by the once-a-second time tick", () => {
+	it("is not fired by the once-a-second time tick", async () => {
 		// The whole point of separating onTrackChange from onUpdate: NTM arrives every
 		// second, and a short display that re-triggered on it would never go away.
 		const h = harness();
@@ -320,11 +486,12 @@ describe("NowPlayingTracker: track changes", () => {
 			h.setNow(200_000 + s * 1000);
 			h.send("10.0.0.1", "NTM", `00:00:${String(s).padStart(2, "0")}/00:03:41`);
 		}
+		await h.settle();
 		assert.equal(changes, 0, "no track change from a time tick");
 		assert.equal(updates, 31, "but every tick is an update");
 	});
 
-	it("is not fired by the same text arriving again", () => {
+	it("is not fired by the same text arriving again", async () => {
 		// The receiver re-announces metadata (measured: NMS and NFI twice in one
 		// burst), and a repeat is not a change.
 		const h = harness();
@@ -337,10 +504,11 @@ describe("NowPlayingTracker: track changes", () => {
 		h.setNow(200_000);
 		h.send("10.0.0.1", "NTI", "Second");
 		h.send("10.0.0.1", "NTI", "Second");
+		await h.settle();
 		assert.equal(changes, 1);
 	});
 
-	it("keeps one throwing listener from silencing the others", () => {
+	it("keeps one throwing listener from silencing the others", async () => {
 		const h = harness();
 		let reached = 0;
 		h.tracker.onTrackChange("10.0.0.1", () => {
@@ -351,6 +519,7 @@ describe("NowPlayingTracker: track changes", () => {
 		h.send("10.0.0.1", "NTI", "First");
 		h.setNow(100_000);
 		h.send("10.0.0.1", "NTI", "Second");
+		await h.settle();
 		assert.equal(reached, 1);
 	});
 });

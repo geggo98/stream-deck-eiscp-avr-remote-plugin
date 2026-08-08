@@ -47,9 +47,22 @@ const capture = JSON.parse(
  * is reported. That is the intended behaviour (a display must not flash on every
  * connect) and it has its own test below; every other test wants the primed sequence.
  */
-function replay(options: { watch?: boolean; primed?: boolean } = {}) {
+async function replay(options: { watch?: boolean; primed?: boolean } = {}) {
 	let messageCb: ((host: string, command: string, parameter: string) => void) | undefined;
 	let clock = 0;
+	// Virtual timers on the recording's own clock. The track-change notification waits
+	// for the announcement burst to finish (`TRACK_CHANGE_SETTLE_MS`), so a replay that
+	// ignored timers would report nothing — and one that fired them immediately would
+	// re-create the very bug the window exists to prevent.
+	let timers: { at: number; fn: () => void }[] = [];
+	const runDue = (): void => {
+		for (;;) {
+			const due = timers.filter((t) => t.at <= clock);
+			if (due.length === 0) return;
+			timers = timers.filter((t) => t.at > clock);
+			for (const t of due) t.fn();
+		}
+	};
 	const tracker = new NowPlayingTracker(
 		{
 			addMessageObserver: (cb) => {
@@ -59,7 +72,16 @@ function replay(options: { watch?: boolean; primed?: boolean } = {}) {
 			addConnectionObserver: () => () => {},
 			queryCommand: async () => "",
 		},
-		{ now: () => clock },
+		{
+			now: () => clock,
+			schedule: (fn, ms) => {
+				const timer = { at: clock + ms, fn };
+				timers.push(timer);
+				return () => {
+					timers = timers.filter((t) => t !== timer);
+				};
+			},
+		},
 	);
 	tracker.start();
 
@@ -78,8 +100,14 @@ function replay(options: { watch?: boolean; primed?: boolean } = {}) {
 	}
 	for (const frame of capture.frames) {
 		clock = frame.ms;
+		runDue();
 		messageCb?.("10.0.0.1", frame.command, frame.parameter);
 	}
+	// The recording ends; let anything still pending come due, the way real time would.
+	clock += 10_000;
+	runDue();
+	// The announcement confirms itself against the receiver before it goes out.
+	await tracker.whenSettled();
 	return { tracker, updates, trackChanges, state: tracker.get("10.0.0.1") };
 }
 
@@ -98,8 +126,8 @@ describe(`now-playing against the recorded VSX-S520D`, () => {
 		);
 	});
 
-	it("assembles every cover the receiver sent, at the recorded size", () => {
-		const { updates, state } = replay();
+	it("assembles every cover the receiver sent, at the recorded size", async () => {
+		const { updates, state } = await replay();
 		const arts = updates.filter((u) => u.change === "art");
 
 		assert.equal(arts.length, capture.coverTransfers.length, "one event per completed transfer");
@@ -114,23 +142,23 @@ describe(`now-playing against the recorded VSX-S520D`, () => {
 		assert.equal(state.art.bytes.readUInt16BE(state.art.bytes.length - 2), 0xffd9, "EOI");
 	});
 
-	it("does not announce the first track it ever learns about", () => {
+	it("does not announce the first track it ever learns about", async () => {
 		// A display that flashed on every connect would be worse than one that misses the
 		// very first track, so the initial fill is silent — asserted here against real
 		// traffic rather than only against a synthetic burst.
-		const { trackChanges, state } = replay({ primed: false });
+		const { trackChanges, state } = await replay({ primed: false });
 		assert.equal(trackChanges.length, 0);
 		assert.ok(state.track, "the state is filled all the same");
 	});
 
-	it("costs nothing at all when no element is watching", () => {
+	it("costs nothing at all when no element is watching", async () => {
 		// The load case: ~1 800 frames a second during a transfer. A plugin with no
 		// now-playing element must not accumulate a single one of them.
-		const { state } = replay({ watch: false });
+		const { state } = await replay({ watch: false });
 		assert.deepEqual(state, { timeDisplay: "unknown" });
 	});
 
-	it("has the cover ready by the time the title is known", () => {
+	it("has the cover ready by the time the title is known", async () => {
 		// This is what lets the track change be triggered by the *text* without anything
 		// having to wait for a picture. Stated precisely, because the loose version was
 		// wrong: the transfer *starts* ~760 ms before the text, but what matters is that
@@ -138,7 +166,7 @@ describe(`now-playing against the recorded VSX-S520D`, () => {
 		//
 		// Unprimed on purpose, so both events come from the recording rather than from
 		// the synthetic pre-fill.
-		const { updates } = replay({ primed: false });
+		const { updates } = await replay({ primed: false });
 		const firstText = updates.find((u) => u.change === "text");
 		assert.ok(firstText, "the recording contains text");
 		const artBefore = updates.filter((u) => u.change === "art" && u.ms <= firstText.ms);
@@ -149,29 +177,56 @@ describe(`now-playing against the recorded VSX-S520D`, () => {
 		);
 	});
 
-	it("reports the track change once, though it arrives as several commands", () => {
+	it("reports the track change once, though it arrives as several commands", async () => {
 		// NTI, NAL and NAT land ~90 ms apart in this recording. Without coalescing that
 		// is three notifications for one change.
-		const { trackChanges } = replay();
+		const { trackChanges } = await replay();
 		const textFrames = capture.frames.filter((f) => ["NTI", "NAT", "NAL"].includes(f.command));
 		assert.ok(textFrames.length >= 3, "the recording contains a full burst");
 		assert.equal(trackChanges.length, 1, "one change, one notification");
 		assert.ok(trackChanges[0]!.state.track, "and it carries the new track");
 	});
 
-	it("keeps the once-a-second tick out of the track-change signal", () => {
+	it("reports the new song's artist, not the one before it", async () => {
+		// The regression, against the real recording rather than a synthetic burst. The
+		// fields land 87 ms apart here — NTI at 23559, NAL at 23571, NAT at 23646 — and
+		// the notification used to go out with the first of them, freezing the new title
+		// beside the **previous** song's artist. Found on the hardware: "Sweet About Me"
+		// credited to the artist before it.
+		//
+		// `replay` primes with "Vorheriger Interpret", so a leading-edge notification
+		// would carry exactly that string and this test names it.
+		const { trackChanges } = await replay();
+		assert.equal(trackChanges.length, 1);
+		const reported = trackChanges[0]!.state;
+
+		const field = (command: string): string | undefined =>
+			capture.frames.filter((f) => f.command === command).at(-1)?.parameter;
+		assert.equal(reported.track, field("NTI"));
+		assert.equal(reported.artist, field("NAT"), "the artist from this announcement");
+		assert.equal(reported.album, field("NAL"));
+		assert.notEqual(reported.artist, "Vorheriger Interpret", "the previous song's artist must be gone");
+
+		// And it waited for the last of the three rather than firing on the first.
+		const lastText = Math.max(
+			...capture.frames.filter((f) => ["NTI", "NAT", "NAL"].includes(f.command)).map((f) => f.ms),
+		);
+		assert.ok(trackChanges[0]!.ms >= lastText, `reported at ${trackChanges[0]!.ms} ms, last field at ${lastText} ms`);
+	});
+
+	it("keeps the once-a-second tick out of the track-change signal", async () => {
 		// NTM ticks throughout the minute; if it could trigger the short display, that
 		// display would never go away.
-		const { updates, trackChanges } = replay();
+		const { updates, trackChanges } = await replay();
 		const ticks = updates.filter((u) => u.change === "time");
 		assert.ok(ticks.length > 30, `expected a tick per second, got ${ticks.length}`);
 		assert.equal(trackChanges.length, 1, "still exactly one track change");
 	});
 
-	it("decodes the substituted text as UTF-8, not as masked ASCII", () => {
+	it("decodes the substituted text as UTF-8, not as masked ASCII", async () => {
 		// The point of anonymising with accented words: "ascii" decoding would turn them
 		// into different letters, and nothing downstream could tell.
-		const { state } = replay();
+		const { state } = await replay();
 		const fields = [state.track, state.artist, state.album].filter(Boolean) as string[];
 		assert.ok(fields.length >= 2, `expected the text fields to be filled, got ${JSON.stringify(fields)}`);
 		assert.ok(
@@ -184,8 +239,8 @@ describe(`now-playing against the recorded VSX-S520D`, () => {
 		);
 	});
 
-	it("reads the receiver's own statement about the time display", () => {
-		const { state } = replay();
+	it("reads the receiver's own statement about the time display", async () => {
+		const { state } = await replay();
 		// Measured NMS = "xxxxxx144": elapsed+total meaningful, seeking disabled.
 		assert.equal(state.timeDisplay, "elapsed-total");
 		assert.equal(state.seekEnabled, false);
