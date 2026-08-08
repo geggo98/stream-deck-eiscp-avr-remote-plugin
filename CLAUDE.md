@@ -1263,9 +1263,37 @@ everything afterwards. Device quirks worth knowing:
   pins the measured pair (`tests/dial-catalog.test.ts`).
   Consequence for the user, and the reason the tooltip says so: with upscaling on
   the receiver stops accepting 4K at its **inputs**; off, 4K passes through.
-- `SPR` (Super Resolution) answers too — measured `02`. Not exposed: its YAML key
-  is the range `[0, 3]`, so the generator classifies it as a stepper and emits no
-  concrete values. Needs generator work, not just an `INCLUDED_COMMANDS` entry.
+- **`RES` reports back only what the protocol set — never what the front panel
+  did, and it never broadcasts.** This is the sharper half of the same finding and
+  it cost an afternoon of chasing an "inverted" key that was rendering correctly
+  all along. Measured 2026-08-08, connection provably alive throughout (the `PWR`
+  heartbeat kept answering on either side of it):
+
+  | step | `RES QSTN` afterwards |
+  |---|---|
+  | upscaling switched to **Off in the receiver's own OSD** | **`01`** — unchanged |
+  | `RES 00` sent over ISCP | `00` |
+  | `RES 01` sent over ISCP | `01` |
+
+  The unit *applies* the OSD change (its display writes `Upscaling:Off `, the menu
+  agrees) and still answers `01`. So the ISCP-visible value is a shadow of the
+  protocol path alone. Two consequences:
+  - **A re-query cannot repair the key.** `bindKey` already queries on every
+    appear, and the query returns the same stale shadow — so a page or profile
+    switch does not fix it either. There is no way to read the true state at all.
+  - **The only trace of an out-of-band change is the `FLD` display text**
+    (`Upscaling:Off ` / `Upscaling:Auto`), which is model- and wording-specific.
+
+  The key is therefore authoritative for changes *it* made, which is the normal
+  case, and can show a stale state after someone uses the receiver's own remote.
+  Do not "fix" this by polling `RES`: polling returns the shadow value too.
+- `SPR` (Super Resolution) answers too — measured `02`, and the OSD confirms 2.
+  Not exposed: its YAML key is the range `[0, 3]`, so the generator classifies it
+  as a stepper and emits no concrete values. Needs generator work, not just an
+  `INCLUDED_COMMANDS` entry. Note the dependency before building a dial for it:
+  with upscaling **off** the OSD greys "Super Resolution" out and shows no value —
+  but `SPR QSTN` still answers `02` regardless, so the query cannot be used to
+  detect whether the setting is live.
 - **`UPS` is not what its name suggests.** It is called "Upsampling" and its
   `QSTN` description even reads "gets The Upscaling State" — but it is *audio*
   (x1/x2/x4/x8). The video control is `RES`.

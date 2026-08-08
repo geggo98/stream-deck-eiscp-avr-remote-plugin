@@ -58,6 +58,11 @@ all — the key uses the two values a Pioneer VSX-S520D accepts, and a model tha
 wants a different one can be driven from the generic *Button* or *Toggle*, where
 every resolution the protocol defines is offered.
 
+One caveat, measured on the VSX-S520D: unlike input or volume, this setting is
+not reported back. Change it with the receiver's own remote and the receiver
+keeps telling the network the *previous* value, so the key can show a stale state
+until you press it. Driven from the deck it stays correct.
+
 ## Requirements
 
 - Stream Deck app 7.1 or newer (Windows 10+ / macOS 12+). The plugin runs on the
