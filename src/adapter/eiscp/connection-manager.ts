@@ -289,29 +289,28 @@ export class ConnectionManager {
 		}
 	}
 
-	private handleMessage(host: string, msg: DecodedMessage): void {
-		const command = msg.command;
-		const parameter = msg.parameter;
-
-		// Update cache. The command name is 3 arbitrary characters straight off the
-		// wire (parseIscpMessage validates neither the unit nor the command), so a
-		// device emitting varying names would otherwise add a key per name and hold
-		// them until the host is evicted. Refuse new keys past the cap but keep
-		// updating ones already tracked, so the actions in use stay current.
+	/**
+	 * Cache a value. The command name is 3 arbitrary characters straight off the
+	 * wire (parseIscpMessage validates neither the unit nor the command), so a
+	 * device emitting varying names would otherwise add a key per name and hold
+	 * them until the host is evicted. Refuse new keys past the cap but keep
+	 * updating ones already tracked, so the actions in use stay current.
+	 */
+	private writeCache(host: string, command: string, parameter: string): void {
 		const hostCache = this.stateCache.get(host);
-		if (hostCache) {
-			if (hostCache.has(command) || hostCache.size < MAX_CACHED_COMMANDS_PER_HOST) {
-				hostCache.set(command, parameter);
-			} else {
-				logger.debug(
-					`state cache for ${host} is full (${MAX_CACHED_COMMANDS_PER_HOST} commands); ` +
-						`ignoring ${truncateForLog(command, 8)}`,
-				);
-			}
+		if (!hostCache) return;
+		if (hostCache.has(command) || hostCache.size < MAX_CACHED_COMMANDS_PER_HOST) {
+			hostCache.set(command, parameter);
+		} else {
+			logger.debug(
+				`state cache for ${host} is full (${MAX_CACHED_COMMANDS_PER_HOST} commands); ` +
+					`ignoring ${truncateForLog(command, 8)}`,
+			);
 		}
+	}
 
-		// Notify subscribers; a throwing callback (e.g. a render error in an
-		// action) must not stop delivery to the remaining subscribers.
+	/** A throwing callback (e.g. a render error in an action) must not stop delivery. */
+	private notifySubscribers(host: string, command: string, parameter: string): void {
 		for (const sub of this.subscriptions) {
 			if (sub.host === host && sub.command === command) {
 				try {
@@ -321,6 +320,40 @@ export class ConnectionManager {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Publish a value the plugin *worked out* rather than received.
+	 *
+	 * Exists for one measured reason: some settings are not reported. A VSX-S520D
+	 * never broadcasts `RES`, and `RES QSTN` returns only what the protocol last
+	 * wrote — switch 4K upscaling off at the receiver and the query still answers
+	 * the old value indefinitely. The change is announced *only* as front-panel
+	 * text, so the text is the sole evidence, and it has to reach both the render
+	 * path and the cache: the cache is what `onKeyDown` reads to decide which way
+	 * to flip, so correcting the picture alone would leave the next press sending
+	 * the wrong value.
+	 *
+	 * Deliberately does **not** run the message observers. Those exist for real
+	 * wire traffic — passive name discovery infers what the display is doing from
+	 * which commands arrive, and handing it a frame the device never sent would be
+	 * a lie it then reasons from.
+	 *
+	 * The caller owns the inference. This method takes no view on whether the value
+	 * is plausible; it is the same write the wire would have performed.
+	 */
+	publishDerivedValue(host: string, command: string, parameter: string): void {
+		logger.debug(`derived value for ${host}: ${command} ${parameter}`);
+		this.writeCache(host, command, parameter);
+		this.notifySubscribers(host, command, parameter);
+	}
+
+	private handleMessage(host: string, msg: DecodedMessage): void {
+		const command = msg.command;
+		const parameter = msg.parameter;
+
+		this.writeCache(host, command, parameter);
+		this.notifySubscribers(host, command, parameter);
 
 		// Notify generic observers (cache is already up to date).
 		for (const observer of this.messageObservers) {

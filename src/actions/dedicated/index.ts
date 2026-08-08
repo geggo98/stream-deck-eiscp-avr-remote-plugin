@@ -514,8 +514,6 @@ export class TrebleDialAction extends ToneDialAction {
 	}
 }
 
-/** Tuner preset dial: rotate steps presets (PRS), press jumps to the Tuner input. */
-@action({ UUID: uuidFor("preset-dial") })
 /**
  * Super Resolution, 0-3, on a progress bar.
  *
@@ -525,6 +523,7 @@ export class TrebleDialAction extends ToneDialAction {
  * one state the strip has to show honestly — a stale "2" beside a dead bar would
  * read as a dial that simply stopped working.
  */
+@action({ UUID: uuidFor("super-res-dial") })
 export class SuperResDialAction extends DialActionBase<EiscpActionSettings> {
 	constructor() {
 		super("SuperResDial");
@@ -564,6 +563,8 @@ export class SuperResDialAction extends DialActionBase<EiscpActionSettings> {
 	}
 }
 
+/** Tuner preset dial: rotate steps presets (PRS), press jumps to the Tuner input. */
+@action({ UUID: uuidFor("preset-dial") })
 export class PresetDialAction extends DialActionBase<EiscpActionSettings> {
 	constructor() {
 		super("PresetDial");

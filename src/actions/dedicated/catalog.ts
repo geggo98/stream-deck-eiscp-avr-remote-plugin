@@ -10,6 +10,8 @@
  * class decorator, the manifest, and the generated images can never drift.
  */
 
+import type { FldStateAnchor } from "./fld-state.ts";
+
 export const PLUGIN_ID = "de.schwetschke.sd.eiscp-avr-remote";
 export const uuidFor = (id: DedicatedId | GenericId): string => `${PLUGIN_ID}.${id}`;
 
@@ -43,6 +45,14 @@ export interface ToggleSpec extends DedicatedSpecBase {
 	offValue: string;
 	/** Hardware toggle parameter (TG), preferred over a soft flip when present. */
 	toggleValue?: string;
+	/**
+	 * Front-panel readout that reveals this setting's true state.
+	 *
+	 * Only for settings the receiver does not report — `PWR` and `AMT` broadcast
+	 * properly and must not have one, since a second source of truth could only
+	 * disagree with the first. See `fld-state.ts`.
+	 */
+	fldState?: FldStateAnchor;
 	states: 2;
 }
 
@@ -178,6 +188,12 @@ export const DEDICATED_SPECS = [
 		id: "upscale-4k", name: "4K Upscaling",
 		tooltip: "Toggle 1080p→4K upscaling (RES). While it is on, the receiver stops accepting 4K at its HDMI inputs.",
 		kind: "toggle", controller: "Keypad", command: "RES", onValue: "01", offValue: "00",
+		// The panel is the ONLY trace of a change made anywhere but over the protocol:
+		// "Upscaling:Auto" / "Upscaling:Off " (measured, trailing space and all — and
+		// decodeDisplayText trims it). "Auto" is this setting's on word; it is not
+		// generically boolean, which is why it sits here rather than in the shared
+		// vocabulary in fld-state.ts.
+		fldState: { label: "Upscaling", onWords: ["Auto"] },
 		states: 2, icon: { primary: "monitor", onPrimary: "image-upscale" },
 	},
 	// --- Dials (Stream Deck Plus rotary encoders): rotate to adjust, press for a configurable action ---
