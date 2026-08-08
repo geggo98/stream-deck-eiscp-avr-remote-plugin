@@ -346,6 +346,10 @@ describe("nextToggleValue", () => {
 	it("turns on for any other (unknown/transitional) value", () => {
 		assert.equal(nextToggleValue("77", cfg), "01");
 		assert.equal(nextToggleValue("", cfg), "01");
+		// Not hypothetical: a receiver answers N/A to a set it does not support
+		// (measured for RES 08 on a VSX-S520D), and to LMD right after power-on.
+		// The next press must still aim at "on" rather than get stuck.
+		assert.equal(nextToggleValue("N/A", cfg), "01");
 	});
 });
 

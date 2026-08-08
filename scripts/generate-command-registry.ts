@@ -73,6 +73,8 @@ const INCLUDED_COMMANDS = [
 	"ADY", "ADQ", "PMB",
 	// Added: tone, preset, transport, Zone 2.
 	"TFR", "PRS", "NTC", "ZPW", "ZMT", "ZVL", "SLZ",
+	// Added: monitor-out resolution, i.e. 1080p -> 4K upscaling.
+	"RES",
 ];
 
 // Most commands live in the `main` section. A few of the included codes also
@@ -94,7 +96,7 @@ const CODE_CATEGORY: Record<string, string> = {
 	TFR: "Tone",
 	PRS: "Tuner",
 	NTC: "Transport",
-	DIM: "Display / Video", HDO: "Display / Video",
+	DIM: "Display / Video", HDO: "Display / Video", RES: "Display / Video",
 	SPA: "Speaker", SPB: "Speaker",
 	DIR: "Audio Processing", LTN: "Audio Processing", RAS: "Audio Processing",
 	ADY: "Audio Processing", ADQ: "Audio Processing", PMB: "Audio Processing",

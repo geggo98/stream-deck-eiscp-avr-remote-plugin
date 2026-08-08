@@ -110,6 +110,26 @@ describe("command registry", () => {
 			}
 		});
 
+		it("should classify RES (monitor out resolution) as selector, not a toggle", () => {
+			const cmd = COMMAND_REGISTRY.RES;
+			assert.ok(cmd);
+			// It carries 00 and 01, but eleven named values on top — a two-state
+			// classification would strand the other nine.
+			assert.equal(cmd.actionType, "selector");
+		});
+
+		it("should keep RES 08 a two-digit param, not a stripped or hex-converted one", () => {
+			// `08` is the one unquoted key in the RES block of the YAML, so it arrives
+			// as the number 8. It must be padded back to "08" and NOT read as decimal
+			// 8 -> hex "08" by accident of the same result: 13/15 next to it prove the
+			// pass-through, since a decimal->hex step would turn them into 0D/0F.
+			const params = COMMAND_REGISTRY.RES?.values.map((v) => v.param) ?? [];
+			for (const p of ["00", "01", "08", "13", "15"]) {
+				assert.ok(params.includes(p), `RES should carry ${p}, got ${params.join(",")}`);
+			}
+			assert.ok(!params.includes("8"), "RES 08 must not lose its leading zero");
+		});
+
 		it("should classify ZPW as toggle and ZMT as toggle with TG", () => {
 			const zpw = COMMAND_REGISTRY.ZPW;
 			assert.ok(zpw);

@@ -170,6 +170,16 @@ export const DEDICATED_SPECS = [
 		kind: "key", controller: "Keypad", command: "PRS", parameter: "DOWN", showsState: true,
 		states: 1, icon: { primary: "radio", badge: "chevron-left" },
 	},
+	{
+		// The receiver's "1080p -> 4K Upscaling" menu item. Measured on a VSX-S520D
+		// (2026-08-08): it takes RES 01 ("Upscaling:Auto" on the front panel) and RES
+		// 00, and answers N/A to every other value the spec lists — so the two-value
+		// pair below is the whole of this setting on that unit, not a chosen subset.
+		id: "upscale-4k", name: "4K Upscaling",
+		tooltip: "Toggle 1080p→4K upscaling (RES). While it is on, the receiver stops accepting 4K at its HDMI inputs.",
+		kind: "toggle", controller: "Keypad", command: "RES", onValue: "01", offValue: "00",
+		states: 2, icon: { primary: "monitor", onPrimary: "image-upscale" },
+	},
 	// --- Dials (Stream Deck Plus rotary encoders): rotate to adjust, press for a configurable action ---
 	// pressCommand/pressParam below are the DEFAULT; input/mode/bass/treble let the
 	// user pick the press from a PI dropdown (Mute / Direct / Stereo), so the manifest

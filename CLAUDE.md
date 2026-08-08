@@ -1243,6 +1243,32 @@ everything afterwards. Device quirks worth knowing:
   (`tests/fixtures/standby-behaviour-capture.json`, `npm run capture:standby`.)
 - Right after a power-on `LMD` reads `N/A` for a moment, and setting `MVL`
   auto-unmutes (`!1AMT00` arrives before the `!1MVL..` echo).
+- **`N/A` is also how it refuses a value it does not implement**, and `RES`
+  (Monitor Out Resolution) is the case that matters. Measured 2026-08-08 — and
+  it contradicts the spec, which lists eleven resolutions and marks every one of
+  them `set1`:
+
+  | sent | answer | front panel |
+  |---|---|---|
+  | `RES 00` | `!1RES00` | — (back to the input readout) |
+  | `RES 01` | `!1RES01` | **`Upscaling:Auto`** |
+  | `RES 05`, `RES 06`, `RES 08` | `!1RESN/A`, value unchanged | — |
+
+  So this unit implements exactly **two** of the eleven: `01` is the menu's
+  "1080p → 4K Upscaling: **Auto**" and `00` is **Off**. The spec's own 4K value,
+  `RES 08` ("4K Upcaling (HDMI Output Only)"), is **rejected here** — building
+  the `upscale-4k` key off the enumeration would have produced a key that does
+  nothing, silently, because a refused set still looks like a delivered one. The
+  registry keeps all eleven values because it is model-generic; the dedicated key
+  pins the measured pair (`tests/dial-catalog.test.ts`).
+  Consequence for the user, and the reason the tooltip says so: with upscaling on
+  the receiver stops accepting 4K at its **inputs**; off, 4K passes through.
+- `SPR` (Super Resolution) answers too — measured `02`. Not exposed: its YAML key
+  is the range `[0, 3]`, so the generator classifies it as a stepper and emits no
+  concrete values. Needs generator work, not just an `INCLUDED_COMMANDS` entry.
+- **`UPS` is not what its name suggests.** It is called "Upsampling" and its
+  `QSTN` description even reads "gets The Upscaling State" — but it is *audio*
+  (x1/x2/x4/x8). The video control is `RES`.
 - **Its timing is not deterministic, and that is not noise — it is the reason the
   sweep polls instead of waiting a fixed delay.** Measured across the captured sweep
   steps (`tests/fixtures/name-discovery-capture.json`):

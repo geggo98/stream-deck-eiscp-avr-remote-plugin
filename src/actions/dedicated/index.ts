@@ -80,6 +80,22 @@ export class MuteAction extends ToggleActionBase<EiscpActionSettings> {
 	}
 }
 
+// RES carries no TG, so this one flips via the base class' soft path (query the
+// current value, then send the other one). A receiver parked on a third value —
+// or on the N/A it answers to a value it does not support — reads as "off", and
+// one press moves it to Auto, which is the useful direction.
+@action({ UUID: uuidFor("upscale-4k") })
+export class Upscale4kAction extends ToggleActionBase<EiscpActionSettings> {
+	protected override coloredBackground = false;
+	protected override showTitle = false;
+	constructor() {
+		super("Upscale4k");
+	}
+	protected getToggleConfig(): ToggleConfig {
+		return toggleCfg("upscale-4k");
+	}
+}
+
 // --- Simple keys: cyclers (prev/next) and steppers (up/down) ---
 
 /** Base for a key whose command/parameter is fixed by a catalog id. */
@@ -543,6 +559,7 @@ export const DEDICATED_ACTIONS = [
 	new TrebleDownAction(),
 	new PresetNextAction(),
 	new PresetPrevAction(),
+	new Upscale4kAction(),
 	new InputDialAction(),
 	new ModeDialAction(),
 	new BassDialAction(),

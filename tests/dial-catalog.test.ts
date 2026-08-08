@@ -7,7 +7,12 @@ import { describe, it } from "node:test";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEDICATED_SPECS, dedicatedPropertyInspector, type IconSpec } from "../src/actions/dedicated/catalog.ts";
+import {
+	DEDICATED_SPECS,
+	dedicatedPropertyInspector,
+	type IconSpec,
+	type ToggleSpec,
+} from "../src/actions/dedicated/catalog.ts";
 import { COMMAND_REGISTRY } from "../src/adapter/eiscp/command-registry.ts";
 import { DIAL_PRESS_ACTIONS, parseTone, resolveDialPress } from "../src/actions/eiscp-base.ts";
 
@@ -84,6 +89,33 @@ describe("dial catalog", () => {
 		// Key cyclers still use the plain discover PI (no press dropdown).
 		assert.equal(pi("input-next"), "ui/discover.html");
 		assert.equal(pi("mode-prev"), "ui/discover.html");
+	});
+});
+
+describe("4K upscaling key", () => {
+	const spec = DEDICATED_SPECS.find((s) => s.id === "upscale-4k");
+
+	it("toggles the two values the receiver actually accepts, not the spec's 4K code", () => {
+		assert.ok(spec);
+		assert.equal(spec.kind, "toggle");
+		// Widened to the interface, the way toggleCfg does it, so the optional
+		// toggleValue is reachable on a literal that omits it.
+		const toggle: ToggleSpec = spec as ToggleSpec;
+		assert.equal(toggle.command, "RES");
+		// Measured on a VSX-S520D (2026-08-08): RES 01 is the "1080p -> 4K Upscaling:
+		// Auto" menu item (the front panel confirms it with "Upscaling:Auto") and RES
+		// 00 is Off. The spec's own 4K value, RES 08, comes back as N/A on that unit
+		// — so reading the enumeration and picking 08 gives a key that does nothing.
+		assert.equal(toggle.onValue, "01");
+		assert.equal(toggle.offValue, "00");
+		// No TG in the RES value set, so the base class must take the soft-flip path.
+		assert.equal(toggle.toggleValue, undefined);
+	});
+
+	it("names both wire values in the registry, so a PI can label them", () => {
+		const params = COMMAND_REGISTRY.RES?.values.map((v) => v.param) ?? [];
+		assert.ok(params.includes("01"), "RES 01 missing from the registry");
+		assert.ok(params.includes("00"), "RES 00 missing from the registry");
 	});
 });
 

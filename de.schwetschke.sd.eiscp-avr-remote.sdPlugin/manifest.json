@@ -425,6 +425,28 @@
       ]
     },
     {
+      "Name": "4K Upscaling",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.upscale-4k",
+      "Icon": "imgs/actions/upscale-4k/icon",
+      "Tooltip": "Toggle 1080p→4K upscaling (RES). While it is on, the receiver stops accepting 4K at its HDMI inputs.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Name": "Off",
+          "Image": "imgs/actions/upscale-4k/key",
+          "TitleAlignment": "middle"
+        },
+        {
+          "Name": "On",
+          "Image": "imgs/actions/upscale-4k/key-on",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
       "Name": "Input",
       "UUID": "de.schwetschke.sd.eiscp-avr-remote.input-dial",
       "Icon": "imgs/actions/input-dial/icon",
