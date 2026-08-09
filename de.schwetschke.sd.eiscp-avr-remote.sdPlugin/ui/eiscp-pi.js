@@ -426,5 +426,15 @@
 		}
 	}
 
-	window.EiscpPI = { renderDeviceIp, setupCustomToggle, buildCommandSelect, buildParamSelect, renderDiscover };
+	window.EiscpPI = {
+		renderDeviceIp,
+		setupCustomToggle,
+		buildCommandSelect,
+		buildParamSelect,
+		renderDiscover,
+		// The name editor's list is per receiver, so it has to follow the same
+		// selection the Auto-Discover button does.
+		onEffectiveIpChanged,
+		effectiveDeviceIp,
+	};
 })();

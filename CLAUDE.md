@@ -622,6 +622,24 @@ keeps the captured order but drops the captured waits, so CI stays fast).
 PIs are static HTML in `*.sdPlugin/ui/` using SDPI Components v4
 (`sdpi-components.dev`); shared helpers live in `ui/eiscp-pi.js`.
 
+- The **option-name editor** (`ui/name-editor.js`, in `discover.html` and
+  `dial-discover.html`) lists one row per option: the code, the user's own name, and
+  underneath it what the receiver called it — always visible, since that is the thing
+  the checkbox switches between. Four rules it lives by:
+  - **Plain elements, not sdpi-components.** These names are plugin-persisted globals,
+    and a `global`-bound input writes the whole settings object back from its own
+    snapshot — the failure `pi-wake.ts` exists to prevent, and this panel is the one
+    that is open while Auto-Discover learns names. It also sidesteps the `sdpi-select`
+    upgrade trap below entirely.
+  - **Rows are built with the DOM, never `innerHTML`.** Every name in them came off the
+    network.
+  - **The plugin resolves the host from `getRememberedActionSettings`**, never
+    `action.getSettings()` — this request fires when the panel *opens*, and that round
+    trip's `didReceiveSettings` re-enters the action's own handler and re-binds it.
+  - The list is requested on open, when the effective IP changes, and when a sweep
+    reports `done` (a sweep is what fills it); writes are debounced and answered with
+    the value **as stored**, which is not always what was typed.
+
 - **`sdpi-select` only picks up `<option>`s from DOM mutations that happen
   AFTER the component upgraded** (verified empirically against sdpi-components
   v4, 2026-07-19). Consequences:
