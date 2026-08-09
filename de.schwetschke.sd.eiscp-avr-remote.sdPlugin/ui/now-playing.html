@@ -15,17 +15,70 @@
 <body>
     <div id="deviceIp"></div>
 
-    <sdpi-item label="Cover">
-        <sdpi-checkbox setting="showGlyph" label="Draw the play/pause glyph over the cover" default="true">
-        </sdpi-checkbox>
-    </sdpi-item>
-    <sdpi-item label="Darken">
-        <sdpi-range setting="scrimOpacity" min="0" max="0.8" step="0.1" default="0.4" showlabels></sdpi-range>
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <sdpi-item label="Symbol">
+        <sdpi-select setting="glyphMode" default="auto">
+            <option value="auto">Only when there is no cover</option>
+            <option value="always">Always</option>
+            <option value="never">Never</option>
+        </sdpi-select>
     </sdpi-item>
     <p class="pi-hint">
-        The glyph needs the cover darkened a little to stay readable — a bright album
-        sleeve swallows white lines. Turn the glyph off for an undimmed picture.
+        The play symbol sits in the middle of the key and hides most of the artwork, so it
+        stays out of the way while a cover is showing. It still appears when the receiver
+        reports that playback is paused, which is the one thing a picture cannot say.
     </p>
+
+    <sdpi-item label="Track info">
+        <sdpi-select setting="textMode" default="onChange">
+            <option value="onChange">Briefly, when the track changes</option>
+            <option value="always">Always</option>
+            <option value="never">Never</option>
+        </sdpi-select>
+    </sdpi-item>
+    <sdpi-item label="Show for" id="textSecondsItem">
+        <sdpi-range setting="textSeconds" min="1" max="60" step="1" default="5" showlabels></sdpi-range>
+    </sdpi-item>
+    <p class="pi-hint">
+        Title and artist are drawn over the cover in the Stream Deck's own font. Showing
+        them only after a change leaves the artwork clear the rest of the time.
+    </p>
+
+    <sdpi-item label="Progress">
+        <sdpi-select setting="progressStyle" default="ring">
+            <option value="ring">Ring around the edge</option>
+            <option value="bar">Bar along the bottom</option>
+            <option value="off">Off</option>
+        </sdpi-select>
+    </sdpi-item>
+    <p class="pi-hint">
+        Shown only while the receiver reports a track length it means — some sources give
+        none. Its colour is picked from the part of the cover it is drawn on, so it stays
+        visible on a dark sleeve and on a bright one.
+    </p>
+
+    <sdpi-item label="Darken">
+        <sdpi-range setting="scrimOpacity" min="0" max="0.8" step="0.05" default="0.45" showlabels></sdpi-range>
+    </sdpi-item>
+    <p class="pi-hint">
+        A bright album sleeve swallows white lines. Darkening it a little keeps the symbol
+        and the title readable; turn it down for an undimmed picture.
+    </p>
+
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <sdpi-item label="On press">
+        <sdpi-select setting="pressAction" default="playPause">
+            <option value="playPause">Play / pause</option>
+            <option value="toggleText">Show or hide the track info</option>
+        </sdpi-select>
+    </sdpi-item>
+    <p class="pi-hint">
+        Switching the press to the track info makes the key a display only — nothing is
+        sent to the receiver, so a press cannot pause the music by accident.
+    </p>
+
     <p class="pi-hint">
         Cover art has to be enabled on the receiver itself. It is a device-wide
         setting shared with every other controller on the network, so this plugin only

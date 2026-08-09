@@ -316,7 +316,7 @@
       "Name": "Now Playing",
       "UUID": "de.schwetschke.sd.eiscp-avr-remote.now-playing",
       "Icon": "imgs/actions/now-playing/icon",
-      "Tooltip": "Show the current cover art, title and artist; press to play/pause.",
+      "Tooltip": "Show the cover art with a progress ring; the track is named when it changes. Press to play/pause.",
       "Controllers": [
         "Keypad"
       ],

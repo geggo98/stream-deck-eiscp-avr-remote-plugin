@@ -82,6 +82,32 @@
 	}
 
 	/**
+	 * Show `targets` only while `select` holds one of `values`.
+	 *
+	 * The dropdown-shaped twin of `revealWhen`, and it needs the same care about
+	 * timing: the value arrives after the component has upgraded, so until it does the
+	 * declared `default` is a better guess than "none of them" — otherwise a panel
+	 * opens with its dependent controls hidden and they appear a moment later.
+	 */
+	function revealWhenValue(select, values, targets) {
+		if (!select || !targets || targets.length === 0) return;
+		const wanted = Array.isArray(values) ? values : [values];
+		const sync = () => {
+			const current =
+				select.value === undefined || select.value === null ? select.getAttribute("default") : select.value;
+			const on = wanted.indexOf(current) !== -1;
+			for (const el of targets) el.style.display = on ? "" : "none";
+		};
+		select.addEventListener("valuechange", sync);
+		let tries = 0;
+		const settle = setInterval(() => {
+			sync();
+			if (++tries > 20) clearInterval(settle);
+		}, 100);
+		sync();
+	}
+
+	/**
 	 * Show `targets` only while `toggle` is on, and keep saying so as settings arrive.
 	 *
 	 * An inert slider under a switched-off checkbox invites the reading that it does
@@ -571,5 +597,6 @@
 		// selection the Auto-Discover button does.
 		onEffectiveIpChanged,
 		effectiveDeviceIp,
+		revealWhenValue,
 	};
 })();

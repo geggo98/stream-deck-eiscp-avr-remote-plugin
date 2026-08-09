@@ -129,12 +129,14 @@ export const DEDICATED_SPECS = [
 		states: 1, icon: { primary: "play" },
 	},
 	{
-		// Shows the cover art and the track as a key. Pressing it play/pauses, which is
-		// the one action a "what is playing" key should have. `showsState: false`
+		// Shows the cover art as a key, with the elapsed fraction around the edge and the
+		// track named for a few seconds after it changes. Pressing it play/pauses, which
+		// is the one action a "what is playing" key should have — or reveals the track,
+		// for anyone who would rather it never touched the receiver. `showsState: false`
 		// because NTC has no readable value — the picture comes from the metadata
 		// tracker, not from a command's state.
 		id: "now-playing", name: "Now Playing",
-		tooltip: "Show the current cover art, title and artist; press to play/pause.",
+		tooltip: "Show the cover art with a progress ring; the track is named when it changes. Press to play/pause.",
 		kind: "key", controller: "Keypad", command: "NTC", parameter: "P/P", showsState: false,
 		states: 1, icon: { primary: "music" },
 	},
