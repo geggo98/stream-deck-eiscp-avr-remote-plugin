@@ -262,20 +262,56 @@ export async function runSweep(
 	command: TrackedCommand,
 	onProgress: ((p: SweepProgress) => void) | undefined,
 	deps: SweepDeps,
-): Promise<{ count: number; options: number; named: number; interrupted: boolean }> {
+): Promise<{ count: number; options: number; named: number; interrupted: boolean; sourcePlaying: boolean }> {
 	const log = deps.log ?? NO_LOG;
 	// This receiver's state events lag the change by ~1.5s, so wait for the code
 	// to actually change rather than guessing a fixed delay.
 	const POLL_MS = 200;
 	const MAX_WAIT_MS = 3000;
-	// LMD's transient mode-name FLD lags ~1.4s after the code; wait it out so the
-	// passive window learns it before the next UP. SLI names are queried directly.
+	// Wait out LMD's transient mode-name FLD, so the passive window learns it before
+	// the next UP. SLI names are queried directly.
+	//
+	// The margin is deliberately generous rather than measured: across both recordings
+	// that FLD follows its code by 11-436 ms, so this is roughly 3x the slowest sample.
+	// (An earlier comment here claimed ~1.4 s, which no recording supports — worth
+	// noting because that figure, taken at face value, makes the metadata veto look far
+	// more powerful than it is.)
 	const NAME_SETTLE_MS = command === "LMD" ? 1500 : 500;
 	const CAP = 60;
 
 	// Only the input sweep: it is the one that walks the receiver off a playing source
 	// and so provokes the hop back. A listening-mode sweep never leaves the input.
 	const restoreQuiet = command === "SLI" ? await quietenForSweep(host, deps) : undefined;
+
+	/**
+	 * Whether a source is playing while listening modes are walked.
+	 *
+	 * A mode sweep never leaves the input, so a playing source keeps the display for the
+	 * whole run and the name store refuses every reading (see noteFld). That is the right
+	 * answer — a scrolling title is not a mode name — but it makes a zero-name run the
+	 * *expected* outcome rather than a fault, and the panel would otherwise ask whether
+	 * the receiver is switched on.
+	 *
+	 * Asked rather than assumed, for the reason quietenForSweep spells out: `NST` is
+	 * broadcast only when the transport changes, so a plugin that connected mid-playback
+	 * has never seen one. The query's answer also reaches the store through the message
+	 * observer, which is what arms the guard in that case.
+	 */
+	let sourcePlaying = false;
+	if (command === "LMD") {
+		let status = parsePlayStatus(deps.getCached(host, "NST"));
+		if (status === undefined) {
+			try {
+				status = parsePlayStatus(await deps.query(host, "NST"));
+			} catch (err) {
+				log.info(`sweep: the receiver did not say what the transport is doing (${err})`);
+			}
+		}
+		sourcePlaying = status === "play";
+		if (sourcePlaying) {
+			log.info("sweep: a source is playing, so its text owns the display and mode names cannot be read");
+		}
+	}
 
 	const start = await deps.query(host, command);
 	const visited = new Set<string>([start]);
@@ -428,5 +464,5 @@ export async function runSweep(
 		}
 		if (restoreError) throw restoreError;
 	}
-	return { count, options: visited.size, named: named.size, interrupted };
+	return { count, options: visited.size, named: named.size, interrupted, sourcePlaying };
 }

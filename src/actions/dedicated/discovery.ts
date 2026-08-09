@@ -104,7 +104,7 @@ export async function runSweep(
 	host: string,
 	command: TrackedCommand,
 	onProgress?: (p: SweepProgress) => void,
-): Promise<{ count: number; options: number; named: number; interrupted: boolean }> {
+): Promise<{ count: number; options: number; named: number; interrupted: boolean; sourcePlaying: boolean }> {
 	const key = `${host}:${command}`;
 	if (activeSweeps.has(key)) throw new SweepInProgressError(host, command);
 	activeSweeps.add(key);
@@ -157,7 +157,7 @@ export async function handleDiscoverMessage(
 
 	send({ event: "discover", phase: "start", command });
 	try {
-		const { count, options, named, interrupted } = await runSweep(host, command, (p) =>
+		const { count, options, named, interrupted, sourcePlaying } = await runSweep(host, command, (p) =>
 			send({ event: "discover", phase: "progress", done: p.done, current: p.current }),
 		);
 		// Three different numbers, and conflating any two of them misreports the run:
@@ -170,7 +170,10 @@ export async function handleDiscoverMessage(
 		// a receiver that steers itself back to a playing input truncates the walk, and
 		// the numbers then describe a short run that finished cleanly. Without it the PI
 		// asks whether the receiver is switched on, about a receiver that is playing.
-		send({ event: "discover", phase: "done", count, options, named, interrupted });
+		// `sourcePlaying` is the fifth, and it is the difference between a fault and a
+		// precondition: a mode sweep over a playing source reads nothing *by design*, and
+		// without saying so the panel asks whether the receiver is switched on.
+		send({ event: "discover", phase: "done", count, options, named, interrupted, sourcePlaying });
 		// showOk is Keypad-only; dials report status via the PI messages.
 		if (action.isKey()) fireAndLog(action.showOk(), log, "showOk");
 	} catch (err) {

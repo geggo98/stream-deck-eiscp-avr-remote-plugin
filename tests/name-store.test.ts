@@ -448,3 +448,72 @@ describe("name-store: the number at the end of a readout is the volume", () => {
 		assert.equal(nameFor(host, "SLI", "2B"), "NET");
 	});
 });
+
+describe("name-store: a playing source is not a mode name either", () => {
+	/**
+	 * The frames a scrolling title actually produces, lifted from
+	 * `tests/fixtures/input-hop-capture.json` (AirPlay playing, ~300 ms apart).
+	 *
+	 * The point of using the real ones: not a single frame ends in a digit, so every
+	 * one of them is routed to the mode branch — there is no volume to check them
+	 * against, which is what makes this the harder half of the same defect.
+	 */
+	const TITLE_FRAMES = ["100% Pure Lov", "00% Pure Love", "% Pure Love  ", " Pure Love   ", "Pure Love    "];
+
+	it("refuses the display while the transport says a source is playing", () => {
+		const host = "ns-lmd-playing";
+		noteDisplayChange(host, "NST", "Pxx");
+		noteChange(host, "LMD", "9A");
+		for (const frame of TITLE_FRAMES) {
+			assert.equal(noteFld(host, hex(frame)), false, `"${frame}" must not become a mode name`);
+		}
+		assert.equal(serialize()[host], undefined, "nothing stored at all");
+	});
+
+	it("learns again once the source stops", () => {
+		// This receiver reports `Sxx` the moment the input leaves a playing source, so
+		// the guard lifts on its own — no timeout, no window.
+		const host = "ns-lmd-stopped";
+		noteDisplayChange(host, "NST", "Pxx");
+		noteDisplayChange(host, "NST", "Sxx");
+		noteChange(host, "LMD", "00");
+		assert.equal(noteFld(host, hex("    Stereo    ")), true);
+		assert.equal(nameFor(host, "LMD", "00"), "Stereo");
+	});
+
+	it("treats a paused source as free to read", () => {
+		const host = "ns-lmd-paused";
+		noteDisplayChange(host, "NST", "pxx");
+		noteChange(host, "LMD", "00");
+		assert.equal(noteFld(host, hex("    Stereo    ")), true);
+	});
+
+	it("vetoes nothing when the transport never said anything", () => {
+		// NST is broadcast only on a change, so a plugin that connected to a silent
+		// receiver has never seen one. Absent evidence must not act like evidence.
+		const host = "ns-lmd-no-nst";
+		noteChange(host, "LMD", "00");
+		assert.equal(noteFld(host, hex("    Stereo    ")), true);
+	});
+
+	it("ignores an NST it cannot read rather than switching the guard off", () => {
+		const host = "ns-lmd-bad-nst";
+		noteDisplayChange(host, "NST", "Pxx");
+		noteDisplayChange(host, "NST", "");
+		noteChange(host, "LMD", "9A");
+		assert.equal(noteFld(host, hex("100% Pure Lov")), false);
+	});
+
+	it("leaves input names alone — those have the volume to check", () => {
+		// The input branch must keep working on a streaming source: NET and USB are
+		// named from exactly this readout, and the trailing volume already settles it.
+		const host = "ns-sli-playing";
+		noteDisplayChange(host, "NST", "Pxx");
+		// Timestamps spread out: the volume readout owning the display is decided by
+		// recency, and a tie counts as busy (see displayIsBusy).
+		at(1_000, () => noteDisplayChange(host, "MVL", "0E"));
+		at(60_000, () => noteChange(host, "SLI", "2B"));
+		at(60_100, () => assert.equal(noteFld(host, hex("NET         14")), true));
+		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+	});
+});

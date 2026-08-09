@@ -372,6 +372,29 @@ keeps the captured order but drops the captured waits, so CI stays fast).
     not block learning;
   - it fires only on the sources that behave this way (DAB, USB, NET) and only while
     they play, so everything else keeps learning passively.
+- **That veto only sees the moments a source *announces* something, and the gaps are
+  wider than the window.** So the transport is asked directly: while `NST` says a source
+  is playing, the mode branch refuses every reading. Measured in `input-hop-capture.json`
+  (AirPlay playing): the display scrolls the track title one frame every ~300 ms —
+  "100% Pure Lov", "% Pure Love", " Pure Love" — and **not one of them ends in a digit**,
+  so every single one is routed to the mode branch, where the trailing-volume rule that
+  saves the input branch does not exist. In a mode sweep, where an `LMD` opens a window
+  every few seconds, those frames land inside one; replaying the recorded titles that way
+  stores a title as a mode name, which is what `tests/name-store-capture.test.ts` now
+  asserts against (with a control run proving the frames are eligible). Three notes:
+  - **`NST` is still not a metadata command.** It says nothing about *the display*, which
+    is why it stays out of `METADATA_COMMANDS`; it answers a different question — is a
+    source playing at all — and that one it answers exactly.
+  - **Unknown is not "no".** `NST` is broadcast only when the transport changes, so a
+    plugin that connected mid-playback has never seen one, and an unparseable value is no
+    evidence either. Both leave the guard off; `runSweep` therefore queries `NST` before a
+    mode sweep, and that answer arms the store through the message observer. Same lesson
+    as `quietenForSweep`, which learned it the expensive way.
+  - **The cost, stated: while a source plays, listening-mode names are not learned at
+    all** — including by Auto-Discover. So the sweep reports `sourcePlaying`, and the PI
+    says "a source was playing… pause it and run Auto-Discover again" instead of asking
+    whether the receiver is switched on. The receiver reports `NST Sxx` the moment the
+    input leaves the source, so the input sweep is unaffected.
 - **An input change is a display change, and that veto could not see it.** With AirPlay
   playing, moving the input away makes this receiver hop back to it by itself a few
   seconds later — device-controlled, so another model may not. Mode `82` ("DTS

@@ -392,6 +392,17 @@
 						show(btn, true);
 						return;
 					}
+					// A listening-mode sweep reads its names off the display, and a playing
+					// source writes its track title there — so the plugin refuses every
+					// reading rather than storing a title as a mode name. Expected, not
+					// broken, and the only message that lets the user act on it.
+					if (p.sourcePlaying && !named) {
+						status.textContent =
+							"Nothing read — a source was playing and its text was on the display. " +
+							"Pause it and run Auto-Discover again.";
+						show(btn, true);
+						return;
+					}
 					if (named === undefined) {
 						status.textContent = "Done — " + steps + " steps. Re-open the action to see the names.";
 					} else if (named > 0) {

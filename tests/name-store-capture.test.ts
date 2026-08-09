@@ -375,3 +375,69 @@ describe("name store: a track title is not an input name", () => {
 		assert.equal(serialize()[host], undefined, "nothing at all should have been learned");
 	});
 });
+
+describe("name store: a mode sweep over a playing source, at the recorded timings", () => {
+	/**
+	 * The scrolling title the receiver actually put on its display while AirPlay played,
+	 * read out of the recording rather than typed in: every inbound FLD after the
+	 * transport reported `Pxx` whose text does not end in a digit — which is precisely
+	 * the set that reaches the mode-name branch.
+	 */
+	function titleFramesWhilePlaying(): { ms: number; parameter: string }[] {
+		const inbound = hopCapture.phases[0]!.frames.filter((f) => f.dir === "in");
+		const playing = inbound.find((f) => f.command === "NST" && f.parameter?.startsWith("P"));
+		assert.ok(playing, "the recording has to contain a source that started playing");
+		return inbound
+			.filter((f) => f.command === "FLD" && f.ms > playing.ms && f.parameter !== undefined)
+			.map((f) => ({ ms: f.ms, parameter: f.parameter! }))
+			.filter((f) => !/\d\s*$/.test(decodeDisplayText(f.parameter)));
+	}
+
+	/**
+	 * Replay those frames the way an Auto-Discover mode sweep would meet them: a mode
+	 * code arriving shortly before each, which is exactly what opens the window the
+	 * title then falls into. The receiver was never asked for any of this text.
+	 */
+	function replaySweepOverPlayback(host: string, transport: string): void {
+		const codes = ["80", "82", "9A", "00", "0C", "FF"];
+		const realNow = Date.now;
+		try {
+			Date.now = () => 0;
+			noteDisplayChange(host, "NST", transport);
+			titleFramesWhilePlaying().forEach((frame, index) => {
+				// 200 ms before the reading, i.e. well inside LMD_WINDOW_MS.
+				Date.now = () => frame.ms - 200;
+				noteChange(host, "LMD", codes[index % codes.length]!);
+				Date.now = () => frame.ms;
+				noteFld(host, frame.parameter);
+			});
+		} finally {
+			Date.now = realNow;
+		}
+	}
+
+	it("the recording really contains a title that would land in a mode window", () => {
+		const frames = titleFramesWhilePlaying();
+		assert.ok(frames.length >= 10, `only ${frames.length} title frames while playing`);
+		const texts = frames.map((f) => decodeDisplayText(f.parameter));
+		assert.ok(
+			texts.some((t) => /Pure Love/.test(t)),
+			"the scrolling title should be in there",
+		);
+	});
+
+	it("stores nothing while the transport says a source is playing", () => {
+		const host = "capture-sweep-playing";
+		replaySweepOverPlayback(host, "Pxx");
+		assert.equal(serialize()[host], undefined, "a track title is not a listening-mode name");
+	});
+
+	it("and the same frames DO get stored when nothing is playing", () => {
+		// The control run: without it, the test above would also pass if these frames
+		// never reached the mode branch at all.
+		const host = "capture-sweep-stopped";
+		replaySweepOverPlayback(host, "Sxx");
+		const stored = serialize()[host]?.LMD ?? {};
+		assert.ok(Object.keys(stored).length > 0, "the frames must be eligible, or the guard proves nothing");
+	});
+});

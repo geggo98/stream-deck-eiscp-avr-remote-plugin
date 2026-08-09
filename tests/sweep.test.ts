@@ -453,3 +453,46 @@ describe("runSweep: what it reports back", () => {
 		assert.equal(named, 2, "two distinct options, each counted once");
 	});
 });
+
+describe("runSweep: a mode sweep over a playing source", () => {
+	it("reports that a source was playing, so a zero-name run is not read as a fault", async () => {
+		// The store refuses every reading while a source owns the display (see noteFld),
+		// which makes an empty run the expected outcome rather than a broken receiver.
+		const rx = fakeReceiver("A", ring(["A", "B", "C"]), { others: { NST: "Pxx" }, namedCodes: [] });
+		const result = await runSweep("h", "LMD", undefined, rx.deps);
+		assert.equal(result.sourcePlaying, true);
+		assert.equal(result.named, 0);
+	});
+
+	it("asks the transport when nothing was broadcast", async () => {
+		// NST is re-broadcast only when the transport changes, so a plugin that
+		// connected mid-playback has never seen one — and the query's answer is also
+		// what arms the store's guard, through the message observer.
+		const rx = fakeReceiver("A", ring(["A", "B"]), { others: { NST: "Pxx" } });
+		const queried: string[] = [];
+		const cached = rx.deps.getCached;
+		rx.deps.getCached = (h, command) => (command === "NST" ? undefined : cached(h, command));
+		const query = rx.deps.query;
+		rx.deps.query = (h, command) => {
+			queried.push(command);
+			return query(h, command);
+		};
+		const result = await runSweep("h", "LMD", undefined, rx.deps);
+		assert.ok(queried.includes("NST"), "an empty cache is a question, not an answer");
+		assert.equal(result.sourcePlaying, true);
+	});
+
+	it("says nothing about playback for an input sweep", async () => {
+		// That one pauses the source itself; blaming playback for its result would be
+		// both wrong and unactionable.
+		const rx = fakeReceiver("A", ring(["A", "B"]), { others: { NST: "Pxx" } });
+		const result = await runSweep("h", "SLI", undefined, rx.deps);
+		assert.equal(result.sourcePlaying, false);
+	});
+
+	it("is silent about playback when the source is stopped", async () => {
+		const rx = fakeReceiver("A", ring(["A", "B"]), { others: { NST: "Sxx" } });
+		const result = await runSweep("h", "LMD", undefined, rx.deps);
+		assert.equal(result.sourcePlaying, false);
+	});
+});

@@ -18,6 +18,7 @@
  * global settings, merged so the device IP is never clobbered.
  */
 import { streamDeck } from "@elgato/streamdeck";
+import { parsePlayStatus } from "../../adapter/eiscp/play-status.ts";
 import { equalsSpecValue, matchesSpecValue, sameLabel } from "../../adapter/eiscp/spec-labels.ts";
 import { truncateForLog } from "../../adapter/logging.ts";
 import {
@@ -123,6 +124,14 @@ interface HostState {
 	lastSli?: string;
 	/** The receiver's current volume, i.e. what an input readout has to end in. */
 	volume?: number;
+	/**
+	 * Whether a network source is playing right now, from the last `NST` frame.
+	 *
+	 * Undefined means no `NST` has been seen — which is not the same as "not playing"
+	 * and must not be treated as one: the receiver broadcasts it only when the
+	 * transport *changes*, so a plugin that connected mid-playback has never seen one.
+	 */
+	sourcePlaying?: boolean;
 	/** What the last refusal was about, so a burst of them logs one line. */
 	lastVeto?: string;
 }
@@ -263,6 +272,12 @@ export function noteDisplayChange(host: string, command: string, parameter?: str
 		if (command === "MVL" && parameter !== undefined && /^[0-9A-Fa-f]{2}$/.test(parameter))
 			s.volume = parseInt(parameter, 16);
 	} else if (METADATA_COMMANDS.includes(command)) hostState(host).metadataAt = Date.now();
+	else if (command === "NST") {
+		// Only a value we can read: an unparseable `NST` is no evidence either way, and
+		// silently reading it as "stopped" would switch the guard below off.
+		const status = parsePlayStatus(parameter);
+		if (status !== undefined) hostState(host).sourcePlaying = status === "play";
+	}
 }
 
 const STATE = new Map<string, HostState>();
@@ -506,6 +521,26 @@ export function noteFld(host: string, hex: string): boolean {
 	const pending = s.lmdPending;
 	if (!pending || now - pending.at > LMD_WINDOW_MS) return false;
 	if (displayIsBusy(s, now, pending.at, { includeMetadata: true })) return false;
+	// A playing source owns the display for as long as it plays — the metadata veto
+	// above only covers the moments it *announces* something, and the gaps between
+	// those are wider than this window.
+	//
+	// Measured in `input-hop-capture.json`, taken with AirPlay playing: the display
+	// scrolls the track title one frame every ~300 ms — "100% Pure Lov", "% Pure Love",
+	// " Pure Love" — and **none of those end in a digit**, so every one of them is
+	// routed here, to the branch that stores mode names. Nothing in the text says it is
+	// a title; the same disease as "at is Love (" on the input side, where the trailing
+	// volume settles it. There is no such number here, so the transport is asked
+	// instead: `NST` says whether a source is playing, it is broadcast unsolicited, and
+	// on this hardware it says `Sxx` the moment the input leaves the source.
+	//
+	// The cost is stated plainly: while a source plays, listening-mode names are not
+	// learned at all — including by an Auto-Discover sweep, which is why `runSweep`
+	// reports it rather than leaving the panel to blame the power state. That is the
+	// trade this file makes everywhere: a missing name costs one clean mode change, a
+	// wrong one persists until something overwrites it.
+	if (s.sourcePlaying)
+		return refuse(host, s, `LMD ${pending.code}`, text, "a source is playing and owns the display");
 	// An input change is a display change, and the receiver announces a mode of its own
 	// right after one — so this window was opened by the input, and what is in it is the
 	// input's readout. Measured: the mode "DTS Neural:X" was renamed "Airplay" when this
