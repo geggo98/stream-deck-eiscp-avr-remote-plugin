@@ -87,6 +87,30 @@ export interface MockReceiverOptions {
 	 */
 	jacketArtMode?: "data" | "link";
 	/**
+	 * A streaming source that plays on one input and stops when the input leaves it.
+	 *
+	 * **The end is not announced.** Nothing sends a "stopped" — the metadata frames
+	 * simply cease. That is the whole point of modelling it: a consumer cannot wait for
+	 * a message that never comes, so anything that keeps showing the last known track
+	 * keeps showing it forever.
+	 *
+	 * Not observable on the reference VSX-S520D, which is why it lives here rather than
+	 * in a capture: that unit hops back to its network input by itself while music is
+	 * still arriving, so the input never stays away long enough to see it. Other
+	 * receivers do not, and the plugin has to be right on those too.
+	 */
+	playback?: {
+		/** `SLI` value this source plays on. */
+		input: string;
+		title?: string;
+		artist?: string;
+		album?: string;
+		/** Total track length in seconds, reported through `NTM`. */
+		totalSeconds?: number;
+		/** ms between `NTM` ticks; omit or 0 for a source with no clock. */
+		tickMs?: number;
+	};
+	/**
 	 * Accept connections and never answer anything — the half-open receiver that
 	 * looks alive to TCP while every query times out.
 	 */
@@ -215,6 +239,15 @@ export interface MockReceiver {
 	httpUrl?: string;
 	/** Announce the cover the way LINK mode does, as a single URL frame. */
 	announceArtUrl(): void;
+	/**
+	 * Start the configured source: announce the track, then tick the clock.
+	 *
+	 * Explicit rather than automatic because a broadcast before a client is registered
+	 * server-side goes into the void — call `waitForClient` first.
+	 */
+	startPlayback(): void;
+	/** Whether the source is currently streaming. */
+	isPlaying(): boolean;
 	/** Every decoded inbound ISCP message, in arrival order. */
 	received: ReceivedMessage[];
 	/** Currently connected sockets (server side). */
@@ -292,6 +325,54 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		};
 		if (options.replyDelayMs) setTimeout(send, options.replyDelayMs);
 		else send();
+	};
+
+	const pushToAll = (command: string, parameter: string): void => {
+		for (const socket of sockets) {
+			if (!socket.destroyed) socket.write(frameReply(command, parameter));
+		}
+	};
+
+	/** `68` -> `00:01:08`, the long form this firmware sends even for short tracks. */
+	const asClock = (seconds: number): string => {
+		const s = Math.max(0, Math.floor(seconds));
+		const pad = (n: number) => String(n).padStart(2, "0");
+		return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+	};
+
+	let playTimer: ReturnType<typeof setInterval> | undefined;
+	let elapsed = 0;
+
+	const stopPlayback = (): void => {
+		// Deliberately silent. A real source that loses its input does not say goodbye;
+		// the frames just stop, and that is the case the plugin has to survive.
+		if (playTimer) clearInterval(playTimer);
+		playTimer = undefined;
+	};
+
+	const startPlayback = (): void => {
+		const p = options.playback;
+		if (!p) return;
+		stopPlayback();
+		elapsed = 0;
+		// The order the real unit announces in: text first, then the menu status that
+		// says whether the clock means anything, then the clock itself.
+		if (p.title !== undefined) pushToAll("NTI", p.title);
+		if (p.artist !== undefined) pushToAll("NAT", p.artist);
+		if (p.album !== undefined) pushToAll("NAL", p.album);
+		pushToAll("NST", "Pxx");
+		// The measured value, not a constructed one: `maabbstii` where `s` = x (no
+		// seeking) and `t` = 1 (elapsed *and* total are meaningful). `ii` = 44 is what
+		// this firmware reports and the spec does not assign.
+		pushToAll("NMS", "xxxxxx144");
+		const total = p.totalSeconds ?? 0;
+		pushToAll("NTM", `${asClock(0)}/${asClock(total)}`);
+		if (!p.tickMs) return;
+		playTimer = setInterval(() => {
+			elapsed += 1;
+			pushToAll("NTM", `${asClock(elapsed)}/${asClock(total)}`);
+		}, p.tickMs);
+		playTimer.unref?.();
 	};
 
 	// Recorded exchanges, consumed in capture order per request key: the sweep
@@ -388,6 +469,12 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		state[command] = next;
 		reply(socket, command, next);
 		if (command === "SLI") scheduleAutoReturn(next);
+		// The source follows the input, and only ever in silence: moving away stops the
+		// frames with no farewell, moving back starts announcing again.
+		if (command === "SLI") {
+			if (next === options.playback?.input) startPlayback();
+			else stopPlayback();
+		}
 	};
 
 	// --- a receiver that steers itself -------------------------------------
@@ -539,6 +626,8 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		received,
 		sockets,
 		state,
+		startPlayback,
+		isPlaying: () => playTimer !== undefined,
 		announceArtUrl() {
 			// What LINK mode looks like on the wire: one frame, image type 2, carrying
 			// the device's own address. Measured payload:
@@ -592,6 +681,7 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		},
 		async close() {
 			if (autoReturnTimer) clearTimeout(autoReturnTimer);
+			stopPlayback();
 			for (const socket of sockets) socket.destroy();
 			sockets.clear();
 			if (httpServer) {

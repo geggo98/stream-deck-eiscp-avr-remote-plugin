@@ -263,12 +263,22 @@ interface HostEntry {
 	burstStartedAt?: number;
 	/** Which commands arrived and when, for the diagnostic line. Never their values. */
 	burstShape?: string[];
+	/** Last `SLI` seen for this host, to notice the input moving away from the source. */
+	input?: string;
 	/** Cancels the pending settle window, if one is armed. */
 	cancelSettle?: () => void;
 }
 
-/** Commands that are queried once when a host is first watched. */
-const PRIME_COMMANDS = ["NTI", "NAT", "NAL", "NTM", "NST", "NMS"] as const;
+/**
+ * Commands that are queried once when a host is first watched.
+ *
+ * `SLI` is not metadata and is here anyway: the input is the only evidence that what we
+ * were told is still true (see `applyInput`), and a *change* is the whole signal — so
+ * without a first value the first change is indistinguishable from the first sighting
+ * and gets missed. Asking once at the same moment as everything else is what makes the
+ * baseline exist. Nothing else in here reads it.
+ */
+export const PRIME_COMMANDS = ["NTI", "NAT", "NAL", "NTM", "NST", "NMS", "SLI"] as const;
 
 /**
  * How long a completed pre-fill counts as current.
@@ -438,6 +448,8 @@ export class NowPlayingTracker {
 		if (!entry) return;
 
 		switch (command) {
+			case "SLI":
+				return this.applyInput(entry, parameter);
 			case "NTI":
 				return this.applyText(host, entry, "track", parameter);
 			case "NAT":
@@ -497,6 +509,51 @@ export class NowPlayingTracker {
 			default:
 				return;
 		}
+	}
+
+	/**
+	 * Follow the selected input, and forget the track when it moves away.
+	 *
+	 * The awkward part of this case is the shape of the evidence: **nothing announces
+	 * the end.** A source that loses its input does not send a "stopped" — the metadata
+	 * frames simply cease. So there is no message to react to, and anything that treats
+	 * the last thing it was told as still true goes on naming a song that ended when the
+	 * user switched to the Blu-ray player. A permanent now-playing display would do that
+	 * forever. The input change itself is the only signal there is.
+	 *
+	 * Two guards, both of which cost something to get wrong:
+	 *
+	 *   - **Only a *change* counts.** `SLI` is broadcast on connect and on power-on as
+	 *     well, and the offline backoff reconnects every few seconds — treating every
+	 *     frame as a change would blank a display that is perfectly correct.
+	 *   - **The first value seen is only recorded.** Whatever the input was when this
+	 *     host came into view says nothing about whether the track we have is stale.
+	 *
+	 * Nothing is queried afterwards. A receiver whose source is still playing announces
+	 * again by itself when the input returns (verified in `now-playing-input-change`),
+	 * and priming here would put six queries on the wire for every step of an
+	 * Auto-Discover sweep, which cycles every input on a receiver that allows one
+	 * connection.
+	 *
+	 * Not reachable from the reference VSX-S520D, which hops back to its network input
+	 * on its own while music is still arriving — hence a double rather than a capture.
+	 */
+	private applyInput(entry: HostEntry, parameter: string): void {
+		const previous = entry.input;
+		entry.input = parameter;
+		if (previous === undefined || previous === parameter) return;
+
+		entry.cancelSettle?.();
+		entry.cancelSettle = undefined;
+		entry.state = EMPTY_NOW_PLAYING;
+		entry.identity = trackIdentity(EMPTY_NOW_PLAYING);
+		// Back to un-primed on purpose: the next fill is a fresh start for this host, and
+		// the initial fill is deliberately not announced as a track change. Coming back to
+		// find the same song still playing should not flash a "new track" display.
+		entry.primed = false;
+		entry.burstStartedAt = undefined;
+		entry.burstShape = undefined;
+		this.notify(entry, "text");
 	}
 
 	/**
@@ -674,11 +731,9 @@ export class NowPlayingTracker {
 			// Prefer evicting a host nobody watches; only then the oldest entry.
 			const idle = [...this.hosts].find(([, e]) => e.updates.size === 0 && e.trackChanges.size === 0);
 			const victim = idle?.[0] ?? this.hosts.keys().next().value;
-			if (victim !== undefined) {
-				this.hosts.get(victim)?.cancelSettle?.();
-				this.hosts.delete(victim);
-				this.art.forget(victim);
-			}
+			// Same rule as `dropIfUnwatched`: the pre-fill memory belongs to the state,
+			// so an evicted host has to be able to fill itself in again.
+			if (victim !== undefined) this.forgetHost(victim, this.hosts.get(victim));
 		}
 		const entry: HostEntry = {
 			state: EMPTY_NOW_PLAYING,
@@ -695,9 +750,29 @@ export class NowPlayingTracker {
 	private dropIfUnwatched(host: string, entry: HostEntry): void {
 		if (entry.updates.size > 0 || entry.trackChanges.size > 0) return;
 		// Nothing is looking any more, so stop paying for the cover-art stream.
-		entry.cancelSettle?.();
+		this.forgetHost(host, entry);
+	}
+
+	/**
+	 * Throw away everything remembered about a host, the pre-fill included.
+	 *
+	 * `primedAt` has to go with the state, and forgetting that cost a real bug: the
+	 * cooldown exists so that eight elements binding at once ask the receiver one round
+	 * of questions, and it kept refusing for a full minute *after* the answers had been
+	 * deleted. An element that re-binds — which every element does the moment its
+	 * Property Inspector is touched — unsubscribes before it re-subscribes, so a lone
+	 * watcher drops the host to zero listeners for an instant. It then came back to an
+	 * empty state and was told it had already asked, and a permanent now-playing display
+	 * sat blank until the next track change, minutes away.
+	 *
+	 * An in-flight `priming` promise is deliberately left alone: it is already awaited by
+	 * whoever started it, and its answers land in whatever entry exists when they arrive.
+	 */
+	private forgetHost(host: string, entry: HostEntry | undefined): void {
+		entry?.cancelSettle?.();
 		this.hosts.delete(host);
 		this.art.forget(host);
+		this.primedAt.delete(host);
 	}
 }
 

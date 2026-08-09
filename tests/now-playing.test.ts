@@ -20,11 +20,15 @@ import {
 	parsePlayStatus,
 	parseTimeField,
 	parseTimeInfo,
+	PRIME_COMMANDS,
 	PRIME_COOLDOWN_MS,
 	TRACK_CHANGE_COOLDOWN_MS,
 	type NowPlaying,
 	type NowPlayingChange,
 } from "../src/adapter/eiscp/now-playing.ts";
+
+/** Derived, never typed in: the pre-fill list is allowed to grow. */
+const PRIME_COMMANDS_COUNT = PRIME_COMMANDS.length;
 
 // ---------------------------------------------------------------------------
 
@@ -582,6 +586,10 @@ describe("NowPlayingTracker: lifecycle and bounds", () => {
 			"10.0.0.1 NTM",
 			"10.0.0.1 NST",
 			"10.0.0.1 NMS",
+			// Not metadata. The selected input is the only evidence that what the receiver
+			// told us is still true, and only a *change* says anything — so the baseline
+			// has to be established here or the first change looks like the first sighting.
+			"10.0.0.1 SLI",
 		]);
 	});
 
@@ -596,18 +604,55 @@ describe("NowPlayingTracker: lifecycle and bounds", () => {
 			h.tracker.prime("10.0.0.1"),
 			h.tracker.prime("10.0.0.1"),
 		]);
-		assert.equal(h.queried.length, 6, `expected one round, got ${h.queried.join(", ")}`);
+		assert.equal(h.queried.length, PRIME_COMMANDS_COUNT, `expected one round, got ${h.queried.join(", ")}`);
 	});
 
 	it("does not re-prime a host it has just primed", async () => {
 		const h = harness();
 		await h.tracker.prime("10.0.0.1");
 		await h.tracker.prime("10.0.0.1");
-		assert.equal(h.queried.length, 6, "the second call is inside the cooldown");
+		assert.equal(h.queried.length, PRIME_COMMANDS_COUNT, "the second call is inside the cooldown");
 
 		h.setNow(10_000 + PRIME_COOLDOWN_MS + 1);
 		await h.tracker.prime("10.0.0.1");
-		assert.equal(h.queried.length, 12, "past the cooldown it asks again");
+		assert.equal(h.queried.length, PRIME_COMMANDS_COUNT * 2, "past the cooldown it asks again");
+	});
+
+	it("primes again after the state it had was thrown away", async () => {
+		// The cooldown exists so eight elements binding together ask once. It must not
+		// outlive the data it was protecting: when the last watcher of a host goes away
+		// the tracker deletes that host's whole state, and if the next watcher is then
+		// refused a pre-fill it has nothing to show.
+		//
+		// This is not a corner case, it is what a settings change does. Every element
+		// re-binds through `clearSubs` *before* it re-subscribes, so a lone Now Playing
+		// dial or key drops to zero watchers for an instant every time its Property
+		// Inspector is touched — and a permanent display then sat blank until the next
+		// track change, minutes away.
+		const h = harness();
+		const unsub = h.tracker.onUpdate("10.0.0.1", () => {});
+		await h.tracker.prime("10.0.0.1");
+		h.send("10.0.0.1", "NTI", "Cruel Summer");
+		assert.equal(h.tracker.get("10.0.0.1").track, "Cruel Summer");
+
+		unsub(); // last watcher gone: the host's state is dropped
+		assert.equal(h.tracker.get("10.0.0.1").track, undefined, "the state really is gone");
+
+		h.tracker.onUpdate("10.0.0.1", () => {});
+		await h.tracker.prime("10.0.0.1");
+		assert.equal(h.queried.length, PRIME_COMMANDS_COUNT * 2, "the new watcher gets a pre-fill, cooldown or not");
+	});
+
+	it("still refuses a second pre-fill while somebody is watching", async () => {
+		// The other half of the same rule: the cooldown is about how often we ask a
+		// receiver, so it has to keep working for every case that did not lose its data.
+		const h = harness();
+		h.tracker.onUpdate("10.0.0.1", () => {});
+		await h.tracker.prime("10.0.0.1");
+		const second = h.tracker.onUpdate("10.0.0.1", () => {});
+		second();
+		await h.tracker.prime("10.0.0.1");
+		assert.equal(h.queried.length, PRIME_COMMANDS_COUNT, "one watcher remained, so nothing was dropped");
 	});
 
 	it("keeps asking the rest after one command times out", async () => {
@@ -616,7 +661,7 @@ describe("NowPlayingTracker: lifecycle and bounds", () => {
 		// no QSTN sat through a 5 s timeout on every bind.)
 		const h = harness({ failCommands: ["NAT"] });
 		await h.tracker.prime("10.0.0.1");
-		assert.equal(h.queried.length, 6);
+		assert.equal(h.queried.length, PRIME_COMMANDS_COUNT);
 	});
 });
 
