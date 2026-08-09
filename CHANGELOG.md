@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.3.0...v1.4.0) (2026-08-09)
+
+
+### Features
+
+* **image:** read a cover's colour and a half-resolution copy of it ([6458c23](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/6458c23a683a3333423d19d065ada7bfbf0476fc))
+* **ui:** keep the touch strip's crop off people's faces ([e0fe881](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/e0fe881f8e1eb6d448e2d2a55015e2b1310e4eb1))
+* **ui:** let the Now Playing dial switch face-aware cropping off ([91c38dc](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/91c38dcc0675f4fe43be7818d99c990431b7b805))
+
+
+### Documentation
+
+* record what real album art did to the face-aware crop ([060213a](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/060213a70db2a12a563f8b289a5384d2c76785ab))
+
 ## [1.3.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.2.0...v1.3.0) (2026-08-09)
 
 
