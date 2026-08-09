@@ -26,7 +26,10 @@ import {
 	formatCommandValue,
 	updateGlobalSettings,
 	type SerializedNames,
+	type SerializedOverrides,
+	type SerializedSeenCodes,
 } from "../eiscp-base.ts";
+import { effectiveOverride, type OptionOverride } from "./option-names.ts";
 
 const logger = streamDeck.logger.createScope("Names");
 
@@ -92,6 +95,24 @@ const MAX_ENTRIES_PER_COMMAND = 128;
 const MAX_HOSTS = 32;
 
 /**
+ * Names pre-filled as the user's own, for the codes that learning provably cannot get
+ * right.
+ *
+ * With a tuner input selected the display genuinely shows the *station* — "FM
+ * 87.50MHz", "TEDDY" on DAB — because that is what the receiver reports for that
+ * input. No guard can separate that from an input name, and Auto-Discover reads the
+ * same thing, so these three slots would stay wrong however often they are swept.
+ *
+ * They take effect with nothing stored (see `effectiveOverride`), so the fix applies
+ * whether or not the editor is ever opened; the learned text is kept and the user can
+ * switch back to it per option.
+ */
+const DEFAULT_NAMES: Record<TrackedCommand, Readonly<Record<string, string>>> = {
+	SLI: { "24": "FM", "25": "AM", "33": "DAB" },
+	LMD: {},
+};
+
+/**
  * Strip control characters and clamp length.
  *
  * `decodeDisplayText` decodes the FLD hex as ASCII, which masks the high bit
@@ -110,6 +131,16 @@ function sanitiseLearned(value: string, maxLength: number): string {
 
 interface HostState {
 	names: Record<TrackedCommand, Map<string, string>>;
+	/**
+	 * Codes this receiver has reported, whether or not a name could be learned for
+	 * them. This is what the PI's name editor lists, and the interesting entries are
+	 * exactly the nameless ones: a tuner input shows its station rather than its own
+	 * name, so it never learns — and without a record that the code exists there
+	 * would be nothing to hang a hand-typed name on.
+	 */
+	seen: Record<TrackedCommand, Set<string>>;
+	/** Names the user typed in the PI. They win over the learned ones; see `nameFor`. */
+	overrides: Record<TrackedCommand, Map<string, OptionOverride>>;
 	/** `fromInput`: the receiver announced this mode itself, right after an input change. */
 	lmdPending?: { code: string; at: number; fromInput: boolean };
 	sliCode?: { value: string; at: number };
@@ -292,7 +323,11 @@ function hostState(host: string): HostState {
 			const oldest = STATE.keys().next();
 			if (!oldest.done) STATE.delete(oldest.value);
 		}
-		s = { names: { LMD: new Map(), SLI: new Map() } };
+		s = {
+			names: { LMD: new Map(), SLI: new Map() },
+			seen: { LMD: new Set(), SLI: new Set() },
+			overrides: { LMD: new Map(), SLI: new Map() },
+		};
 		STATE.set(host, s);
 	}
 	return s;
@@ -354,6 +389,7 @@ function learn(host: string, command: TrackedCommand, rawCode: string, rawName: 
 		`${host} ${command} ${code}: ${previous === undefined ? "" : `"${truncateForLog(previous, 48)}" -> `}"${truncateForLog(name, 48)}"`,
 	);
 	markDirty();
+	emitNamesChanged(host);
 	return true;
 }
 
@@ -462,6 +498,28 @@ export function recordSli(
 }
 
 /**
+ * Record that this receiver has an option with this code.
+ *
+ * Only real option codes: the receiver also reports `N/A` for a listening mode it
+ * does not have, and the wire carries the steering aliases (`UP`, `DOWN`, `STEREO`)
+ * through the same command. Neither is something a name can belong to.
+ */
+function addSeen(s: HostState, command: TrackedCommand, code: string): boolean {
+	if (!/^[0-9A-Fa-f]{2}$/.test(code)) return false;
+	const set = s.seen[command];
+	if (set.has(code)) return false;
+	// Same cap as the name map, and for the same reason: a device reporting
+	// ever-changing values must not grow the persisted blob without limit.
+	if (set.size >= MAX_ENTRIES_PER_COMMAND) return false;
+	set.add(code);
+	return true;
+}
+
+function noteSeen(s: HostState, command: TrackedCommand, code: string): void {
+	if (addSeen(s, command, code)) markDirty();
+}
+
+/**
  * Note that a tracked command changed. For LMD this opens the window for the
  * transient mode-name FLD; for SLI it records the code to pair with the input
  * name (the code event can arrive before OR after the name FLD).
@@ -469,6 +527,7 @@ export function recordSli(
 export function noteChange(host: string, command: TrackedCommand, code: string): void {
 	const s = hostState(host);
 	const now = Date.now();
+	noteSeen(s, command, code);
 	if (command === "LMD") {
 		// Whether this mode is the receiver's answer to an input change is decided
 		// here, at the causal moment, rather than when the FLD turns up: the FLD may
@@ -565,11 +624,121 @@ export function hasLearnedName(host: string, command: TrackedCommand, code: stri
 	return hostState(host).names[command].has(code);
 }
 
-/** Best display name for a code: the receiver's learned text, else the registry name. */
+/**
+ * Best display name for a code: the user's own name, else the receiver's learned
+ * text, else the registry name.
+ *
+ * The user comes first because they are the only one who can be right about the
+ * cases the receiver gets wrong — a tuner input showing its station, a network input
+ * called "NET" that is a pair of speakers with a name.
+ */
 export function nameFor(host: string, command: TrackedCommand, code: string | undefined): string {
 	if (!code) return "";
 	if (command === "LMD" && code === "N/A") return "Not Available";
-	return hostState(host).names[command].get(code) ?? formatCommandValue(command, code);
+	const s = hostState(host);
+	const own = effectiveOverride(code, s.overrides[command], DEFAULT_NAMES[command]);
+	return own ?? s.names[command].get(code) ?? formatCommandValue(command, code);
+}
+
+// --- the user's own names -------------------------------------------------
+
+/**
+ * Store (or clear) the user's name for one option.
+ *
+ * An empty name clears the entry rather than storing a blank one, so "I do not want
+ * my own name here" is expressible — and for a pre-filled tuner slot it restores the
+ * pre-fill. Switching a name *off* is the other thing, and it keeps the text: that is
+ * what the editor's checkbox does, and losing the text on every toggle would make
+ * switching back a retype.
+ *
+ * Returns what is stored afterwards, so the caller can answer the Property Inspector
+ * with the truth rather than with what it asked for.
+ */
+export function setOverride(
+	host: string,
+	command: TrackedCommand,
+	rawCode: string,
+	patch: { name?: string; use?: boolean },
+): OptionOverride | undefined {
+	const code = sanitiseLearned(rawCode, MAX_CODE_LENGTH);
+	if (!code) return undefined;
+	// The PI is the only sender, but the text still ends up in global settings and in
+	// Stream Deck titles, so it is clamped exactly like a learned one.
+	const name = sanitiseLearned(patch.name ?? "", MAX_NAME_LENGTH);
+	const s = hostState(host);
+	const map = s.overrides[command];
+	const previous = map.get(code);
+	if (!name) {
+		if (!previous) return undefined;
+		map.delete(code);
+		logger.info(`${host} ${command} ${code}: user name cleared`);
+		markDirty();
+		emitNamesChanged(host);
+		return undefined;
+	}
+	if (!map.has(code) && map.size >= MAX_ENTRIES_PER_COMMAND) {
+		logger.warn(`${host} ${command} ${code}: refusing a user name, ${MAX_ENTRIES_PER_COMMAND} already stored`);
+		return previous;
+	}
+	const next: OptionOverride = { name, use: patch.use !== false };
+	if (previous && previous.name === next.name && previous.use === next.use) return previous;
+	map.set(code, next);
+	// One line per change, like `learn`: when a name became what it is, is the question
+	// a wrong name raises, and a hand-typed one is no easier to explain afterwards.
+	logger.info(`${host} ${command} ${code}: user name "${truncateForLog(name, 48)}" (${next.use ? "on" : "off"})`);
+	markDirty();
+	emitNamesChanged(host);
+	return next;
+}
+
+/** What the PI's editor needs: the codes seen, the learned names, the user's names. */
+export function optionNameState(
+	host: string,
+	command: TrackedCommand,
+): {
+	seen: Set<string>;
+	learned: Map<string, string>;
+	overrides: Map<string, OptionOverride>;
+	defaults: Readonly<Record<string, string>>;
+} {
+	const s = hostState(host);
+	return {
+		seen: s.seen[command],
+		learned: s.names[command],
+		overrides: s.overrides[command],
+		defaults: DEFAULT_NAMES[command],
+	};
+}
+
+/** Record a code the user added by hand, so its row survives the panel being closed. */
+export function noteOptionCode(host: string, command: TrackedCommand, code: string): void {
+	noteSeen(hostState(host), command, code);
+}
+
+/**
+ * Names changed for this host.
+ *
+ * Keys and dials redraw on a learned name only because learning rides on an `FLD`
+ * message that the ConnectionManager broadcasts anyway. A name typed in the Property
+ * Inspector produces no such frame, so there has to be something to subscribe to.
+ */
+type NamesListener = (host: string) => void;
+const nameListeners = new Set<NamesListener>();
+
+export function onNamesChanged(listener: NamesListener): () => void {
+	nameListeners.add(listener);
+	return () => nameListeners.delete(listener);
+}
+
+function emitNamesChanged(host: string): void {
+	// Copied first: a listener that unsubscribes itself must not disturb the walk.
+	for (const listener of [...nameListeners]) {
+		try {
+			listener(host);
+		} catch (err) {
+			logger.warn(`name listener failed: ${err}`);
+		}
+	}
 }
 
 // --- persistence (Stream Deck global settings) ---
@@ -605,12 +774,80 @@ export function load(serialized: SerializedNames | undefined): void {
 	}
 }
 
+/**
+ * Merge the persisted user names back in.
+ *
+ * Same validation as `setOverride` applies: this round-tripped through Stream Deck's
+ * global settings, which is not a reason to trust it any more than the wire.
+ */
+export function loadOverrides(serialized: SerializedOverrides | undefined): void {
+	if (!serialized) return;
+	for (const [host, byCommand] of Object.entries(serialized)) {
+		if (STATE.size >= MAX_HOSTS && !STATE.has(host)) continue;
+		const s = hostState(host);
+		for (const command of TRACKED) {
+			const entries = byCommand?.[command];
+			if (!entries) continue;
+			for (const [rawCode, entry] of Object.entries(entries)) {
+				if (!entry || typeof entry !== "object" || typeof entry.name !== "string") continue;
+				const code = sanitiseLearned(rawCode, MAX_CODE_LENGTH);
+				const name = sanitiseLearned(entry.name, MAX_NAME_LENGTH);
+				if (!code || !name) continue;
+				if (s.overrides[command].has(code)) continue;
+				if (s.overrides[command].size >= MAX_ENTRIES_PER_COMMAND) break;
+				s.overrides[command].set(code, { name, use: entry.use !== false });
+			}
+		}
+	}
+}
+
+/** Merge the persisted list of codes each receiver reported. */
+export function loadSeenCodes(serialized: SerializedSeenCodes | undefined): void {
+	if (!serialized) return;
+	for (const [host, byCommand] of Object.entries(serialized)) {
+		if (STATE.size >= MAX_HOSTS && !STATE.has(host)) continue;
+		const s = hostState(host);
+		for (const command of TRACKED) {
+			for (const code of byCommand?.[command] ?? []) {
+				if (typeof code !== "string") continue;
+				// addSeen, not noteSeen: reading persisted state back is not a change to
+				// persist, and marking dirty here would queue a write of what we just read.
+				addSeen(s, command, code);
+			}
+		}
+	}
+}
+
 export function serialize(): SerializedNames {
 	const out: SerializedNames = {};
 	for (const [host, s] of STATE) {
 		const entry: { [command: string]: { [code: string]: string } } = {};
 		for (const command of TRACKED) {
 			if (s.names[command].size) entry[command] = Object.fromEntries(s.names[command]);
+		}
+		if (Object.keys(entry).length) out[host] = entry;
+	}
+	return out;
+}
+
+export function serializeOverrides(): SerializedOverrides {
+	const out: SerializedOverrides = {};
+	for (const [host, s] of STATE) {
+		const entry: { [command: string]: { [code: string]: { name?: string; use?: boolean } } } = {};
+		for (const command of TRACKED) {
+			if (s.overrides[command].size) entry[command] = Object.fromEntries(s.overrides[command]);
+		}
+		if (Object.keys(entry).length) out[host] = entry;
+	}
+	return out;
+}
+
+export function serializeSeenCodes(): SerializedSeenCodes {
+	const out: SerializedSeenCodes = {};
+	for (const [host, s] of STATE) {
+		const entry: { [command: string]: string[] } = {};
+		for (const command of TRACKED) {
+			if (s.seen[command].size) entry[command] = [...s.seen[command]];
 		}
 		if (Object.keys(entry).length) out[host] = entry;
 	}
@@ -634,7 +871,14 @@ async function persist(): Promise<void> {
 		// Through the shared funnel: it holds the write until the initial load has
 		// landed and serialises against the other writer (the remembered device),
 		// so neither can persist a snapshot that is missing the other's key.
-		await updateGlobalSettings((current) => ({ ...current, names: serialize() }));
+		// All three in one patch: they are one subject, and a second writer for the
+		// same subject is exactly how the funnel's doc comment says this data is lost.
+		await updateGlobalSettings((current) => ({
+			...current,
+			names: serialize(),
+			nameOverrides: serializeOverrides(),
+			seenCodes: serializeSeenCodes(),
+		}));
 		persistRetries = 0;
 	} catch (err) {
 		// Re-arm the timer with backoff; without it the learned names would sit

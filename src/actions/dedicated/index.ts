@@ -35,6 +35,7 @@ import {
 import { SPEC_BY_ID, uuidFor, type DedicatedIdOfKind, type ToggleSpec } from "./catalog.ts";
 import { nameFor, type TrackedCommand } from "./name-store.ts";
 import { handleDiscoverMessage } from "./discovery.ts";
+import { handleOptionNamesMessage } from "./pi-names.ts";
 
 /** Learned-name actions (Auto-Discover UI); their commands are tracked by the name store. */
 type LearnedKeyId = "input-next" | "input-prev" | "mode-next" | "mode-prev";
@@ -165,6 +166,8 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		// the receiver's power state changes.
 		this.trackSub(action.id, mgr.onCommandUpdate(host, command, () => refresh()));
 		this.trackSub(action.id, mgr.onCommandUpdate(host, "FLD", () => refresh()));
+		// A name typed in the PI arrives on no wire frame at all; see watchNames.
+		this.watchNames(action.id, host, refresh);
 		this.watchStatus(action.id, host, refresh);
 
 		try {
@@ -179,8 +182,9 @@ abstract class LearnedNameKeyAction extends KeyActionBase<EiscpActionSettings> {
 		return settings;
 	}
 
-	/** PI "Auto-Discover" button → sweep all options; also serve the device list (super). */
+	/** PI "Auto-Discover" button and name editor; also serve the device list (super). */
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, EiscpActionSettings>): Promise<void> {
+		if (handleOptionNamesMessage(ev, this.displayCommand())) return;
 		await handleDiscoverMessage(ev, this.displayCommand(), this.logger);
 		await super.onSendToPlugin(ev);
 	}
@@ -385,6 +389,10 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 		return ["FLD"];
 	}
 
+	protected override rerendersOnNameChange(): boolean {
+		return true;
+	}
+
 	protected buildFeedback(
 		cfg: DialConfig,
 		rawValue: string,
@@ -400,6 +408,7 @@ abstract class LearnedNameDialAction extends DialActionBase<EiscpActionSettings>
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, EiscpActionSettings>): Promise<void> {
+		if (handleOptionNamesMessage(ev, this.command())) return;
 		await handleDiscoverMessage(ev, this.command(), this.logger);
 		await super.onSendToPlugin(ev);
 	}

@@ -438,6 +438,30 @@ keeps the captured order but drops the captured waits, so CI stays fast).
   learning only overhears and has to be stricter. What no format rule can fix is the tuner: with `SLI 24/33` selected the
   display genuinely shows the station ("FM 87.50MHz", "TEDDY"), so those *are* what
   the receiver reports for that input.
+- **So the user gets the last word, and three slots are pre-filled.** `nameFor` resolves
+  **the user's own name ▸ a pre-filled default ▸ the learned name ▸ the registry**, all
+  per host. `DEFAULT_NAMES` gives `SLI 24/25/33` the names "FM", "AM" and "DAB" —
+  the three the tuner case above proves no amount of sweeping can get right. Details
+  worth keeping straight:
+  - **A pre-fill is not a write.** It applies with nothing stored, so it works whether or
+    not the editor is ever opened; the learned station name stays in the store beside it.
+  - **A stored entry always beats the pre-fill, including one switched off** — that is
+    how a user says "show me the station after all". `use` is stored *separately from the
+    text*, so switching back and forth is not a retype, and an empty name clears the
+    entry (which restores the pre-fill).
+  - **`hasLearnedName` stays learned-only.** It is what the sweep counts, and a
+    hand-typed name must not dress up "8 of 12 named" as the receiver's work.
+  - **`seen` records every option code the receiver reports**, sweeps included, and is
+    persisted alongside the names. Its whole point is the codes with *no* name: a tuner
+    input never learns one, and without a record that the code exists there would be
+    nothing to hang a hand-typed name on.
+  - **A typed name reaches the deck through `onNamesChanged`.** A learned one only ever
+    repainted because it rides on an `FLD` frame the ConnectionManager broadcasts anyway;
+    a name from the PI produces no frame, hence `watchNames` (the key cyclers) and
+    `rerendersOnNameChange()` (the dials).
+  - Names, user names and seen codes are written in **one** patch by the store's single
+    debounced writer — see the `updateGlobalSettings` doc comment for why a second writer
+    for the same subject loses data.
 - **The sweep measures a doubtful reading again** (`learnInputName` in `sweep.ts`).
   A trustworthy reading is taken once — the normal case, one query. Otherwise it
   re-reads, and from `MAJORITY_AT` (3) readings on the most frequent text wins, up

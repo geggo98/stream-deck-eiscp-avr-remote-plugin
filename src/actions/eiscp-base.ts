@@ -26,6 +26,28 @@ export interface EiscpActionSettings {
 /** Learned option names, persisted in global settings: host -> command -> code -> name. */
 export type SerializedNames = { [host: string]: { [command: string]: { [code: string]: string } } };
 
+/**
+ * The user's own option names, persisted beside the learned ones:
+ * host -> command -> code -> { name, use }.
+ *
+ * `use` is kept separately from the text on purpose. The Property Inspector lets a
+ * name be switched off in favour of the receiver's own, and a model where "off"
+ * means "delete" would make the user retype theirs to switch back.
+ */
+export type SerializedOverrides = {
+	[host: string]: { [command: string]: { [code: string]: { name?: string; use?: boolean } } };
+};
+
+/**
+ * Option codes each receiver has actually reported: host -> command -> codes.
+ *
+ * Persisted because it is what the name editor lists, and it would otherwise be
+ * empty after every plugin restart. The codes that matter most are the ones with
+ * no learned name — a tuner input whose display shows the station never gets one,
+ * and without this it could never be given one by hand either.
+ */
+export type SerializedSeenCodes = { [host: string]: { [command: string]: string[] } };
+
 /** A receiver remembered across sessions, so a new action can adopt it. */
 export interface LastDevice {
 	host: string;
@@ -38,6 +60,10 @@ export interface GlobalSettings {
 	/** The receiver most recently picked in any PI; pre-fills freshly added actions. */
 	lastDevice?: { host?: string; model?: string };
 	names?: SerializedNames;
+	/** Names the user typed in the PI's option-name editor; they win over `names`. */
+	nameOverrides?: SerializedOverrides;
+	/** Option codes each receiver reported, so the editor can list them after a restart. */
+	seenCodes?: SerializedSeenCodes;
 	/** Power the receiver on before sending a command it would sleep through. */
 	wakeOnPress?: boolean;
 	[key: string]: JsonValue;

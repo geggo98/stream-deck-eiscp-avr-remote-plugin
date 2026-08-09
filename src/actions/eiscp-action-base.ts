@@ -30,6 +30,7 @@ import { ConnectionManager } from "../adapter/eiscp/connection-manager.ts";
 import { COMMAND_REGISTRY } from "../adapter/eiscp/command-registry.ts";
 import { getDeviceStatusTracker, type DeviceStatus } from "../adapter/eiscp/device-status.ts";
 import { BindCoordinator, REBIND_DEBOUNCE_MS } from "./bind-coordinator.ts";
+import { onNamesChanged } from "./dedicated/name-store.ts";
 import { handleDeviceListMessage, rememberDevice } from "./pi-devices.ts";
 import { handleWakeSettingMessage } from "./pi-wake.ts";
 import {
@@ -229,6 +230,27 @@ abstract class EiscpActionBase<TSettings extends EiscpActionSettings> extends Si
 		this.trackSub(
 			actionId,
 			getDeviceStatusTracker().onStatus(host, () => repaint()),
+		);
+	}
+
+	/**
+	 * Re-paint whenever an option name for `host` changes.
+	 *
+	 * A learned name already reaches the deck, but only by accident: it is learned
+	 * from an `FLD` frame that the ConnectionManager broadcasts anyway, and the
+	 * learned-name actions subscribe to that. A name typed in the Property Inspector
+	 * produces no frame at all, so without this the key keeps the old title until
+	 * something unrelated re-renders it.
+	 *
+	 * Like `watchStatus`, `repaint` must render from what is already known: a name
+	 * change is not a value change, and querying would only bother the receiver.
+	 */
+	protected watchNames(actionId: string, host: string, repaint: () => void): void {
+		this.trackSub(
+			actionId,
+			onNamesChanged((changed) => {
+				if (changed === host) repaint();
+			}),
 		);
 	}
 
@@ -685,6 +707,15 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		return [];
 	}
 
+	/**
+	 * Whether this dial's strip shows an option *name*, and so has to redraw when one
+	 * changes without the receiver saying anything (a name typed in the PI).
+	 * Command-keyed re-renders cannot express that; see `watchNames`.
+	 */
+	protected rerendersOnNameChange(): boolean {
+		return false;
+	}
+
 	override async onWillAppear(ev: WillAppearEvent<TSettings>): Promise<void> {
 		if (ev.action.isDial()) await this.bind(ev.action, ev.payload.settings);
 	}
@@ -740,6 +771,13 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			if (cached !== undefined) rerender(cached);
 			else this.sendFeedback(action, cfg, { title: "?", value: "" });
 		});
+
+		if (this.rerendersOnNameChange()) {
+			this.watchNames(actionId, host, () => {
+				const mainValue = mgr.getCachedValue(host, cfg.command);
+				if (mainValue) rerender(mainValue);
+			});
+		}
 
 		// Learned-name dials redraw when an FLD name event arrives, even though the
 		// main SLI/LMD value is unchanged — re-render from the cached main value.

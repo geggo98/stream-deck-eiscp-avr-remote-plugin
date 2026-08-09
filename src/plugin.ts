@@ -89,6 +89,10 @@ streamDeck.settings
 	.then((gs) => {
 		setCachedGlobalSettings(gs);
 		nameStore.load(gs.names);
+		// The user's own names and the codes each receiver reported: the same subject,
+		// persisted in the same write, restored in the same breath.
+		nameStore.loadOverrides(gs.nameOverrides);
+		nameStore.loadSeenCodes(gs.seenCodes);
 		// Only now may anything write the global settings back: until this point
 		// the cache every writer merges over is empty (see whenGlobalSettingsLoaded).
 		markGlobalSettingsLoaded();

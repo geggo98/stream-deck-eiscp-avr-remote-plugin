@@ -5,13 +5,22 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { decodeDisplayText } from "../src/actions/eiscp-base.ts";
 import {
+	hasLearnedName,
 	load,
+	loadOverrides,
+	loadSeenCodes,
 	nameFor,
 	noteChange,
 	noteDisplayChange,
 	noteFld,
+	onNamesChanged,
+	optionNameState,
 	recordSli,
 	serialize,
+	serializeOverrides,
+	serializeSeenCodes,
+	setOverride,
+	setSliSweeping,
 } from "../src/actions/dedicated/name-store.ts";
 
 // Hex-ASCII helpers for FLD payloads.
@@ -82,8 +91,12 @@ describe("name-store learning", () => {
 		recordSli(host, "24", hex("FM 87.50MHz --"));
 		recordSli(host, "33", hex("TEDDY       --"));
 		assert.equal(nameFor(host, "SLI", "10"), "BD/DVD");
-		assert.equal(nameFor(host, "SLI", "24"), "FM 87.50MHz");
-		assert.equal(nameFor(host, "SLI", "33"), "TEDDY");
+		// Read the learned map rather than nameFor for the tuner slots: those are
+		// pre-filled with a user name ("FM", "DAB") precisely because what the display
+		// shows there is the station, which is what this test feeds in.
+		const learned = optionNameState(host, "SLI").learned;
+		assert.equal(learned.get("24"), "FM 87.50MHz");
+		assert.equal(learned.get("33"), "TEDDY");
 	});
 
 	it("renders the LMD N/A sentinel as 'Not Available'", () => {
@@ -515,5 +528,184 @@ describe("name-store: a playing source is not a mode name either", () => {
 		at(60_000, () => noteChange(host, "SLI", "2B"));
 		at(60_100, () => assert.equal(noteFld(host, hex("NET         14")), true));
 		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+	});
+});
+
+/** A control byte, built rather than typed: a raw one in a source file is refused. */
+const CTRL = String.fromCharCode(1);
+
+describe("name-store: the user's own names", () => {
+	it("shows the user's name instead of the receiver's, and keeps both", () => {
+		const host = "ns-own-name";
+		noteChange(host, "SLI", "2B");
+		assert.equal(noteFld(host, hex("NET         14")), true);
+		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+
+		setOverride(host, "SLI", "2B", { name: "Sonos", use: true });
+		assert.equal(nameFor(host, "SLI", "2B"), "Sonos");
+		assert.equal(optionNameState(host, "SLI").learned.get("2B"), "NET", "the learned name is not replaced");
+		assert.equal(hasLearnedName(host, "SLI", "2B"), true, "and the sweep still counts it as learned");
+	});
+
+	it("switches back to the receiver's name without losing the text", () => {
+		const host = "ns-own-switch";
+		noteChange(host, "SLI", "2B");
+		noteFld(host, hex("NET         14"));
+		setOverride(host, "SLI", "2B", { name: "Sonos", use: true });
+		setOverride(host, "SLI", "2B", { name: "Sonos", use: false });
+		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+		assert.equal(
+			optionNameState(host, "SLI").overrides.get("2B")?.name,
+			"Sonos",
+			"switching back must not mean retyping",
+		);
+	});
+
+	it("falls back to the registry name when nothing was learned", () => {
+		const host = "ns-own-registry";
+		assert.equal(nameFor(host, "SLI", "12"), "tv");
+		setOverride(host, "SLI", "12", { name: "Beamer", use: true });
+		assert.equal(nameFor(host, "SLI", "12"), "Beamer");
+	});
+
+	it("clears an entry when the name is emptied", () => {
+		const host = "ns-own-clear";
+		noteChange(host, "SLI", "2B");
+		noteFld(host, hex("NET         14"));
+		setOverride(host, "SLI", "2B", { name: "Sonos", use: true });
+		assert.equal(setOverride(host, "SLI", "2B", { name: "  ", use: true }), undefined);
+		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+		assert.equal(optionNameState(host, "SLI").overrides.size, 0);
+	});
+
+	it("clamps and strips what it is given", () => {
+		const host = "ns-own-hardening";
+		// The Property Inspector is the only sender, but the text is persisted into
+		// global settings and painted onto keys, so it is clamped like a learned one.
+		const stored = setOverride(host, "SLI", "2B", { name: `Sonos${CTRL}${"!".repeat(80)}`, use: true });
+		assert.ok(!stored!.name.includes(CTRL), "control bytes never reach a Stream Deck title");
+		assert.ok(stored!.name.length <= 48);
+		assert.equal(setOverride(host, "SLI", "", { name: "x", use: true }), undefined);
+	});
+});
+
+describe("name-store: the pre-filled tuner slots", () => {
+	it("names FM, AM and DAB without anything being stored", () => {
+		const host = "ns-tuner-defaults";
+		assert.equal(nameFor(host, "SLI", "24"), "FM");
+		assert.equal(nameFor(host, "SLI", "25"), "AM");
+		assert.equal(nameFor(host, "SLI", "33"), "DAB");
+		assert.equal(serializeOverrides()[host], undefined, "a default is not a write");
+	});
+
+	it("beats the station name the receiver reports for that input", () => {
+		// The reason they exist: with a tuner input selected the display shows the
+		// station, so the learned name is "TEDDY" and no sweep can do better.
+		const host = "ns-tuner-station";
+		noteChange(host, "SLI", "33");
+		assert.equal(noteFld(host, hex("TEDDY       14")), true);
+		assert.equal(optionNameState(host, "SLI").learned.get("33"), "TEDDY");
+		assert.equal(nameFor(host, "SLI", "33"), "DAB");
+	});
+
+	it("gives the station back when the user switches the pre-fill off", () => {
+		const host = "ns-tuner-off";
+		noteChange(host, "SLI", "33");
+		noteFld(host, hex("TEDDY       14"));
+		setOverride(host, "SLI", "33", { name: "DAB", use: false });
+		assert.equal(nameFor(host, "SLI", "33"), "TEDDY", "a stored entry wins over the default, off included");
+	});
+
+	it("leaves listening modes alone", () => {
+		// The defaults are about what the tuner *inputs* display; LMD 24 is a mode.
+		assert.notEqual(nameFor("ns-tuner-lmd", "LMD", "24"), "FM");
+	});
+});
+
+describe("name-store: the codes a receiver reported", () => {
+	it("records every option code it sees, including during a sweep", () => {
+		const host = "ns-seen";
+		noteChange(host, "SLI", "2B");
+		setSliSweeping(host, true);
+		try {
+			// Auto-Discover is the one run that reaches every option; it must not be the
+			// one run that records none.
+			noteChange(host, "SLI", "10");
+			noteChange(host, "SLI", "24");
+		} finally {
+			setSliSweeping(host, false);
+		}
+		assert.deepEqual([...optionNameState(host, "SLI").seen].sort(), ["10", "24", "2B"]);
+	});
+
+	it("ignores what is not an option a receiver can be in", () => {
+		const host = "ns-seen-aliases";
+		noteChange(host, "LMD", "N/A"); // "this mode is unavailable", not a mode
+		noteChange(host, "LMD", "UP"); // a steering alias
+		noteChange(host, "LMD", "00");
+		assert.deepEqual([...optionNameState(host, "LMD").seen], ["00"]);
+	});
+
+	it("survives a restart, which is the only reason it is persisted", () => {
+		// A tuner input never learns a name, so without the code itself being kept
+		// there would be no row to hang a hand-typed name on after a restart.
+		const host = "ns-seen-persist";
+		noteChange(host, "SLI", "33");
+		setOverride(host, "SLI", "33", { name: "Radio", use: true });
+		const seen = serializeSeenCodes();
+		const overrides = serializeOverrides();
+
+		const fresh = "ns-seen-restored";
+		// The store tracks 32 hosts and this file has long since created that many, so
+		// a load for an unknown host is skipped by that cap. Touch it first: in the
+		// plugin the load happens into an empty store.
+		nameFor(fresh, "SLI", "00");
+		loadSeenCodes({ [fresh]: seen[host]! });
+		loadOverrides({ [fresh]: overrides[host]! });
+		assert.deepEqual([...optionNameState(fresh, "SLI").seen], ["33"]);
+		assert.equal(nameFor(fresh, "SLI", "33"), "Radio");
+	});
+
+	it("does not trust what round-tripped through the settings", () => {
+		const host = "ns-load-hardening";
+		nameFor(host, "SLI", "00"); // see above: the host cap skips loads for unknown hosts
+		loadOverrides({ [host]: { SLI: { "2B": { name: `x${CTRL}y`, use: true }, "": { name: "no code" } } } });
+		const stored = optionNameState(host, "SLI").overrides;
+		assert.equal(stored.get("2B")?.name, "xy");
+		assert.equal(stored.size, 1);
+		loadSeenCodes({ [host]: { SLI: ["UP", "2B"] } });
+		assert.deepEqual([...optionNameState(host, "SLI").seen], ["2B"]);
+	});
+});
+
+describe("name-store: telling the deck a name changed", () => {
+	it("fires when a name is learned and when the user types one", () => {
+		const host = "ns-emit";
+		const seen: string[] = [];
+		const off = onNamesChanged((h) => seen.push(h));
+		try {
+			noteChange(host, "SLI", "23");
+			noteFld(host, CD_VOL);
+			assert.deepEqual(seen, [host], "a learned name reaches the deck on an FLD frame anyway");
+			setOverride(host, "SLI", "23", { name: "Player", use: true });
+			assert.deepEqual(seen, [host, host], "a typed one arrives on no frame at all");
+		} finally {
+			off();
+		}
+		setOverride(host, "SLI", "23", { name: "Other", use: true });
+		assert.equal(seen.length, 2, "and unsubscribing stops it");
+	});
+
+	it("stays quiet when nothing actually changed", () => {
+		const host = "ns-emit-quiet";
+		setOverride(host, "SLI", "23", { name: "Player", use: true });
+		const seen: string[] = [];
+		const off = onNamesChanged((h) => seen.push(h));
+		try {
+			setOverride(host, "SLI", "23", { name: "Player", use: true });
+			assert.deepEqual(seen, [], "a repaint per keystroke is not free");
+		} finally {
+			off();
+		}
 	});
 });
