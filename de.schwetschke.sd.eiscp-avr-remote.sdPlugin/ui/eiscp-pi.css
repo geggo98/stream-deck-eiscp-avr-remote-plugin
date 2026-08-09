@@ -11,6 +11,16 @@
  * to change them.
  */
 
+/* The other half of the same problem: plain text also inherits the document's
+   *font*, which in this webview is Times New Roman — measured, on every hint in
+   every panel. sdpi's own components carry this stack in their shadow DOM, so
+   stating it here is what makes a hint look like it belongs beside them. Their
+   components are unaffected: a shadow-DOM rule wins over an inherited one. */
+body {
+	font-family: "Segoe UI", Arial, Roboto, "Helvetica sans-serif", "Apple Color Emoji", "Segoe UI Emoji",
+		"Segoe UI Symbol";
+}
+
 /* Secondary explanatory text. Light enough to read (roughly 9:1 against the
    panel) while still reading as secondary next to the sdpi labels. */
 .pi-hint {
@@ -91,10 +101,43 @@
 	font-style: italic;
 }
 
-.pi-name-add {
+/* Section headings inside the editor. They are plain divs, so they need a colour
+   said out loud: sdpi-components themes its own components only, and the document
+   default is black — which on this panel reads as "not there". The same trap the
+   note at the top of this file is about; it caught this panel too. */
+.pi-names-header {
+	color: #d8d8d8;
+	font-size: 12px;
+	font-weight: 600;
+	margin: 12px 4px 6px;
+}
+
+.pi-names-add {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 4px;
+}
+
+/* Matched to the sdpi dropdowns above it rather than to the native buttons: it is
+   a dropdown, and the panel already has two dark ones. */
+.pi-names-add select {
 	flex: 1 1 auto;
 	min-width: 0;
-	margin-right: 6px;
+	background: #3d3d3d;
+	color: #d8d8d8;
+	border: 1px solid #262626;
+	border-radius: 4px;
+	padding: 3px 6px;
+	font-size: 12px;
+}
+
+/* Stated on the options as well, not left to inherit: the open popup is drawn by
+   the platform, and light text on whatever background it picks is the same
+   unreadable pairing this block exists to avoid. */
+.pi-names-add select option {
+	background: #3d3d3d;
+	color: #d8d8d8;
 }
 
 /* A hint that reports a problem the user needs to act on. */

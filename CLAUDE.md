@@ -259,10 +259,16 @@ and `docs/security-review-2026-07.md` the full findings; the load-bearing rules:
   backtrack quadratically; `stripTerminators` was a real ReDoS found by fuzzing.
 - **`Nodejs.Debug` must be absent in a release manifest** — not `"disabled"`; see
   the note above.
-- **PI hint text needs an explicit colour.** Plain text in a Property Inspector
-  inherits black, which is invisible on the dark panel; sdpi-components themes
-  only its own components. Use the shared `.pi-hint` / `.pi-warn` classes in
-  `ui/eiscp-pi.css` and never dim hints with `opacity`.
+- **PI text needs an explicit colour, and that goes for every plain element, not
+  just hints.** Plain text in a Property Inspector inherits black, which is
+  invisible on the dark panel; sdpi-components themes only its own components.
+  Use the shared `.pi-hint` / `.pi-warn` / `.pi-names-header` classes in
+  `ui/eiscp-pi.css` and never dim hints with `opacity`. A hand-rolled
+  `class="sdpi-item-label"` does **not** help — that class is markup sdpi styles
+  inside its own shadow DOM, so a `<div>` wearing it outside is unstyled black,
+  which is how the name editor's headings shipped unreadable. The *font* inherits
+  the same way: the webview default is Times New Roman, so `eiscp-pi.css` states
+  sdpi's own stack on `body` — their components keep their shadow-DOM rule.
 - **The manual-IP escape hatch must not depend on the plugin.** The Device IP
   dropdown is filled by a plugin round-trip; if the plugin is down the PI still
   has to let the user type an address (`renderDeviceIp`'s watchdog and "Enter IP

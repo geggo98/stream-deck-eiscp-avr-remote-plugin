@@ -34,17 +34,17 @@
 		const c = document.getElementById(containerId);
 		if (!c) return;
 
+		// Every label here is a plain element, so every one of them states its colour:
+		// sdpi-components themes its own components only, and anything else inherits
+		// black — which on this panel is very nearly invisible (see eiscp-pi.css).
 		c.innerHTML =
-			'<div class="sdpi-item"><div class="sdpi-item-label">Names</div>' +
-			'  <div class="sdpi-item-value" style="flex-direction:column; align-items:stretch;">' +
-			'    <div id="nameEditorRows" class="pi-names"></div>' +
-			"  </div>" +
-			"</div>" +
+			'<div class="pi-names-header">Names</div>' +
+			'<div id="nameEditorRows" class="pi-names"></div>' +
 			'<div id="nameEditorStatus" class="pi-hint"></div>' +
-			'<div class="sdpi-item" id="nameEditorAdd" style="display:none;">' +
-			'  <div class="sdpi-item-label">Add</div>' +
-			'  <div class="sdpi-item-value">' +
-			'    <select id="nameEditorAddSelect" class="pi-name-add"></select>' +
+			'<div id="nameEditorAdd" style="display:none;">' +
+			'  <div class="pi-names-header">Add</div>' +
+			'  <div class="pi-names-add">' +
+			'    <select id="nameEditorAddSelect"></select>' +
 			'    <button id="nameEditorAddBtn">Add</button>' +
 			"  </div>" +
 			"</div>";
