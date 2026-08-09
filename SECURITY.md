@@ -28,6 +28,44 @@ The consequences for code: bound everything that comes off the wire, treat
 device-supplied text as untrusted right through to rendering, never let a peer
 decide how much memory or CPU to spend, and fail loudly rather than quietly.
 
+## Cover art: a native decoder we do not own
+
+Album art is the one thing the plugin forwards rather than parses. The bytes arrive
+from the receiver (inline over eISCP, or from its own web server) and are handed to
+Stream Deck as a `data:image/jpeg;base64,…` URI inside a composed SVG, where **Qt**
+decodes them. That decoder is native, outside this project, and reachable by anything
+on the LAN that can announce a cover — so if an image-decoding vulnerability is ever
+published for Qt or the Stream Deck app, **this plugin is the delivery path**.
+
+Nothing about that is hypothetical enough to leave undocumented, so the staged answer
+is written down here in advance. Each step stands on its own and can be shipped
+without the ones after it:
+
+1. **Strip what nobody reads.** `stripJpegMetadata` (`src/adapter/eiscp/jacket-art.ts`)
+   removes APP0–APP15 — EXIF, ICC, XMP, embedded thumbnails — on receipt, on both the
+   inline and the HTTP path so their content hashes still match. **Done.** COM is kept
+   on purpose: it has no structure to misparse, and it is where harmless bulk lives.
+2. **Narrow what is accepted.** The container already comes from the magic bytes rather
+   than the peer's claim. Under pressure this can tighten to baseline JPEG only, using
+   the SOF marker `image-luma.ts` reads anyway.
+3. **Re-encode, so Stream Deck only sees bytes we produced.** Decode with a
+   WebAssembly codec (`@jsquash/jpeg`, mozjpeg) — WASM's linear memory is a real
+   sandbox, unlike a worker thread — scale to the 144 px key size, and emit PNG via
+   `node:zlib`, which needs no further dependency. This removes the foreign bytes from
+   the pipeline entirely and shrinks the payload as a side effect.
+4. **A way out without an update.** A global "do not display cover art" switch, so
+   users can react before a release is available.
+
+Related, and a different question: the plugin also reads cover *pixels* itself, to pick
+a colour for the progress ring. That decoder is our own (`src/actions/image-luma.ts`),
+deliberately. The obvious dependency, `jpeg-js`, last shipped in June 2022 and carries
+CVE-2022-25851 (infinite loop, CVSS 7.5) and CVE-2020-8175 (unbounded resource use) —
+both **denial of service, not remote code execution**, which is the general shape of the
+risk in a pure-JavaScript parser: it cannot corrupt memory. So the mitigations that
+matter are caps and a `try/catch`, both of which are cheaper than operating someone
+else's unmaintained parser safely. It reads only DC coefficients, is bounded by
+construction, and answers `undefined` for anything it does not fully understand.
+
 ## Review history
 
 - **2026-07-25 — first application-level review.**

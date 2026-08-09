@@ -261,6 +261,7 @@ here rather than in a commit message.
 | 368/792 frames of 246 hex characters, **792 frames in 443 ms**, median gap 0 ms | ~1 800 frames/s. Nothing may render or log per frame. |
 | `NJA QSTN` answers **`"BMP"`**, not `ENA`/`DIS` | The enable state reads back as an image-type token. |
 | `NTM` ticks once a second; `NMS` field `t` says whether the time means anything, field `s` whether seeking is allowed (measured `x` = **not** allowed) | The progress bar is device-backed, not estimated. `NTR` is `----/----` under AirPlay and unusable. |
+| **`NMS` cannot be obtained by asking.** `prime()` queries it and gets nothing usable; the receiver volunteers it **on a track change, ~94 ms after the cover** (measured 2026-08-09, 11:20:36.326 → .420) | `timeDisplay` therefore stays `unknown` for the whole of the track a plugin restart lands in. `overlayProgress` treats `unknown` as "nobody has told us" and believes `NTM`'s numbers, rejecting only the stated-meaningless `off` and `elapsed`. Without that a restart mid-track meant no progress at all until the song ended. |
 | `NMS` field `ii` and `NLT` service are **`44`**, which the spec does not assign | Do not map service ids you cannot look up. |
 | `FLD` shows the **track title** during AirPlay | Confirms why the name-store's metadata veto exists; it now runs continuously while music plays. |
 
@@ -321,6 +322,92 @@ GET http://<ip>/album_art.cgi   →  200, image/jpeg, valid JPEG 512×512
 with a *chunk of the image* rather than the mode token, because `queryCommand`
 correlates on the three-character command name alone and the first NJA frame to arrive
 settles it.
+
+### The Now Playing key: getting out of the cover's way
+
+The key used to draw the play glyph over the cover and set the track and artist as its
+title, unconditionally — between them there was very little picture left. Each
+decoration now has to earn its place, and the **defaults changed for keys that already
+exist**, which is the point rather than a side effect.
+
+- `np-key-settings.ts` holds the whole rule set, SDK-free so it is testable.
+  `glyphFor` draws the glyph only when there is no cover *or* `playStatus` is explicitly
+  `pause`/`stop` — an **unknown** play status draws nothing, because guessing puts the
+  glyph back over every cover, which is the complaint. `textIsVisible` is the one piece
+  of state the key keeps: a mode, a deadline, and a press override that a track change
+  clears.
+- **The migration reads only `showGlyph: false`.** A stored `true` was also the old
+  default, so it cannot be told apart from "never opened the panel"; honouring it would
+  leave every existing key exactly as covered up as before.
+- **A bind opens the text window.** `onTrackChange` deliberately never fires for the
+  first track it sees, so an `onChange` key placed mid-song would otherwise show a cover
+  and nothing else — and since every Property Inspector change is a re-bind, this is
+  also what lets someone see the setting they just changed.
+- **The key no longer joins the generic short track-change display** (`watchTrackChanges`
+  is overridden to nothing, and its PI hides the setting). That display would paint a
+  *different* face — no progress, its own glyph rule — over the one key that already
+  shows the track.
+- **What it logs is keyed on change, never on the tick.** This key repaints once a
+  second, so anything written per render would bury the log it is meant to explain.
+  Four things are recorded, each only when it differs from the last: the configuration
+  it bound with (`noteBind` — a slider drag is a stream of re-binds), what it has to
+  draw from (`noteFace`, keyed by `faceLogKey`), a press, and — in the tracker —
+  a change of `playStatus`. **`faceLogKey` deliberately excludes the elapsed time**;
+  putting it in turns a five-minute track into 300 lines, and `tests/np-key-settings.test.ts`
+  pins that. The face line is what answers the two questions this key actually generates
+  ("why is there no ring", "why is the ring that colour"), and it earned its keep within
+  a minute of shipping: it is what surfaced the `NMS` finding above.
+
+### Progress on a key: a ring, a bar, and a colour taken from the cover
+
+A key has no layout, so the elapsed fraction has to become part of the composed image.
+
+- **The ring's perimeter is computed, not declared.** `pathLength` is not in SVG Tiny
+  1.2, which is roughly what Qt implements, and this file already records one attribute
+  Qt ignored (`preserveAspectRatio`). `ringGeometry` returns the closed form for a
+  rounded rectangle and the dash pattern is in absolute units. A full ring is drawn
+  plain, because a dash pattern with a zero-length gap is undefined in a partial
+  renderer and "full" happens at the end of every track. **The bar is the fallback** if
+  `stroke-dasharray` turns out not to be honoured — it is two rectangles and depends on
+  nothing.
+- **`PROGRESS_STEPS = 100` is load-bearing, not cosmetic.** It is what keeps
+  `writeKeyImage`'s de-duplication working now that something repaints at 1 Hz: a step
+  is ~1.5 px on the physical key, so two ticks inside one step compose to the identical
+  string and nothing is written. `composeShared`'s cache had to be bounded for the same
+  reason (`MAX_COMPOSITIONS_PER_ART`) — the progress is part of the picture, so every
+  step of it was another ~173 KB entry.
+- **The colour comes from the picture, and from the *darkened* picture.** `image-luma.ts`
+  reads only the DC coefficient of each 8×8 block — the block's average — which is an
+  eight-times smaller image and all a colour decision needs. `effectiveScrim` is exported
+  from `cover-image.ts` so the colour and the composer cannot disagree about how dark the
+  backdrop will be.
+- **`progress-colour.ts` maximises the worst case, and that is the whole rule.** Three
+  candidates (white, mid grey `#808080`, black); the winner is the one that stands
+  furthest off the backdrop along all but the worst 10 % of the band. Grey can only win
+  on a cover that spans both ends, which is exactly what it is for — on an even backdrop
+  the better of white and black is always ≥ 0.5 away and grey is ≤ 0.5 by definition.
+  Two things it replaced, both wrong when rendered:
+  - **Three brightness bands with a light grey in the middle.** With the default scrim a
+    bright sleeve lands near 0.53, which the middle band answered with `#B3B3B3` — 0.17
+    apart, and on screen that is no ring at all. Rendered against the real receiver's
+    artwork before and after; the picture is what settled it.
+  - **Section averages over the ring's four sides.** They *hide* a top-to-bottom split,
+    because the left and right sides each contain both halves and average to the middle.
+    The band's cell distribution keeps the split visible, which is why the sampling is
+    per cell with a 10 % tolerance rather than four means.
+
+  A consequence worth knowing before it looks like a bug: **at the default scrim a
+  black-and-white cover gets a white ring, not grey.** 0.45 darkening pulls the bright
+  half to ~0.54, so white stands 0.46 off it and 0.98 off the dark half — measurably and
+  visibly the better choice. Grey wins once the scrim is turned down.
+- **The decoder is our own on purpose.** `jpeg-js`, the obvious dependency, last shipped
+  in June 2022 and carries CVE-2022-25851 (infinite loop, CVSS 7.5) and CVE-2020-8175.
+  Both are **DoS, not RCE** — pure JavaScript cannot corrupt memory — so the mitigations
+  that matter are caps and a `try/catch`, not a sandbox, and a worker thread would cost
+  more than the decoding. Baseline JPEG and BMP only; progressive, arithmetic or
+  malformed answers `undefined`, which means white, which is always an acceptable colour.
+  Node's test runner strips types without transforming them, so **no constructor
+  parameter properties** — that is why `BitReader` assigns its fields by hand.
 
 ### What the hardware accepts for a composed image
 
@@ -517,6 +604,18 @@ and `docs/security-review-2026-07.md` the full findings; the load-bearing rules:
   ISCP command into one frame.
 - **Regexes over wire data must be linear.** Anchored trailing-run patterns
   backtrack quadratically; `stripTerminators` was a real ReDoS found by fuzzing.
+- **The plugin is the delivery path for foreign image data into a native decoder it
+  does not own.** Cover bytes go to Stream Deck as a `data:image/jpeg` URI and are
+  decoded there by Qt; a receiver on the LAN only has to announce a cover to reach it.
+  `stripJpegMetadata` removes APP0–APP15 on receipt (both the inline and the HTTP path,
+  so the content hashes still match) — the cheapest step of the staged answer in
+  `SECURITY.md`. **COM is kept deliberately**: no structure to misparse, and it is where
+  benign bulk lives — the anonymised capture fixture pads its covers to the recorded
+  lengths with COM segments, and stripping those collapsed two recorded transfers into
+  one 141-byte image.
+- **Decoding cover pixels stays in our own bounded code.** See the note on
+  `image-luma.ts` above for why a dependency was rejected and why a worker thread would
+  not have helped.
 - **`Nodejs.Debug` must be absent in a release manifest** — not `"disabled"`; see
   the note above.
 - **PI text needs an explicit colour, and that goes for every plain element, not
