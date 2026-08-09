@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.1.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.2...v1.1.0) (2026-08-09)
+
+
+### Features
+
+* **sweep:** silence the receiver before walking its inputs ([74e81a4](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/74e81a47466eb4b9605b4cff5f7b9482bf5fa377))
+
+
+### Bug Fixes
+
+* **names:** a playing source is not a listening mode ([535afb3](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/535afb3786a14e28f1011c815dac319a2c40b267))
+* **names:** name the input a refused readout belonged to ([82adae6](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/82adae661beaeabf676a9cff21d8a1fe9e2bccc9))
+* **names:** stop learning a track title as the listening mode ([095e5be](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/095e5be1c5761a0900752c570e43a966a02f643d))
+* **names:** the display does not belong to the input that is selected ([dc21bc8](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/dc21bc83c4af2265bee326b3f9ce2b918cb4af9b))
+* **protocol:** decode device text as UTF-8 instead of masking the high bit ([b139775](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/b13977515910401aebbcbf9dabdbb871c03ccba7))
+* **registry:** move hand-written spec-label logic out of the generated file ([fbaf3fe](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/fbaf3fe14037d925da9c5295ff921ccadb453253))
+* **sweep:** ask what the transport is doing when nothing was broadcast ([c9e50f4](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/c9e50f4010556d0dc6fcae9a8161a32ebb7ee6ed))
+
+
+### Refactoring
+
+* **names:** put the exact label comparisons where the spec labels live ([dde327b](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/dde327b293db6821b7380b9fa6668bc8b0b84403))
+
+
+### Documentation
+
+* correct the bundler-escape note — esbuild is not the only option ([bf21fb5](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/bf21fb51dc12717ba47785bef3cf10735df61d10))
+
+
+### Build System
+
+* **deps:** stop proposing TypeScript majors, and say when to stop ignoring them ([b000f49](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/b000f496816e1f31189a517eb12635c10f18080b))
+* **deps:** take the two dev-dependency patches osv-scanner flags ([c449ea8](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/c449ea80ce693ed9d4d77dcd04704a415619581d))
+* **hooks:** refuse to commit sources containing raw control bytes ([9f8738c](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/9f8738c8052975191c6fcd3cc5f6731e7dabf080))
+
 ## [1.0.2](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.1...v1.0.2) (2026-07-26)
 
 
