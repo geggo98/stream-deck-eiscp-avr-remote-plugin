@@ -200,13 +200,28 @@
 				const o = document.createElement("option");
 				o.value = item.code;
 				o.textContent = item.spec + " (" + item.code + ")";
+				// Kept for the row the Add button builds from this entry alone.
+				o.dataset.spec = item.spec;
 				addSelect.appendChild(o);
 			}
 			addItem.style.display = (list.addable || []).length ? "" : "none";
 		}
 
+		// Adding is a local act, deliberately: the plugin hears about the code only if a
+		// name is actually typed for it (that write is what makes the row come back next
+		// time). Persisting the code on the click instead would mean a row picked by
+		// mistake could never be got rid of — nothing removes a code the receiver is
+		// entitled to report.
 		addBtn.addEventListener("click", () => {
-			if (addSelect.value) send({ event: "addOptionCode", code: addSelect.value });
+			const code = addSelect.value;
+			if (!code || byCode.has(code)) return;
+			const option = addSelect.querySelector('option[value="' + code + '"]');
+			const built = buildRow({ code, spec: option ? option.dataset.spec || "" : "", use: false, seeded: false });
+			byCode.set(code, built);
+			rowsEl.appendChild(built.el);
+			if (option) option.remove();
+			addItem.style.display = addSelect.options.length ? "" : "none";
+			built.field.focus();
 		});
 
 		try {

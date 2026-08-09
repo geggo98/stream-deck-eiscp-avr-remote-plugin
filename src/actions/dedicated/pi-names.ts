@@ -24,7 +24,7 @@ import {
 	resolveDeviceIp,
 	type EiscpActionSettings,
 } from "../eiscp-base.ts";
-import { noteOptionCode, optionNameState, setOverride, type TrackedCommand } from "./name-store.ts";
+import { optionNameState, setOverride, type TrackedCommand } from "./name-store.ts";
 import { buildOptionNames } from "./option-names.ts";
 
 const logger = streamDeck.logger.createScope("PiNames");
@@ -33,7 +33,6 @@ const logger = streamDeck.logger.createScope("PiNames");
 export const OPTION_NAMES_EVENT = "optionNames";
 const GET_EVENT = "getOptionNames";
 const SET_EVENT = "setOptionName";
-const ADD_EVENT = "addOptionCode";
 
 /** What the panel calls the thing it is editing. */
 const LABELS: Record<TrackedCommand, string> = { SLI: "input", LMD: "listening mode" };
@@ -49,7 +48,7 @@ export function handleOptionNamesMessage<T extends EiscpActionSettings>(
 	const payload = ev.payload as { event?: string; code?: unknown; name?: unknown; use?: unknown } | null;
 	if (!payload || typeof payload !== "object") return false;
 	const event = payload.event;
-	if (event !== GET_EVENT && event !== SET_EVENT && event !== ADD_EVENT) return false;
+	if (event !== GET_EVENT && event !== SET_EVENT) return false;
 
 	const send = (m: JsonValue): void =>
 		fireAndLog(streamDeck.ui.sendToPropertyInspector(m), logger, "sendToPropertyInspector");
@@ -79,12 +78,6 @@ export function handleOptionNamesMessage<T extends EiscpActionSettings>(
 		});
 		return true;
 	}
-	if (event === ADD_EVENT && code) {
-		// A code the user picked from the spec dropdown: remember it so its row
-		// survives the panel closing, even though the receiver never reported it.
-		noteOptionCode(host, command, code);
-	}
-
 	const state = optionNameState(host, command);
 	const { rows, addable } = buildOptionNames(state, command);
 	send({ event: OPTION_NAMES_EVENT, command, label: LABELS[command], host, rows, addable });

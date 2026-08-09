@@ -710,11 +710,6 @@ export function optionNameState(
 	};
 }
 
-/** Record a code the user added by hand, so its row survives the panel being closed. */
-export function noteOptionCode(host: string, command: TrackedCommand, code: string): void {
-	noteSeen(hostState(host), command, code);
-}
-
 /**
  * Names changed for this host.
  *
