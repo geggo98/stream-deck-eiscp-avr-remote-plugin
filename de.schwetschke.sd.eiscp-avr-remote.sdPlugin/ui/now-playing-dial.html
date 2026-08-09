@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>Now Playing Dial Settings</title>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*" />
+    <script src="vendor/sdpi-components.js"></script>
+    <script src="commands.js"></script>
+    <script src="eiscp-pi.js"></script>
+    <link rel="stylesheet" href="eiscp-pi.css" />
+</head>
+
+<body>
+    <div id="deviceIp"></div>
+
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <sdpi-item label="Rotate Command">
+        <sdpi-select setting="command" placeholder="Volume (MVL)"></sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Up Parameter">
+        <sdpi-select setting="upParam" placeholder="Up (UP)">
+            <option value="UP">Up (UP)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Up Param" id="customUpParamItem" style="display: none;">
+        <sdpi-textfield setting="customUpParam" placeholder="e.g. 01, FF"></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="Down Parameter">
+        <sdpi-select setting="downParam" placeholder="Down (DOWN)">
+            <option value="DOWN">Down (DOWN)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Down Param" id="customDownParamItem" style="display: none;">
+        <sdpi-textfield setting="customDownParam" placeholder="e.g. 01, FF"></sdpi-textfield>
+    </sdpi-item>
+
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <sdpi-item label="Press Command">
+        <sdpi-select setting="pressCommand" placeholder="Mute (AMT)"></sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Press Parameter">
+        <sdpi-select setting="pressParam" placeholder="Toggle (TG)" default="TG">
+            <option value="TG">Toggle (TG)</option>
+            <option value="01">On (01)</option>
+            <option value="00">Off (00)</option>
+            <option value="custom">Custom...</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="Custom Press Param" id="customPressParamItem" style="display: none;">
+        <sdpi-textfield setting="customPressParam" placeholder="e.g. 02, FF"></sdpi-textfield>
+    </sdpi-item>
+
+    <p class="pi-hint">
+        Left as they are, the dial changes the volume and mutes on a press.
+    </p>
+
+    <div class="sdpi-divider" style="margin: 16px 0;"></div>
+
+    <sdpi-item label="Darken">
+        <sdpi-range setting="scrimOpacity" min="0" max="0.8" step="0.05" default="0.45" showlabels></sdpi-range>
+    </sdpi-item>
+    <p class="pi-hint">
+        The cover fills the whole segment and the title, artist and time are drawn over
+        it, so a bright sleeve needs darkening to stay readable.
+    </p>
+
+    <sdpi-item label="On use">
+        <sdpi-checkbox setting="showActionFeedback" label="Show what a turn or a press did"
+            default="true"></sdpi-checkbox>
+    </sdpi-item>
+    <sdpi-item label="Show for" id="actionSecondsItem">
+        <sdpi-range setting="seconds" min="1" max="10" step="1" default="2" showlabels></sdpi-range>
+    </sdpi-item>
+    <sdpi-item label="Behind it" id="actionOverCoverItem">
+        <sdpi-checkbox setting="actionOverCover" label="Keep the cover in the background"
+            default="true"></sdpi-checkbox>
+    </sdpi-item>
+    <p class="pi-hint">
+        Swaps the track display for the volume bar or the selected input for a moment,
+        then goes back. Only your own use of this dial triggers it — a change made on the
+        remote control leaves the track showing.
+    </p>
+
+    <script src="init/now-playing-dial.js"></script>
+</body>
+
+</html>

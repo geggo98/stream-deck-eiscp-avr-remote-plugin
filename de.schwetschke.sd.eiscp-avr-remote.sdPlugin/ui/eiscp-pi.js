@@ -81,8 +81,45 @@
 		return update;
 	}
 
-	/** Inject the shared Device IP selector + custom-IP field into a container. */
-	function renderDeviceIp(containerId) {
+	/**
+	 * Show `targets` only while `toggle` is on, and keep saying so as settings arrive.
+	 *
+	 * An inert slider under a switched-off checkbox invites the reading that it does
+	 * something on its own, so the dependent controls are hidden rather than disabled.
+	 */
+	function revealWhen(toggle, targets) {
+		if (!toggle || !targets || targets.length === 0) return;
+		const sync = () => {
+			// The value arrives late (settings are fetched after the upgrade), so read the
+			// property rather than the attribute and re-check on every change. Until it
+			// does arrive the declared default is the better guess than "off": a checkbox
+			// that defaults to on would otherwise hide its own dependants on every open,
+			// for as long as the poll below takes to notice.
+			const on =
+				toggle.value === undefined || toggle.value === null
+					? toggle.getAttribute("default") === "true"
+					: toggle.value === true || toggle.value === "true";
+			for (const el of targets) el.style.display = on ? "" : "none";
+		};
+		toggle.addEventListener("valuechange", sync);
+		// Settings land asynchronously; poll briefly rather than guess a delay.
+		let tries = 0;
+		const settle = setInterval(() => {
+			sync();
+			if (++tries > 20) clearInterval(settle);
+		}, 100);
+		sync();
+	}
+
+	/**
+	 * Inject the shared Device IP selector + custom-IP field into a container.
+	 *
+	 * `options.trackChange: false` drops the short track-change display from the shared
+	 * block. For the Now Playing dial that setting is not merely redundant — it *is*
+	 * membership in the cooperating panel group (see `joinStrip`), so a dial that already
+	 * shows the track permanently must not be able to join one.
+	 */
+	function renderDeviceIp(containerId, options) {
 		const c = document.getElementById(containerId);
 		if (!c) return;
 		// sdpi-select renders only the options present at first paint and ignores
@@ -136,20 +173,20 @@
 			// keeps a snapshot of the whole settings object taken when the panel opened
 			// and writes all of it back; that is how a PI left open during name
 			// discovery once reverted the learned names.
-			'<sdpi-item label="Now playing">' +
+			'<sdpi-item label="Now playing" class="js-track-change">' +
 			'  <sdpi-checkbox setting="showOnTrackChange"' +
 			'    label="Show briefly when the track changes"></sdpi-checkbox>' +
 			"</sdpi-item>" +
-			'<sdpi-item label="Show for" id="trackChangeSecondsItem" style="display:none;">' +
+			'<sdpi-item label="Show for" id="trackChangeSecondsItem" class="js-track-change" style="display:none;">' +
 			'  <sdpi-range setting="trackChangeSeconds" min="1" max="30" step="1"' +
 			'    default="5" showlabels></sdpi-range>' +
 			"</sdpi-item>" +
-			'<div class="pi-hint">' +
+			'<div class="pi-hint js-track-change">' +
 			"  Replaces this element's own face with the title, artist and cover art for a" +
 			"  few seconds, then puts it back. Only on a track change — not while the" +
 			"  time counts up." +
 			"</div>" +
-			'<div class="pi-hint">' +
+			'<div class="pi-hint js-track-change">' +
 			"  Dials that sit next to each other and watch the same receiver share one" +
 			"  display: one shows the cover, the others the title and artist, and a title" +
 			"  too long for one of them carries on across the next. They come back together," +
@@ -168,6 +205,13 @@
 			"  artwork is left alone \u2014 that setting is shared with every other app on" +
 			"  your network." +
 			"</div>";
+
+		// Applied here rather than left out of the markup above, so that assignment stays
+		// a single concatenated expression — `tests/pi-shared-block.test.ts` evaluates it
+		// whole, and it is the only check this panel's structure gets.
+		if (options && options.trackChange === false) {
+			for (const el of extras.querySelectorAll(".js-track-change")) el.style.display = "none";
+		}
 
 		// The manual field must be reachable *without* the plugin: it used to appear
 		// only when the dropdown's "Custom IP…" entry was selected, and that entry
@@ -219,25 +263,12 @@
 			}
 		}
 
-		// Only offer the duration once the preview is switched on: an inert slider
-		// invites the reading that it does something on its own.
-		const trackToggle = extras.querySelector('[setting="showOnTrackChange"]');
-		const secondsItem = extras.querySelector("#trackChangeSecondsItem");
-		if (trackToggle && secondsItem) {
-			const sync = () => {
-				// The value arrives late (settings are fetched after the upgrade), so read
-				// the property rather than the attribute and re-check on every change.
-				const on = trackToggle.value === true || trackToggle.value === "true";
-				secondsItem.style.display = on ? "" : "none";
-			};
-			trackToggle.addEventListener("valuechange", sync);
-			// Settings land asynchronously; poll briefly rather than guess a delay.
-			let tries = 0;
-			const settle = setInterval(() => {
-				sync();
-				if (++tries > 20) clearInterval(settle);
-			}, 100);
-			sync();
+		// Only offer the duration once the preview is switched on. Skipped when the block
+		// is hidden altogether — `revealWhen` would otherwise show the slider again.
+		if (!options || options.trackChange !== false) {
+			revealWhen(extras.querySelector('[setting="showOnTrackChange"]'), [
+				extras.querySelector("#trackChangeSecondsItem"),
+			].filter(Boolean));
 		}
 
 		// Same round trip as the wake switch above, for the same reason: a `global`-bound
@@ -535,6 +566,7 @@
 		buildCommandSelect,
 		buildParamSelect,
 		renderDiscover,
+		revealWhen,
 		// The name editor's list is per receiver, so it has to follow the same
 		// selection the Auto-Discover button does.
 		onEffectiveIpChanged,

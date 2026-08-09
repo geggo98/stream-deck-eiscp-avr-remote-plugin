@@ -179,7 +179,7 @@ only accepts known catalog ids, so typos fail to compile).
     standard-decorator transform at all: its default output is raw `@action(…) class`
     syntax that Node cannot parse, emitted with exit code 0 and no warning, and its
     only knob (`decorator.legacy`) gives one-argument calls with no context object.
-    Every swc variant does the same. That would break the 25 `@action` classes at
+    Every swc variant does the same. That would break the 27 `@action` classes at
     runtime, and **no test would notice** — nothing here ever looks at the bundle.
   - Leaving Rollup costs more than the config: it tree-shakes `zod`'s locale barrel
     (`export * as locales`, 114 KB) and `to-json-schema`, which esbuild-style DCE
@@ -188,7 +188,7 @@ only accepts known catalog ids, so typos fail to compile).
 
   `tests/bundle-artifact.test.ts` guards the part that no other test could see: the
   built bundle parses, carries the standard decorator context, and gets far enough to
-  register all 25 actions. Note what it had to work around — `registerAction` throws
+  register every action. Note what it had to work around — `registerAction` throws
   for a UUID missing from the manifest, but the plugin's `uncaughtException` net
   swallows that and **still exits 0**, so the exit code is not a signal; the log line
   `passive name discovery registered` is, because `plugin.ts` only reaches it after
@@ -401,6 +401,91 @@ a change of `host`**: two receivers on one deck have no shared "what is playing"
   `tests/layout-json.test.ts` builds every role and checks what it actually switches on
   — plus that every key the code writes exists, because Stream Deck ignores an unknown
   key in silence and the panel just would not appear.
+
+### The Now Playing dial — a permanent display on the same layout
+
+`np-panel.json` carries **three** faces now, still switched only with `enabled`: the
+dial's own (`icon`/`label`/`value`/`indicator`, z 10), the cooperating panel
+(`cover`/`line1`/`line2`, z 20) and the permanent one, which is the panel plus the
+`time` and `progress` items that had been reserved for it. `buildNowPlayingFace`
+(`strip-panel.ts`) builds it; `DialActionBase.standingFace` is the hook that puts it on
+the strip **ahead of** any track-change display, so a dial that shows the track
+permanently cannot interrupt itself.
+
+- **A layout bar reads 0…100 unless it declares a `range`**, and this one does not. The
+  face speaks in fractions because that is what `overlayProgress` means, so `panelItems`
+  converts. Getting it wrong shows a bar frozen at 1 %, which looks like a stalled
+  transfer rather than a units bug.
+- **`fit: "cover"`, the opposite of the cooperating panels** — deliberately. There the
+  picture *is* the content and cropping it in half is the failure; here it is a backdrop
+  behind four lines of text, and `contain` would letterbox a backdrop.
+- **The manifest declares `$B1` and the switch happens at runtime.** A custom layout
+  named in a manifest `Encoder.layout` is untried in this plugin and its failure mode is
+  silence — feedback written into items that do not exist. `setFeedbackLayout` at bind is
+  the path that has been verified on hardware, so `wantsPanelLayout()` returns `true` and
+  `$B1` stays the honest restore target.
+- **The dial path had no image de-duplication, because nothing painted at 1 Hz before.**
+  `NTM` ticks once a second and a composed cover is ~173 KB; `dedupeCover` drops only the
+  `value` and still writes `enabled`/`opacity`, which is the one place a layout item
+  keeping its last value is the mechanism rather than the hazard.
+- **The action readout is the only face that lights both halves at once**: cover from the
+  panel half, the dial's own items over it (`PanelFace.withOwnFace`, which is what stops
+  `sendFeedback` taking its usual early return). It darkens the cover to at least
+  `ACTION_SCRIM_FLOOR` — the user's scrim is chosen for a 24 px bold title, and the
+  readout puts an 18 px value there instead.
+- **It never joins a cooperating group.** `showOnTrackChange` *is* that membership
+  (`joinStrip`), so the setting is hidden from this dial's Property Inspector rather than
+  merely ignored — `renderDeviceIp(id, { trackChange: false })`.
+- **Only the user's own turn or press starts the readout.** A value arriving from the
+  receiver is not evidence of a user action — it may be the infrared remote — and having
+  someone else's volume change interrupt the track display was explicitly not wanted. An
+  incoming value only *extends* a window that is already open.
+
+**The pre-fill cooldown must not outlive the state it was protecting.** `prime()` refuses
+to ask again within `PRIME_COOLDOWN_MS` (60 s) so that eight elements binding at once cost
+the receiver one round of questions. But `bind()` calls `clearSubs` **before** it
+re-subscribes, so a host watched by a single element drops to zero listeners for an
+instant on every re-bind — and *any* Property Inspector change is a re-bind.
+`dropIfUnwatched` then deleted the whole state and the cover, and the re-subscribing
+element was refused its pre-fill: a permanent now-playing display went blank until the
+next track change, minutes away. `forgetHost` now clears `primedAt` with the state, on
+both the unwatched and the eviction path. This bit the shipped **now-playing key** too —
+same pattern, less visible, because a key that loses its cover still looks like a key.
+`tests/now-playing.test.ts` pins both halves: primed again after a drop, still refused
+while somebody is watching.
+
+### A source that loses its input says nothing on the way out
+
+Move the input away from a streaming source and the metadata frames simply **stop**.
+There is no "stopped" message, so there is nothing to react to — and anything that treats
+the last thing it was told as still true goes on naming a song that ended when the user
+switched to the Blu-ray player. On a short display that is a wrong flash; on the permanent
+one it is forever.
+
+**This is not observable on the reference VSX-S520D.** That unit hops back to its network
+input by itself while music is still arriving, so the input never stays away long enough.
+`tests/fixtures/now-playing-capture.json` was recorded while playing and contains no `SLI`
+frame at all. It is therefore modelled in the double rather than captured:
+`startMockReceiver({ playback: { input, title, artist, album, tickMs } })` plays on one
+input and goes silent — with no farewell — the moment `SLI` moves elsewhere.
+`tests/now-playing-input-change.test.ts` drives the real tracker over a real socket
+against it, and its first test asserts the *premise* (nothing is announced), so the rest
+cannot end up proving something easier than the real problem.
+
+The input change is the only signal there is, so `applyInput` uses it, with two guards
+that each cost something to get wrong:
+
+- **Only a change counts.** `SLI` is broadcast on connect and on power-on, and the offline
+  backoff reconnects every few seconds — treating every frame as a change blanks a display
+  that is perfectly correct.
+- **`SLI` is in `PRIME_COMMANDS`** although it is not metadata. Without a first value the
+  first change is indistinguishable from the first sighting and is missed — a gap the test
+  found, not a precaution.
+
+Nothing is queried after a clear: a receiver whose source is still playing announces again
+by itself when the input returns (asserted), and priming there would put seven queries on
+the wire for every step of an Auto-Discover sweep, which cycles every input on a receiver
+that allows one connection.
 
 ### Generated files contain only generated content
 

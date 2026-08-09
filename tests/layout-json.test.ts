@@ -18,10 +18,27 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import type { ArtImage } from "../src/adapter/eiscp/jacket-art.ts";
 import type { NowPlaying } from "../src/adapter/eiscp/now-playing.ts";
 import { encoderLayoutFor } from "../src/actions/dedicated/catalog.ts";
 import type { StripRole } from "../src/actions/strip-group.ts";
-import { buildPanelFace, NORMAL_ITEM_KEYS, PANEL_ITEM_KEYS, PANEL_LAYOUT, panelItems } from "../src/actions/strip-panel.ts";
+import {
+	buildNowPlayingFace,
+	buildPanelFace,
+	NORMAL_ITEM_KEYS,
+	PANEL_ITEM_KEYS,
+	PANEL_LAYOUT,
+	panelItems,
+	type PanelFace,
+} from "../src/actions/strip-panel.ts";
+
+/** A tiny but structurally valid JPEG; the composer only base64s it. */
+const ART: ArtImage = {
+	type: "jpeg",
+	bytes: Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(64, 0x41), Buffer.from([0xff, 0xd9])]),
+	frames: 12,
+	hash: "0123456789abcdef",
+};
 
 const PLUGIN_DIR = fileURLToPath(new URL("../de.schwetschke.sd.eiscp-avr-remote.sdPlugin/", import.meta.url));
 
@@ -169,21 +186,52 @@ describe("what a face actually switches on", () => {
 
 	const byKey = new Map(layout.items.map((i) => [i.key, i]));
 
+	/** Every layout item a face switches on, resolved to its geometry. */
+	function enabledItems(face: PanelFace): Item[] {
+		return Object.entries(panelItems(face))
+			.filter(([, item]) => item.enabled)
+			.map(([key]) => byKey.get(key))
+			.filter((item): item is Item => item !== undefined);
+	}
+
+	function assertNoCollisions(on: Item[], what: string): void {
+		assert.ok(on.length > 0, `a face that enables nothing would be a blank strip (${what})`);
+		for (let i = 0; i < on.length; i++) {
+			for (let j = i + 1; j < on.length; j++) {
+				// The cover is the background and is meant to sit under everything.
+				if (on[i]!.key === "cover" || on[j]!.key === "cover") continue;
+				assert.ok(!overlaps(on[i]!, on[j]!), `${on[i]!.key} sits on ${on[j]!.key} in ${what}`);
+			}
+		}
+	}
+
 	for (const role of ["all", "cover", "text", "title", "artist", "album"] as StripRole[]) {
 		it(`draws the ${role} panel without items on top of each other`, () => {
-			const face = buildPanelFace(PLAYING, { role, position: 0, groupSize: 4 });
-			const on = Object.entries(panelItems(face))
-				.filter(([, item]) => item.enabled)
-				.map(([key]) => byKey.get(key))
-				.filter((item): item is Item => item !== undefined);
-			assert.ok(on.length > 0, "a face that enables nothing would be a blank strip");
-			for (let i = 0; i < on.length; i++) {
-				for (let j = i + 1; j < on.length; j++) {
-					// The cover is the background and is meant to sit under everything.
-					if (on[i]!.key === "cover" || on[j]!.key === "cover") continue;
-					assert.ok(!overlaps(on[i]!, on[j]!), `${on[i]!.key} sits on ${on[j]!.key} in the ${role} panel`);
-				}
-			}
+			assertNoCollisions(enabledItems(buildPanelFace(PLAYING, { role, position: 0, groupSize: 4 })), `the ${role} panel`);
 		});
 	}
+
+	it("draws the permanent display without items on top of each other", () => {
+		// The combination that never existed before: title, artist, clock and bar all lit
+		// at once. Everything up to here only ever enabled two of the four.
+		const face = buildNowPlayingFace(PLAYING);
+		assert.ok(face, "a playing receiver has something to show");
+		const on = enabledItems(face);
+		for (const key of ["line1", "line2", "time", "progress"]) {
+			assert.ok(on.some((i) => i.key === key), `${key} must be part of the permanent display`);
+		}
+		assertNoCollisions(on, "the permanent display");
+	});
+
+	it("draws the action readout over the cover without items on top of each other", () => {
+		// The one face where both halves of the layout are lit together: the cover from
+		// the panel half, the dial's own icon, label, value and bar from the other. They
+		// are on different z-orders, so the schema's own rule says nothing about them.
+		const face = buildNowPlayingFace({ ...PLAYING, art: ART }, { actionReadout: true });
+		assert.ok(face?.withOwnFace, "the readout keeps the cover and hands the rest over");
+		const on = [...enabledItems(face), ...NORMAL_ITEM_KEYS.map((k) => byKey.get(k))].filter(
+			(item): item is Item => item !== undefined,
+		);
+		assertNoCollisions(on, "the action readout");
+	});
 });

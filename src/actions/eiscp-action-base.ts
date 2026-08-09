@@ -35,7 +35,7 @@ import { BindCoordinator, REBIND_DEBOUNCE_MS } from "./bind-coordinator.ts";
 import { onNamesChanged } from "./dedicated/name-store.ts";
 import { STRIP_HEIGHT, STRIP_SEGMENT_WIDTH } from "./cover-image.ts";
 import { getStripRegistry } from "./strip-group.ts";
-import { buildPanelFace, PANEL_LAYOUT, PANEL_TITLE_KEY, panelItems, type PanelFace } from "./strip-panel.ts";
+import { buildPanelFace, dedupeCover, PANEL_LAYOUT, PANEL_TITLE_KEY, panelItems, type PanelFace } from "./strip-panel.ts";
 import {
 	buildOverlayFace,
 	overlayIsActive,
@@ -819,6 +819,16 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 	private readonly deviceIds = new Map<string, string>();
 	/** The layout each dial is currently on, so an unchanged one is not re-sent. */
 	private readonly layouts = new Map<string, string>();
+	/**
+	 * The cover each dial was last sent, so an unchanged one is not sent again.
+	 *
+	 * A track-change display repaints once per track and never noticed the cost. A
+	 * permanent one repaints once per second — `NTM` ticks — and a composed cover is
+	 * ~173 KB, so re-sending it would put ten megabytes a minute through the socket for
+	 * a picture that did not move. The keys have had this since the beginning
+	 * (`writeKeyImage`); the dial path never needed it until something painted at 1 Hz.
+	 */
+	private readonly lastCover = new Map<string, string>();
 
 	protected abstract getDialConfig(settings: TSettings): DialConfig | undefined;
 
@@ -848,6 +858,45 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		settings: TSettings,
 		pressOn: boolean,
 	): FeedbackPayload;
+
+	/**
+	 * A face this dial wears all the time, ahead of any track-change display.
+	 *
+	 * Untouched by every dial but the Now Playing one, which is the point: the short
+	 * display is an interruption of the dial's own face, and a permanent one is the
+	 * reverse. Expressing it as the same `PanelFace` means both go through the one
+	 * sender below rather than growing a second writer to the same layout.
+	 */
+	protected standingFace(_action: DialAction<TSettings>): PanelFace | undefined {
+		return undefined;
+	}
+
+	/**
+	 * Whether this dial belongs on the panel layout at all.
+	 *
+	 * Defaults to the cooperating display's own opt-in. A dial that is *always* on it
+	 * says so here instead, and then does not have to pretend to want a track-change
+	 * display it would never fall back from.
+	 */
+	protected wantsPanelLayout(settings: TSettings): boolean {
+		return trackOverlayEnabled(settings);
+	}
+
+	/**
+	 * Anything else this dial needs subscribed, once the bind has succeeded.
+	 *
+	 * `bind` is private and its `repaint` closure is local, so a subclass that has to
+	 * redraw on something other than its own command — a Now Playing dial redraws on the
+	 * receiver's once-a-second time tick — has no way to reach either. Handing the
+	 * closure over keeps the render funnel single: everything still repaints the same way.
+	 */
+	protected bindExtras(
+		_action: DialAction<TSettings>,
+		_cfg: DialConfig,
+		_settings: TSettings,
+		_host: string,
+		_repaint: () => void,
+	): void {}
 
 	/**
 	 * This dial's share of the group display, or `undefined` for its own face.
@@ -888,7 +937,9 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		// layout switch failed (it is logged), the dial keeps its own face for the few
 		// seconds instead of writing into keys that are not there and going blank.
 		const onPanelLayout = this.layouts.get(action.id) === PANEL_LAYOUT;
-		const panel = onPanelLayout ? this.panelFor(action) : undefined;
+		// A standing face comes first: it is what this dial *is*, and a track-change
+		// display would be interrupting itself.
+		const panel = onPanelLayout ? (this.standingFace(action) ?? this.panelFor(action)) : undefined;
 		const items: FeedbackPayload = {};
 		if (onPanelLayout) {
 			for (const [key, { kind: _kind, ...item }] of Object.entries(panelItems(panel ?? { lines: [], passive: true }))) {
@@ -898,10 +949,13 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 				// exactly the failure this is meant to prevent.
 				items[key] = { ...item, opacity: item.enabled ? opacity : 0 };
 			}
+			const remembered = dedupeCover(items as Record<string, unknown>, this.lastCover.get(action.id));
+			if (remembered !== undefined) this.lastCover.set(action.id, remembered);
 		}
-		if (panel) {
+		if (panel && !panel.withOwnFace) {
 			// The panel display owns the whole segment; the dial's own face is switched
-			// off by `panelItems`, so nothing from `payload` applies.
+			// off by `panelItems`, so nothing from `payload` applies. `withOwnFace` is the
+			// one face that shares: it keeps the cover and lets the loop below draw over it.
 			fireAndLog(action.setFeedback(items), this.logger, "setFeedback");
 			return;
 		}
@@ -962,6 +1016,10 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 			return;
 		}
 		this.layouts.set(action.id, wanted);
+		// A new layout starts with empty items, so the cover this dial "already has" is
+		// gone with the old one — forgetting it is what stops the deduplication from
+		// suppressing the first picture on the new layout.
+		this.lastCover.delete(action.id);
 		try {
 			await action.setFeedbackLayout(wanted);
 			// Worth an INFO line although it is the happy path: it happens once per bind,
@@ -1077,7 +1135,7 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		// A dial with no receiver goes back to its own layout even with the display
 		// switched on — it has nothing to take part with, and leaving it on the panel
 		// layout would strand whatever was last drawn there.
-		await this.applyLayout(action, trackOverlayEnabled(settings) && host !== undefined);
+		await this.applyLayout(action, this.wantsPanelLayout(settings) && host !== undefined);
 		if (!fresh()) return;
 		if (!host) {
 			this.logger.warn("bind: no device IP configured");
@@ -1148,6 +1206,8 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 				.catch((err) => this.logger.warn(`press query ${cfg.pressCommand} on ${host} failed: ${err}`));
 		}
 
+		this.bindExtras(action, cfg, settings, host, repaint);
+
 		try {
 			const value = await mgr.queryCommand(host, cfg.command);
 			if (!fresh()) return; // a newer bind owns the dial now
@@ -1169,8 +1229,10 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		this.deviceIds.delete(ev.action.id);
 		// Forgotten rather than kept: Stream Deck may put the dial back on its manifest
 		// layout when it reappears, and believing a layout that is no longer applied
-		// would leave the panel items writing into nothing.
+		// would leave the panel items writing into nothing. The remembered cover goes
+		// with it, for the same reason.
 		this.layouts.delete(ev.action.id);
+		this.lastCover.delete(ev.action.id);
 	}
 
 	override async onDialRotate(ev: DialRotateEvent<TSettings>): Promise<void> {

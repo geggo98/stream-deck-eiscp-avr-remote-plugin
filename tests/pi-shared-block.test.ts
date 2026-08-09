@@ -108,11 +108,31 @@ describe("the shared Property Inspector markup", () => {
 
 	it("gives every hint a class, never bare text", () => {
 		// Plain text in a Property Inspector inherits black, which is invisible on the
-		// dark panel — sdpi-components themes only its own components.
+		// dark panel — sdpi-components themes only its own components. Matched as a class
+		// *token*, not as the whole attribute: a hint may carry a second class for other
+		// reasons (see the hideable block below) and still be themed.
 		for (const html of [deviceBlock, sharedBlock]) {
 			for (const div of html.matchAll(/<div\b[^>]*>/g)) {
-				assert.match(div[0]!, /class="(pi-hint|pi-warn|pi-check|sdpi-item)"|id="/, div[0]);
+				assert.match(div[0]!, /class="[^"]*\b(pi-hint|pi-warn|pi-check|sdpi-item)\b[^"]*"|id="/, div[0]);
 			}
+		}
+	});
+
+	it("marks the whole track-change block so it can be hidden as one", () => {
+		// The Now Playing dial hides it: showing the track permanently makes the preview
+		// redundant, and `showOnTrackChange` doubles as membership in the cooperating
+		// panel group, which that dial must not join. Hiding the checkbox while leaving
+		// its explanation behind would be worse than not hiding it at all — so the count
+		// is asserted, not merely the presence.
+		const marked = [...sharedBlock.matchAll(/class="[^"]*\bjs-track-change\b/g)];
+		assert.equal(marked.length, 4, "checkbox, duration, and both hints");
+		// Everything between the checkbox and the cover-art item belongs to it.
+		const from = sharedBlock.indexOf('setting="showOnTrackChange"');
+		const to = sharedBlock.indexOf('<sdpi-item label="Cover art">');
+		assert.ok(from > 0 && to > from);
+		const between = sharedBlock.slice(from, to);
+		for (const item of between.matchAll(/<(sdpi-item|div)\b[^>]*>/g)) {
+			assert.match(item[0]!, /js-track-change/, `left behind when the block is hidden: ${item[0]}`);
 		}
 	});
 });

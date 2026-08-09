@@ -111,6 +111,29 @@
       }
     },
     {
+      "Name": "Now Playing Dial",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.now-playing-dial",
+      "Icon": "imgs/actions/now-playing-dial/icon",
+      "Tooltip": "Encoder showing the cover, title, artist and progress of what is playing. Rotate and press are freely configurable.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/now-playing-dial.html",
+      "States": [
+        {
+          "Image": "imgs/actions/now-playing-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Press action",
+          "Rotate": "Adjust"
+        }
+      }
+    },
+    {
       "Name": "Power",
       "UUID": "de.schwetschke.sd.eiscp-avr-remote.power",
       "Icon": "imgs/actions/power/icon",

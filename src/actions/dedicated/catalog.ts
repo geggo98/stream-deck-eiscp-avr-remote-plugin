@@ -251,6 +251,16 @@ export const GENERIC_SPECS = [
 		tooltip: "Encoder with progress bar for numeric eISCP values. Use for volume, center level, etc.",
 		controller: "Encoder", states: 1, encoderLayout: "$B1", propertyInspector: "ui/eiscp-dial-indicator.html", iconName: "gauge",
 	},
+	// Declares `$B1` although it spends its life on `layouts/np-panel.json`: the switch
+	// is made at bind with `setFeedbackLayout`, the path this plugin has actually
+	// verified on hardware. A custom layout named in the manifest is untried here, and
+	// its failure mode is silence — feedback written into items that do not exist.
+	// `$B1` is what it must be restored to, so `$B1` is what it declares.
+	{
+		id: "now-playing-dial", name: "Now Playing Dial",
+		tooltip: "Encoder showing the cover, title, artist and progress of what is playing. Rotate and press are freely configurable.",
+		controller: "Encoder", states: 1, encoderLayout: "$B1", propertyInspector: "ui/now-playing-dial.html", iconName: "audio-lines",
+	},
 ] as const satisfies readonly GenericSpec[];
 
 /** Union of the generic action ids. */

@@ -4,6 +4,7 @@ import { EiscpButtonAction } from "./actions/eiscp-button";
 import { EiscpToggleAction } from "./actions/eiscp-toggle";
 import { EiscpDialAction } from "./actions/eiscp-dial";
 import { EiscpDialIndicatorAction } from "./actions/eiscp-dial-indicator";
+import { NowPlayingDialAction } from "./actions/now-playing-dial";
 import { DEDICATED_ACTIONS } from "./actions/dedicated/index";
 import {
 	coverOverHttpEnabled,
@@ -63,6 +64,7 @@ streamDeck.actions.registerAction(new EiscpButtonAction());
 streamDeck.actions.registerAction(new EiscpToggleAction());
 streamDeck.actions.registerAction(new EiscpDialAction());
 streamDeck.actions.registerAction(new EiscpDialIndicatorAction());
+streamDeck.actions.registerAction(new NowPlayingDialAction());
 
 // Pre-built, ready-to-drop actions (Power, Mute, Volume, Next Input, ...).
 for (const dedicated of DEDICATED_ACTIONS) {
