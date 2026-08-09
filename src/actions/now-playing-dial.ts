@@ -41,7 +41,9 @@ import { getNowPlayingTracker } from "../adapter/eiscp/now-playing.ts";
 import { uuidFor } from "./dedicated/catalog.ts";
 import { DialActionBase, type DialConfig } from "./eiscp-action-base.ts";
 import { formatCommandValue } from "./eiscp-base.ts";
+import type { CropFocus } from "./face-crop.ts";
 import {
+	keepFacesWhole,
 	npDialConfig,
 	readoutEnabled,
 	readoutKeepsCover,
@@ -72,6 +74,8 @@ export class NowPlayingDialAction extends DialActionBase<NowPlayingDialSettings>
 	private readonly readoutTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	/** `bind`'s repaint closure, so a readout that starts or expires can redraw. */
 	private readonly repaints = new Map<string, () => void>();
+	/** The last crop decision written to the log, so a 1 Hz repaint writes nothing. */
+	private readonly loggedFocus = new Map<string, string>();
 
 	constructor() {
 		super("NowPlayingDial");
@@ -137,10 +141,32 @@ export class NowPlayingDialAction extends DialActionBase<NowPlayingDialSettings>
 		const settings = this.settingsById.get(action.id);
 		const readout = this.readoutIsUp(action.id);
 		if (readout && !readoutKeepsCover(settings)) return undefined;
-		return buildNowPlayingFace(getNowPlayingTracker().get(host), {
+		const face = buildNowPlayingFace(getNowPlayingTracker().get(host), {
 			scrimOpacity: scrimFor(settings),
 			...(readout ? { actionReadout: true } : {}),
+			...(keepFacesWhole(settings) ? { keepFacesWhole: true } : {}),
 		});
+		if (face?.focus) this.noteFocus(action.id, host, face.focus);
+		return face;
+	}
+
+	/**
+	 * Record where the crop ended up, once per cover rather than once per repaint.
+	 *
+	 * This dial repaints every second, so anything written per render would bury the very
+	 * line it is meant to explain. The decision only changes with the picture, so keying
+	 * on the decision itself is the same as keying on the track — without having to know
+	 * which track it is.
+	 *
+	 * It earns its keep on somebody else's machine: "the cover sits oddly on my strip" is
+	 * otherwise unanswerable, and this says in one line whether anything was found, whether
+	 * it moved, and whether it had to give something up.
+	 */
+	private noteFocus(actionId: string, host: string, focus: CropFocus): void {
+		const line = `${host}: cover crop ${focus.y.toFixed(2)} (${focus.reason}, ${focus.regions} region(s), ${focus.cut} cut)`;
+		if (this.loggedFocus.get(actionId) === line) return;
+		this.loggedFocus.set(actionId, line);
+		this.logger.info(line);
 	}
 
 	/**
@@ -222,6 +248,7 @@ export class NowPlayingDialAction extends DialActionBase<NowPlayingDialSettings>
 		this.clearReadout(ev.action.id);
 		this.settingsById.delete(ev.action.id);
 		this.repaints.delete(ev.action.id);
+		this.loggedFocus.delete(ev.action.id);
 	}
 
 	/**

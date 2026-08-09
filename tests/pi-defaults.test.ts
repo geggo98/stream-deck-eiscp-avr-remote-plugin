@@ -16,6 +16,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { DEFAULT_SCRIM, MAX_SCRIM, MIN_SCRIM } from "../src/actions/cover-image.ts";
+import { keepFacesWhole, readoutEnabled, readoutKeepsCover } from "../src/actions/np-dial-settings.ts";
 
 const UI_DIR = fileURLToPath(new URL("../de.schwetschke.sd.eiscp-avr-remote.sdPlugin/ui/", import.meta.url));
 
@@ -51,6 +52,22 @@ function rangeControls(): RangeControl[] {
 	return out;
 }
 
+/** Every `<sdpi-checkbox>` in every Property Inspector, with the default it declares. */
+function checkboxControls(): { file: string; setting: string; default: boolean }[] {
+	const out: { file: string; setting: string; default: boolean }[] = [];
+	for (const file of readdirSync(UI_DIR).filter((f) => f.endsWith(".html"))) {
+		const html = readFileSync(`${UI_DIR}${file}`, "utf8");
+		// The tag is written across two lines in these panels, so the match has to span
+		// newlines — a single-line pattern would find nothing and quietly pass.
+		for (const tag of html.matchAll(/<sdpi-checkbox\b[^>]*>/gs)) {
+			const setting = /setting="([^"]*)"/.exec(tag[0])?.[1];
+			if (!setting) continue;
+			out.push({ file, setting, default: /default="true"/.test(tag[0]) });
+		}
+	}
+	return out;
+}
+
 const ranges = rangeControls();
 
 describe("what a Property Inspector slider promises", () => {
@@ -68,6 +85,27 @@ describe("what a Property Inspector slider promises", () => {
 				`${range.file}: ${range.setting} defaults to ${range.default}, which is not on a ${range.step} grid from ${range.min}`,
 			);
 			assert.ok(range.default >= range.min && range.default <= range.max, `${range.file}: ${range.setting}`);
+		}
+	});
+
+	it("ticks the boxes the plugin behaves as though were ticked", () => {
+		// A checkbox resolved with `!== false` is on for a freshly placed action, because
+		// nothing is stored yet. If the panel showed it unticked, the user would see a
+		// feature described as off while it was running — and ticking it to "turn it on"
+		// would change nothing, which reads as a broken control.
+		const resolvers: Record<string, (settings: undefined) => boolean> = {
+			showActionFeedback: readoutEnabled,
+			actionOverCover: readoutKeepsCover,
+			keepFacesWhole,
+		};
+		const boxes = checkboxControls().filter((box) => box.setting in resolvers);
+		assert.equal(boxes.length, Object.keys(resolvers).length, `found ${boxes.map((b) => b.setting).join(", ")}`);
+		for (const box of boxes) {
+			assert.equal(
+				box.default,
+				resolvers[box.setting]!(undefined),
+				`${box.file}: ${box.setting} defaults to ${box.default} in the panel`,
+			);
 		}
 	});
 

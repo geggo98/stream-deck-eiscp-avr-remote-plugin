@@ -47,6 +47,14 @@ export interface NowPlayingDialSettings extends EiscpActionSettings {
 	seconds?: number;
 	/** Keep the cover behind that readout. On by default. */
 	actionOverCover?: boolean;
+	/**
+	 * Move the crop so it does not run through a face. On by default.
+	 *
+	 * A way out, rather than a feature to configure: the detection is a heuristic, and on
+	 * the one sleeve where it guesses wrong there has to be something to switch off
+	 * without waiting for a release.
+	 */
+	keepFacesWhole?: boolean;
 }
 
 /**
@@ -93,4 +101,9 @@ export function readoutEnabled(settings: NowPlayingDialSettings | undefined): bo
 /** Whether the cover stays behind that readout. On unless switched off. */
 export function readoutKeepsCover(settings: NowPlayingDialSettings | undefined): boolean {
 	return settings?.actionOverCover !== false;
+}
+
+/** Whether the crop dodges faces. On unless switched off. */
+export function keepFacesWhole(settings: NowPlayingDialSettings | undefined): boolean {
+	return settings?.keepFacesWhole !== false;
 }
