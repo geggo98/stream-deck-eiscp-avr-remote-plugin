@@ -40,6 +40,10 @@ function fakeReceiver(
 		recordOutcome?: (fldHex: string) => SliRecordOutcome;
 		/** Codes that count as named, overriding what this fake stored. */
 		namedCodes?: string[];
+		/** Starting values for the commands the quieting touches (PWR/MVL/AMT/NST). */
+		others?: Record<string, string>;
+		/** Commands whose query rejects, for the "never mutate what you cannot read" paths. */
+		failQuery?: readonly string[];
 	} = {},
 ): FakeReceiver {
 	let value = start;
@@ -49,9 +53,24 @@ function fakeReceiver(
 	const nameEvents: string[] = [];
 	/** Codes a reading was stored for, so hasLearnedName can answer honestly. */
 	const stored = new Set<string>();
+	/**
+	 * State for the commands the sweep touches that are *not* the one it is walking.
+	 *
+	 * This used to be one `value` shared by every command, which was harmless while the
+	 * sweep only ever sent `SLI`/`LMD` — and stopped being harmless the moment it also
+	 * quietened the receiver: `PWR QSTN` answered with the input code, and `AMT 01`
+	 * overwrote the very value the walk was tracking. A per-command map, with the swept
+	 * command still held in `value` so the ring logic is unchanged.
+	 */
+	const others: Record<string, string> = { PWR: "01", MVL: "0E", AMT: "00", NST: "S--", NTC: "", ...opts.others };
+	const isSwept = (command: string) => command !== "FLD" && !(command in others);
 	const deps: SweepDeps = {
 		send: (_host, command, param) => {
 			sent.push(`${command}:${param}`);
+			if (!isSwept(command)) {
+				others[command] = param;
+				return Promise.resolve();
+			}
 			if (param === "UP") {
 				ups++;
 				if (opts.failUpAt === ups) return Promise.reject(new Error("boom"));
@@ -63,12 +82,14 @@ function fakeReceiver(
 			return Promise.resolve();
 		},
 		query: (_host, command) => {
+			if (opts.failQuery?.includes(command)) return Promise.reject(new Error(`${command} query failed`));
+			if (command in others) return Promise.resolve(others[command]!);
 			if (command !== "FLD") return Promise.resolve(value);
 			const sequence = opts.fldSequence;
 			if (!sequence || sequence.length === 0) return Promise.resolve(opts.fld ?? "00");
 			return Promise.resolve(sequence[Math.min(fldReads++, sequence.length - 1)]!);
 		},
-		getCached: () => value,
+		getCached: (_host, command) => (command in others ? others[command] : value),
 		sleep: () => Promise.resolve(),
 		nameFor: (_host, _command, code) => `name:${code}`,
 		recordSli: (_host, code, fldHex, options) => {
@@ -174,14 +195,98 @@ describe("runSweep", () => {
 			"recordSli:10:4344202020203134:tentative",
 			"sweeping:off",
 		]);
-		assert.equal(rx.sent[rx.sent.length - 1], "SLI:10");
+		// The input goes back first and the unmute is last, deliberately: the resume is
+		// the step most likely to be refused, and a receiver left silent reads as broken
+		// hardware while a source left paused is one button.
+		assert.equal(rx.sent.at(-1), "AMT:00", `unmute last, got ${rx.sent.join(" ")}`);
+		assert.ok(rx.sent.includes("SLI:10"), "and the input was restored before it");
 	});
 
 	it("turns the SLI sweeping flag off even when the sweep fails", async () => {
 		const rx = fakeReceiver("10", ring(["10", "11", "12"]), { failUpAt: 1 });
 		await assert.rejects(runSweep("h", "SLI", undefined, rx.deps), /boom/);
 		assert.deepEqual(rx.nameEvents, ["sweeping:on", "sweeping:off"]);
-		assert.equal(rx.sent[rx.sent.length - 1], "SLI:10");
+		// A failed sweep still gives the receiver back: input restored, then unmuted.
+		assert.ok(rx.sent.includes("SLI:10"));
+		assert.equal(rx.sent.at(-1), "AMT:00");
+	});
+});
+
+// --- quietening the receiver for an input sweep -----------------------------
+
+describe("runSweep: silencing the receiver before it walks the inputs", () => {
+	const inputs = (opts: Parameters<typeof fakeReceiver>[2] = {}) =>
+		fakeReceiver("10", ring(["10", "11"]), { fld: "4344202020203134", ...opts });
+
+	it("pauses and mutes before the first UP, and puts both back afterwards", async () => {
+		const rx = inputs({ others: { NST: "P--" } }); // something is playing
+		await runSweep("h", "SLI", undefined, rx.deps);
+		const order = rx.sent.filter((s) => !s.startsWith("SLI:UP"));
+		assert.deepEqual(order, ["NTC:PAUSE", "AMT:01", "SLI:10", "NTC:PLAY", "AMT:00"], rx.sent.join(" "));
+	});
+
+	it("leaves the listening-mode sweep completely alone", async () => {
+		// It never walks the input away from a playing source, so it has no reason to
+		// touch the transport or the volume — and the user asked for it to stay as it is.
+		const rx = fakeReceiver("80", ring(["80", "82"]), { others: { NST: "P--" } });
+		await runSweep("h", "LMD", undefined, rx.deps);
+		assert.deepEqual(
+			rx.sent.filter((s) => !s.startsWith("LMD:")),
+			[],
+			`the mode sweep sent something else: ${rx.sent.join(" ")}`,
+		);
+	});
+
+	it("does not resume a source that was not playing", async () => {
+		// The pause is harmless on an idle source; starting one is not. `NST` says which.
+		const rx = inputs({ others: { NST: "S--" } });
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.ok(rx.sent.includes("NTC:PAUSE"));
+		assert.ok(!rx.sent.includes("NTC:PLAY"), `it started playback: ${rx.sent.join(" ")}`);
+	});
+
+	it("does not resume when it never learned what the transport was doing", async () => {
+		// No NST frame has ever arrived: no evidence is not evidence of playing.
+		const rx = inputs({ others: { NST: "" } });
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.ok(!rx.sent.includes("NTC:PLAY"));
+	});
+
+	it("does not mute what it could not read back", async () => {
+		// Never change a state you cannot restore — the rule the capture scripts follow.
+		// A sweep at full volume is loud; a receiver left muted for good is a fault report.
+		const rx = inputs({ failQuery: ["AMT"] });
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.ok(!rx.sent.some((s) => s.startsWith("AMT:")), `it muted anyway: ${rx.sent.join(" ")}`);
+	});
+
+	it("leaves an already-muted receiver muted", async () => {
+		const rx = inputs({ others: { AMT: "01" } });
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.ok(!rx.sent.some((s) => s.startsWith("AMT:")), `it touched the mute: ${rx.sent.join(" ")}`);
+	});
+
+	it("wakes a sleeping receiver first, and puts it back to sleep", async () => {
+		// In standby every quieting command is dropped in silence while `SLI` is honoured
+		// *and* powers the unit on — so an unguarded sweep would assert a mute that never
+		// landed and then walk the inputs at full volume.
+		const rx = inputs({ others: { PWR: "00" } });
+		await runSweep("h", "SLI", undefined, rx.deps);
+		const power = rx.sent.filter((s) => s.startsWith("PWR:"));
+		assert.deepEqual(power, ["PWR:01", "PWR:00"], `power handling: ${rx.sent.join(" ")}`);
+		assert.ok(rx.sent.indexOf("PWR:01") < rx.sent.indexOf("AMT:01"), "woken before the mute");
+		assert.ok(rx.sent.lastIndexOf("PWR:00") > rx.sent.indexOf("AMT:00"), "unmuted before going back to sleep");
+	});
+
+	it("sweeps without quietening when the power state cannot be read", async () => {
+		const rx = inputs({ failQuery: ["PWR"] });
+		const { count } = await runSweep("h", "SLI", undefined, rx.deps);
+		assert.equal(count, 2, "the sweep still ran");
+		assert.deepEqual(
+			rx.sent.filter((s) => !s.startsWith("SLI:")),
+			[],
+			`it quietened blindly: ${rx.sent.join(" ")}`,
+		);
 	});
 });
 

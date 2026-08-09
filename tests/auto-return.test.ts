@@ -73,7 +73,22 @@ interface Rig {
  * ConnectionManager, so a test that called it would leak into every other test.
  */
 async function rig(host: string, options: Parameters<typeof startMockReceiver>[0] = {}): Promise<Rig> {
-	const mock = await startMockReceiver({ responses: { PWR: "01", SLI: NET, LMD: MODE_ON_NET }, ...options });
+	const mock = await startMockReceiver({
+		responses: {
+			PWR: "01",
+			SLI: NET,
+			LMD: MODE_ON_NET,
+			// The quieting asks for these three; without them every query would sit out
+			// its full timeout, which turns a 4 s test into a two-minute one.
+			MVL: "0E",
+			AMT: "00",
+			NST: "P--", // playing, so the hop is armed and the resume is exercised
+			// A well-formed input readout for the steps where the hop's scrolling text
+			// is not in play: "NET          14", ending in the volume above.
+			FLD: Buffer.from("NET          14", "ascii").toString("hex").toUpperCase(),
+		},
+		...options,
+	});
 	// `debugLog` is what makes the client emit `rawPacket`, which is this rig's only
 	// window onto the wire — without it the observer below never runs and every
 	// assertion here passes for the wrong reason.
@@ -103,6 +118,13 @@ async function rig(host: string, options: Parameters<typeof startMockReceiver>[0
 	client.on("error", () => {});
 	await client.connect();
 	await mock.waitForClient();
+	// A receiver with something playing has announced it: `NST` is broadcast on every
+	// state change, and the plugin has been listening since it connected. That frame is
+	// the whole of how the sweep knows whether it may resume afterwards.
+	if (options.autoReturn) {
+		mock.broadcast("NST", "P--");
+		await sleepMs(20);
+	}
 
 	const deps: SweepDeps = {
 		send: (_h, command, param) => client.send(command, param),
@@ -135,6 +157,13 @@ const autoReturn = (display?: readonly string[]) => ({
 	mode: MODE_ON_NET,
 	display,
 });
+
+/**
+ * The other kind of receiver: one that wants its input back even while the source is
+ * paused. Whether the reference unit is this one is unmeasured, so the sweep's
+ * detect-and-report path has to keep working for it.
+ */
+const stubbornAutoReturn = (display?: readonly string[]) => ({ ...autoReturn(display), ignoresPause: true });
 
 describe("a receiver that changes the input by itself", () => {
 	it("really does announce an input nobody asked for (the premise)", async () => {
@@ -207,7 +236,7 @@ describe("Auto-Discover against a receiver that changes the input by itself", ()
 		// do is leave a trail. Both are asserted; the truncation itself is reported by the
 		// stopping line rather than prevented here.
 		const host = "ar-sweep";
-		const r = await rig(host, { autoReturn: autoReturn(TITLE_WINDOWS) });
+		const r = await rig(host, { autoReturn: stubbornAutoReturn(TITLE_WINDOWS) });
 		try {
 			await r.client.send("MVL", "0E");
 			const result = await runSweep(host, "SLI", undefined, r.deps);
@@ -253,10 +282,50 @@ describe("Auto-Discover against a receiver that changes the input by itself", ()
 		assert.ok(interrupted < powerQuestion, "the interrupted case must be answered before the standby one");
 	});
 
+	it("a paused source really does stop the receiver hopping (the premise)", async () => {
+		// The one thing about this change that is modelled rather than measured. If the
+		// double did not honour the pause, everything below would prove nothing — so it
+		// is asserted directly, before any test leans on it.
+		const r = await rig("ar-pause-premise", { autoReturn: autoReturn([SERVICE]) });
+		try {
+			await r.client.send("NTC", "PAUSE");
+			await r.client.send("SLI", BLURAY);
+			await sleepMs(HOP_MS * 6);
+			assert.ok(
+				!r.inbound.includes(`SLI ${NET}`),
+				`the receiver hopped back anyway: ${r.inbound.join(" | ")}`,
+			);
+			// And it starts hopping again once the source resumes — otherwise the test
+			// above would pass on a double that simply never hops.
+			await r.client.send("NTC", "PLAY");
+			await sleepMs(HOP_MS * 6);
+			assert.ok(r.inbound.includes(`SLI ${NET}`), "resuming did not re-arm the hop");
+		} finally {
+			await shutdown(r);
+		}
+	});
+
+	it("finishes the walk on a receiver that would otherwise steer it", async () => {
+		// The whole point: same receiver, same hop, but the sweep silences it first.
+		const host = "ar-sweep-quiet";
+		const r = await rig(host, { autoReturn: autoReturn(TITLE_WINDOWS) });
+		try {
+			const result = await runSweep(host, "SLI", undefined, r.deps);
+			assert.equal(result.interrupted, false, `still disrupted: ${r.logLines.join(" | ")}`);
+			assert.ok(result.count > 2, `the walk was still truncated after ${result.count} steps`);
+			assert.ok(
+				r.logLines.some((l) => l.includes("paused the source")),
+				`it did not quieten: ${r.logLines.join(" | ")}`,
+			);
+		} finally {
+			await shutdown(r);
+		}
+	});
+
 	it("notices out loud when the receiver moves an input it is still reading", async () => {
 		// Silent on a healthy sweep; the point is that the disrupted one is not silent.
 		const host = "ar-sweep-noticed";
-		const r = await rig(host, { autoReturn: autoReturn(TITLE_WINDOWS) });
+		const r = await rig(host, { autoReturn: stubbornAutoReturn(TITLE_WINDOWS) });
 		try {
 			await runSweep(host, "SLI", undefined, r.deps);
 			const noticed = r.logLines.filter(

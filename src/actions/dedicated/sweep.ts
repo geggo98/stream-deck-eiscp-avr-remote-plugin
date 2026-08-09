@@ -7,6 +7,7 @@
  * logging — come in through SweepDeps, so tests can drive the machine with a
  * fake receiver; discovery.ts supplies the real implementations.
  */
+import { parsePlayStatus } from "../../adapter/eiscp/play-status.ts";
 import type { SliRecordOutcome, TrackedCommand } from "./name-store.ts";
 
 /** FLD readings per input before giving up on its name. */
@@ -115,6 +116,126 @@ async function learnInputName(host: string, code: string, deps: SweepDeps): Prom
 }
 
 /**
+ * How long the muted display keeps the input readout off the panel.
+ *
+ * `AMT` is one of the DISPLAY_OWNING_COMMANDS, so its echo starts a `DISPLAY_OWNED_MS`
+ * (1500 ms) window in which `recordSli` refuses every reading. The sweep's own slack
+ * before the first FLD query is one poll tick + NAME_SETTLE_MS + two queries, so the
+ * structural floor is ~850 ms; 1000 ms is that plus margin. On the reference unit the
+ * first query lands 1653 ms after the mute even with no wait at all — the margin is for
+ * a receiver that answers `SLI` on the first tick. Getting it wrong costs one resample
+ * on the first input, nothing more.
+ */
+const MUTE_SETTLE_MS = 1000;
+/** How long a paused source is given to actually stop before the walk starts. */
+const PAUSE_SETTLE_MS = 500;
+
+/**
+ * Silence the receiver for the duration of an input sweep, and return the undo.
+ *
+ * Why this exists: with AirPlay playing, this receiver hops back to its network input a
+ * few seconds after the input moves away from it. That hop is indistinguishable from
+ * the answer to the sweep's own `UP`, and lands as an exact `current === start`, so the
+ * walk ends after two of twelve inputs. Silencing the source removes the reason to
+ * steer — and stops a twelve-input walk being audible.
+ *
+ * Deliberately **mute, not volume 0**. `trailingNumberIsVolume` — the sweep's only
+ * defence against a streaming source — asks whether a digit-terminated readout ends in
+ * the *current* volume. At volume 0 that degrades to "must end in a run of zeros",
+ * which "Loveless 2.0" and every other `.0` boundary satisfies, so setting the volume
+ * to 0 would switch off the guard for exactly the sweep that needs it. The `MVL` query
+ * stays: neither recorded sweep contains an `MVL` frame, so `s.volume` is undefined and
+ * that guard is dormant during sweeps today — asking *arms* it.
+ *
+ * Three things that cannot be observed, and are therefore never assumed:
+ *  - **the pause**: `NTC` answers no query (confirmed on hardware) and `send` resolves
+ *    at the write, so nothing here is conditioned on it having worked;
+ *  - **standby**: `NTC`, `MVL` and `AMT` are all swallowed while `SLI` is honoured *and
+ *    powers the unit on*, so an unguarded sequence would assert a mute that never landed
+ *    and then wake the receiver into a full-volume walk. Hence the `PWR` check;
+ *  - **what we could not read**: a failed `AMT` query means no mute at all. Never change
+ *    a state you cannot put back — the same rule the capture scripts follow.
+ */
+async function quietenForSweep(host: string, deps: SweepDeps): Promise<(expectedInput?: string) => Promise<void>> {
+	const log = deps.log ?? NO_LOG;
+	const undo: (() => Promise<void>)[] = [];
+
+	// Power first: everything below is dropped in silence while the unit is asleep.
+	let power: string | undefined;
+	try {
+		power = await deps.query(host, "PWR");
+	} catch (err) {
+		log.info(`sweep: could not read the power state (${err}); sweeping without quietening`);
+		return async () => {};
+	}
+	if (power === "00") {
+		log.info("sweep: the receiver is in standby; waking it so the mute is not swallowed");
+		await deps.send(host, "PWR", "01");
+		// The receiver announces the change itself; give it the same patience a step gets.
+		for (let waited = 0; waited < 3000 && deps.getCached(host, "PWR") !== "01"; waited += 200) {
+			await deps.sleep(200);
+		}
+		undo.push(async () => {
+			log.info("sweep: putting the receiver back into standby");
+			await deps.send(host, "PWR", "00");
+		});
+	}
+
+	// Was it playing? `NST` is re-broadcast unsolicited and the ConnectionManager caches
+	// every message, so this costs nothing and — unlike a "metadata arrived recently"
+	// heuristic — cannot mistake a *browsed* network source for a playing one. The idle
+	// recording contains 29 NLS + 4 NLT + 2 NFI and no playback at all.
+	const wasPlaying = parsePlayStatus(deps.getCached(host, "NST")) === "play";
+	await deps.send(host, "NTC", "PAUSE");
+	log.info(`sweep: paused the source (it ${wasPlaying ? "was" : "was not reported as"} playing)`);
+	await deps.sleep(PAUSE_SETTLE_MS);
+
+	// Snapshot before silencing. The volume is read but never written; see above.
+	let muted: string | undefined;
+	try {
+		const volume = await deps.query(host, "MVL");
+		muted = await deps.query(host, "AMT");
+		log.info(`sweep: volume ${volume}, mute ${muted}`);
+	} catch (err) {
+		log.info(`sweep: could not read the volume/mute state (${err}); sweeping unmuted`);
+	}
+	if (muted !== undefined) {
+		if (muted === "01") {
+			log.info("sweep: already muted; leaving it alone");
+		} else {
+			await deps.send(host, "AMT", "01");
+			undo.push(async () => {
+				await deps.send(host, "AMT", "00");
+			});
+			await deps.sleep(MUTE_SETTLE_MS);
+		}
+	}
+
+	return async (expectedInput?: string) => {
+		// `NTC` addresses the *selected* network source, so resuming while the receiver is
+		// parked on another input would talk to the wrong one — and re-create the very hop
+		// this exists to prevent. `send` does not await an echo and this unit's SLI code
+		// lags 1103-2044 ms, so wait for the cache to show the sweep's own restore landed.
+		if (wasPlaying && expectedInput !== undefined) {
+			let waited = 0;
+			for (; waited < 3000 && deps.getCached(host, "SLI") !== expectedInput; waited += 200) {
+				await deps.sleep(200);
+			}
+			if (deps.getCached(host, "SLI") !== expectedInput) {
+				log.warn(`sweep: the input is not back on ${expectedInput}; leaving the source paused`);
+			} else {
+				await deps.send(host, "NTC", "PLAY");
+				log.info(`sweep: resumed playback (input back on ${expectedInput} after ${waited} ms)`);
+			}
+		}
+		// Unmute — and, if we woke the receiver, standby — last: the resume is the step
+		// most likely to be refused, and a receiver left muted reads as broken hardware
+		// while a source left paused is one button.
+		for (const step of undo.reverse()) await step();
+	};
+}
+
+/**
  * Cycle `command` with UP until it returns to the start (or a safety cap),
  * learning each option's name, then restore the original value. Disruptive —
  * only call on explicit user request.
@@ -134,6 +255,10 @@ export async function runSweep(
 	// passive window learns it before the next UP. SLI names are queried directly.
 	const NAME_SETTLE_MS = command === "LMD" ? 1500 : 500;
 	const CAP = 60;
+
+	// Only the input sweep: it is the one that walks the receiver off a playing source
+	// and so provokes the hop back. A listening-mode sweep never leaves the input.
+	const restoreQuiet = command === "SLI" ? await quietenForSweep(host, deps) : undefined;
 
 	const start = await deps.query(host, command);
 	const visited = new Set<string>([start]);
@@ -175,6 +300,8 @@ export async function runSweep(
 
 	log.info(`sweep ${command} starting from ${start}`);
 	let sweepFailed = false;
+	/** Raised only after a successful sweep; see the restore block below. */
+	let restoreError: Error | undefined;
 	try {
 		for (let i = 0; i < CAP; i++) {
 			await deps.send(host, command, "UP");
@@ -267,9 +394,22 @@ export async function runSweep(
 			// receiver was left on the wrong option and the user would see
 			// "Done" + a green checkmark.
 			if (!sweepFailed) {
-				throw new Error(`Sweep finished (${count} steps) but restoring ${start} failed: ${err}`);
+				sweepFailed = true;
+				restoreError = new Error(`Sweep finished (${count} steps) but restoring ${start} failed: ${err}`);
 			}
 		}
+		// Unmute and resume even when everything above failed — this is the half the
+		// user *hears*, and the same asymmetry applies: a receiver left silent by a
+		// discovery run is unattributable, while a failed restore is one more press.
+		try {
+			await restoreQuiet?.(start);
+		} catch (err) {
+			log.error(`sweep ${command}: failed to unmute or resume: ${err}`);
+			if (!sweepFailed) {
+				restoreError = new Error(`Sweep finished (${count} steps) but the receiver may still be muted: ${err}`);
+			}
+		}
+		if (restoreError) throw restoreError;
 	}
 	return { count, options: visited.size, named: named.size, interrupted };
 }

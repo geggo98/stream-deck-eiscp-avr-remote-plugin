@@ -291,7 +291,7 @@ exist. The standby behaviour is selectable, since not every receiver is alike:
   then applied, which is what the real one does with an input change.
 - `silent: true` — connects and never answers (the half-open receiver).
 - `refuseConnections: true` — a port with nothing behind it (ECONNREFUSED).
-- `autoReturn: { input, afterMs, mode?, display? }` — **the only thing this double does
+- `autoReturn: { input, afterMs, mode?, display?, ignoresPause? }` — **the only thing this double does
   that nobody asked for.** A moment after the input moves away from `input`, it goes back
   there and announces the input, then a listening mode, then display text. Everything else
   here is an answer to a request, which is exactly why the two learned-name defects were
@@ -301,7 +301,10 @@ exist. The standby behaviour is selectable, since not every receiver is alike:
   `tests/auto-return.test.ts` is the only test that wires the real sweep, the real name
   store and a real socket together — `sweep.test.ts` fakes the receiver and
   `sweep-capture.test.ts` fakes the store, and neither can express a frame the receiver
-  sent on its own initiative.
+  sent on its own initiative. `NTC PAUSE` disarms the hop and `NTC PLAY` re-arms it (and
+  the double broadcasts `NST`, as the real one does, since `NTC` echoes nothing);
+  `ignoresPause: true` is the receiver for which that is not true, which is what keeps the
+  detect-and-report path tested.
 
 For behaviour the synthetic echo cannot express, the mock also **replays recorded
 wire traffic**: `startMockReceiver({ replay, replayTimeScale })` groups a captured
@@ -440,6 +443,38 @@ keeps the captured order but drops the captured waits, so CI stays fast).
     receiver kept changing the input by itself. Try again with playback stopped."*
   A sweep that outruns the hop (each step re-arms the receiver's timer) still completes
   normally, which is why this is a report rather than a refusal.
+- **So the input sweep quietens the receiver first** (`quietenForSweep`, SLI only — the mode
+  sweep never leaves the input and is untouched): `PWR` check, `NTC PAUSE`, snapshot, `AMT 01`,
+  wait, walk, restore input, resume, unmute. Four things about it are load-bearing:
+  - **Mute, never `MVL 00`.** `trailingNumberIsVolume` asks whether a digit-terminated readout
+    ends in the *current* volume; at volume 0 that degrades to "must end in a run of zeros",
+    which "Loveless 2.0" and every other `.0` boundary satisfies — setting the volume to zero
+    switches off the guard for exactly the sweep that needs it. The `MVL` **query** stays and is
+    not wasted: neither recorded sweep contains an `MVL` frame, so `s.volume` is `undefined` and
+    that guard is dormant during sweeps today. Asking arms it.
+  - **"Was it playing?" comes from `NST`, not from `metadataAt`.** `METADATA_COMMANDS` includes
+    `NLS`/`NLT`/`NFI`, which arrive when a network source is merely *browsed*: the recorded sweep
+    of an **idle** receiver has 29 `NLS` + 4 `NLT` + 2 `NFI` and no `NJA`/`NTM` at all, so a
+    "metadata arrived recently" heuristic reports *playing* for a silent unit — and Auto-Discover
+    would start music nobody asked for. `NST` is broadcast unsolicited and the ConnectionManager
+    caches every message, so `parsePlayStatus(getCached(host, "NST"))` costs nothing and cannot
+    make that mistake. No `NST`, no resume.
+  - **Nothing is asserted that cannot be observed.** `NTC` answers no query (confirmed on
+    hardware) and `send` resolves at the write, so the pause is never checked; a failed `AMT`
+    query means no mute at all (never change what you cannot put back); and in **standby** every
+    one of `NTC`/`MVL`/`AMT` is swallowed while `SLI` is honoured *and powers the unit on* — so
+    the receiver is woken first and put back afterwards, or the sweep would assert a mute that
+    never landed and then walk the inputs at full volume.
+  - **The unmute is last and the resume waits.** `NTC` addresses the *selected* network source,
+    so resuming before the input is confirmed back talks to the wrong one and re-creates the hop;
+    and if the resume fails, a receiver left silent reads as broken hardware while a source left
+    paused is one button.
+
+  **The premise — that a paused source stops the hop — is device knowledge, not measured here.**
+  It is modelled in the double (`autoReturn` honours `NTC PAUSE`), and the other kind of receiver
+  is modelled too (`autoReturn.ignoresPause`), because the detect-and-report path above is what
+  is left if the premise turns out to be false. A live probe settles it in 30 seconds: pause,
+  move the input, watch.
 - **`corroborated` may excuse a busy display; it may not excuse the volume rule.** A majority
   establishes *which text* was on the display, never that the text is an input readout. A
   frozen scrolling title reads identically three times running and wins a majority by

@@ -107,6 +107,15 @@ export interface MockReceiverOptions {
 		display?: readonly string[];
 		/** Gap between the input and the mode/display frames (default 10 ms, as measured). */
 		announceGapMs?: number;
+		/**
+		 * A receiver that hops back even while the source is paused.
+		 *
+		 * "Pausing stops the hop" is device knowledge, not something this repository has
+		 * measured, so the other kind of receiver has to be testable too: it is what the
+		 * sweep's detect-and-report path exists for, and what a "no" from the live probe
+		 * would leave us with.
+		 */
+		ignoresPause?: boolean;
 	};
 }
 
@@ -300,6 +309,15 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 			if (value !== undefined) reply(socket, command, value);
 			return;
 		}
+		// Transport. The real unit answers `NTC` with nothing — its state comes back as
+		// `NST` — and a query into it does not answer at all, so this echoes nothing
+		// either. What it does do is stop and start the source, which is what decides
+		// whether the receiver has anything to hop back *to*.
+		if (command === "NTC") {
+			if (parameter === "PAUSE" || parameter === "STOP") setSourcePlaying(false);
+			else if (parameter === "PLAY") setSourcePlaying(true);
+			return;
+		}
 		if (!echoSets) return;
 
 		// Model the receiver's auto-status echo for sets.
@@ -342,6 +360,13 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 	const autoReturn = options.autoReturn;
 	let autoReturnTimer: ReturnType<typeof setTimeout> | undefined;
 	let displayIndex = 0;
+	/**
+	 * Whether the source is running. A receiver only hops back to something that is
+	 * *playing* — a paused source gives it no reason — which is the premise the whole
+	 * quieting rests on, and the one thing about it that is modelled here rather than
+	 * measured on the unit.
+	 */
+	let sourcePlaying = true;
 
 	/**
 	 * Announce the hop to everyone connected, the way the real unit does: the input
@@ -349,7 +374,7 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 	 * it, which is exactly what makes it worth modelling.
 	 */
 	const performAutoReturn = (): void => {
-		if (!autoReturn) return;
+		if (!autoReturn || (!sourcePlaying && !autoReturn.ignoresPause)) return;
 		state["SLI"] = autoReturn.input;
 		for (const socket of sockets) socket.write(frameReply("SLI", autoReturn.input));
 		const gap = autoReturn.announceGapMs ?? 10;
@@ -374,8 +399,25 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		if (!autoReturn) return;
 		if (autoReturnTimer) clearTimeout(autoReturnTimer);
 		if (current === autoReturn.input) return; // already home
+		if (!sourcePlaying && !autoReturn.ignoresPause) return; // nothing to come back to
 		autoReturnTimer = setTimeout(performAutoReturn, autoReturn.afterMs);
 		autoReturnTimer.unref?.();
+	};
+
+	/** Pausing disarms the hop; resuming re-arms it if the input is currently away. */
+	const setSourcePlaying = (playing: boolean): void => {
+		sourcePlaying = playing;
+		// The receiver acknowledges the transport either way — what differs is whether it
+		// still wants its input back. `NST` is *broadcast*, not echoed as `NTC`: that is
+		// how a controller learns what the transport did, since NTC answers nothing.
+		state["NST"] = playing ? "P--" : "p--";
+		for (const socket of sockets) socket.write(frameReply("NST", state["NST"]));
+		if (!playing && !autoReturn?.ignoresPause) {
+			if (autoReturnTimer) clearTimeout(autoReturnTimer);
+			autoReturnTimer = undefined;
+			return;
+		}
+		scheduleAutoReturn(state["SLI"] ?? "");
 	};
 
 	/** Incremental inbound parser: eISCP frames or bare ISCP lines. */
