@@ -14,7 +14,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import type { ArtImage } from "../src/adapter/eiscp/jacket-art.ts";
-import { LUMA_BLOCK, lumaGrid } from "../src/actions/image-luma.ts";
+import { coverGrids, DETAIL_BLOCK, LUMA_BLOCK, lumaGrid } from "../src/actions/image-luma.ts";
 import { expectFastCompletion, expectOnlyDeliberateErrors, fuzzConfig, fuzzEach, mutate } from "./helpers/fuzz.ts";
 import { tinyJpeg, type TinyJpegSpec } from "./helpers/tiny-jpeg.ts";
 
@@ -128,6 +128,26 @@ describe("reading a cover's block brightness", () => {
 		}
 	});
 
+	it("reads a greyscale JPEG that declares a sampling factor it cannot use", () => {
+		// A scan with one component is not interleaved: its data unit is a single block and
+		// the blocks are a plain raster, whatever the frame header says about sampling.
+		// Greyscale files declare `2x2` all the time — every Library of Congress scan in the
+		// Gottlieb jazz collection does — and reading them as interleaved asks for four
+		// blocks per MCU over an MCU grid half as wide and half as tall. For a 500x529
+		// picture that is 4352 blocks demanded against 4221 present, the reader runs off the
+		// end, and the cover comes back as "unreadable".
+		//
+		// Found by pointing the corpus at real photographs, not by this suite: its encoder
+		// wrote `1x1` for greyscale, which is legal, common, and exactly the case that
+		// already worked.
+		const spec: TinyJpegSpec = { width: 40, height: 24, luma: (col, row) => 20 + col * 20 + row * 60 };
+		const plain = lumaGrid(jpeg(spec));
+		const declared = lumaGrid(jpeg({ ...spec, declaredSampling: { h: 2, v: 2 } }));
+		assert.ok(declared, "a greyscale JPEG declaring 2x2 must still decode");
+		assert.deepEqual({ width: declared.width, height: declared.height }, { width: 5, height: 3 });
+		assert.deepEqual([...declared.data], [...plain!.data], "and it is the same picture either way");
+	});
+
 	it("walks over the segments it has no use for", () => {
 		const grid = lumaGrid(jpeg({ width: 8, height: 8, luma: () => 100, extraSegments: 4 }));
 		assert.equal(grid?.data[0], 100);
@@ -179,6 +199,159 @@ describe("reading a cover's block brightness", () => {
 		const first = lumaGrid(art);
 		assert.ok(first);
 		assert.equal(lumaGrid(art), first, "the same buffer must give back the same grid object");
+	});
+});
+
+describe("reading a cover's colour", () => {
+	it("puts the subsampled chroma back onto the luminance grid", () => {
+		// The point of the whole exercise: at 4:2:0 one chroma block covers a 2x2 group of
+		// luminance blocks, so a naive copy would give a quarter-size plane that no longer
+		// lines up with the brightness — and every region the skin test finds would sit in
+		// the wrong quadrant of the picture.
+		const grids = coverGrids(
+			jpeg({
+				width: 32,
+				height: 32,
+				layout: "420",
+				luma: () => 128,
+				chroma: (col, row) => ({ cb: 100 + col * 10, cr: 150 + row * 10 }),
+			}),
+		);
+		assert.ok(grids?.cb && grids.cr);
+		assert.deepEqual(
+			{ width: grids.cb.width, height: grids.cb.height },
+			{ width: grids.luma.width, height: grids.luma.height },
+			"all three planes have to be addressable with one coordinate",
+		);
+		const at = (grid: { width: number; data: Uint8Array }, col: number, row: number): number =>
+			grid.data[row * grid.width + col]!;
+		// Luminance cells 0 and 1 are inside chroma cell 0; cells 2 and 3 inside chroma 1.
+		assert.equal(at(grids.cb, 0, 0), 100);
+		assert.equal(at(grids.cb, 1, 0), 100, "the second luma cell still belongs to the first chroma block");
+		assert.equal(at(grids.cb, 2, 0), 110, "the third crosses into the next one");
+		assert.equal(at(grids.cr, 0, 2), 160, "and the same holds vertically");
+	});
+
+	it("says a greyscale cover has no colour rather than inventing a neutral one", () => {
+		// "No chroma" and "chroma that happens to be neutral" are different answers: the
+		// first must stop the skin test from running at all, the second would let it run
+		// and find nothing. Only the first is honest about a black-and-white sleeve.
+		const grids = coverGrids(jpeg({ width: 32, height: 32, luma: () => 120 }));
+		assert.ok(grids);
+		assert.equal(grids.cb, undefined);
+		assert.equal(grids.cr, undefined);
+	});
+
+	it("gets the same colour out of a BMP as out of a JPEG", () => {
+		// The two containers reach the planes by completely different routes — one reads
+		// BGR bytes, the other dequantises DC coefficients — and the skin test is expressed
+		// in JPEG's units. A conversion that disagreed would make the feature depend on
+		// which container the receiver happened to send.
+		const grids = coverGrids(bmp(16, 16, [200, 100, 50]));
+		assert.ok(grids?.cb && grids.cr);
+		// Y = 124.05, Cb = 128 + 0.5*(50-124.05)/0.886 = 86.2, Cr = 128 + 0.5*(200-124.05)/0.701 = 182.2
+		assert.ok(Math.abs(grids.cb.data[0]! - 86) <= 1, `cb was ${grids.cb.data[0]}`);
+		assert.ok(Math.abs(grids.cr.data[0]! - 182) <= 1, `cr was ${grids.cr.data[0]}`);
+	});
+
+	it("leaves a four-component frame's colour unread", () => {
+		// CMYK and YCCK put something else entirely in components 1 and 2. Reading them as
+		// Cb/Cr would not fail — it would quietly produce a plausible wrong answer, which
+		// is the one outcome a heuristic must not be fed. The brightness plane is still
+		// good and is still handed over, so the progress ring keeps working.
+		const grids = coverGrids(
+			jpeg({ width: 16, height: 16, layout: "cmyk", luma: () => 100, chroma: () => ({ cb: 200, cr: 40 }) }),
+		);
+		assert.ok(grids, "four components still decode");
+		assert.equal(grids.luma.data[0], 100, "the first plane is still readable");
+		assert.equal(grids.cb, undefined, "but nothing claims to know what colour that is");
+		assert.equal(grids.cr, undefined);
+	});
+});
+
+describe("reading a cover at half resolution", () => {
+	const at = (grid: { width: number; data: Uint8Array }, col: number, row: number): number =>
+		grid.data[row * grid.width + col]!;
+
+	it("gives two samples per block per axis", () => {
+		const grids = coverGrids(jpeg({ width: 64, height: 32, luma: () => 100 }));
+		assert.ok(grids?.detail);
+		assert.deepEqual({ width: grids.detail.width, height: grids.detail.height }, { width: 32, height: 16 });
+		assert.equal(grids.detail.width, grids.luma.width * (LUMA_BLOCK / DETAIL_BLOCK));
+	});
+
+	it("reproduces a flat block exactly, which is what fixes the scaling", () => {
+		// With only a DC coefficient every sample of the block must come out as the block
+		// mean. It is the one case where the right answer is known in closed form, so it is
+		// what pins the constant in front of the transform — an eighth of the coefficient,
+		// not a quarter or a sixteenth.
+		const grids = coverGrids(jpeg({ width: 32, height: 16, luma: (col, row) => 40 + col * 30 + row * 60 }));
+		assert.ok(grids?.detail);
+		const perBlock = LUMA_BLOCK / DETAIL_BLOCK;
+		for (let row = 0; row < 2; row++) {
+			for (let col = 0; col < 4; col++) {
+				const expected = 40 + col * 30 + row * 60;
+				for (let dy = 0; dy < perBlock; dy++) {
+					for (let dx = 0; dx < perBlock; dx++) {
+						assert.ok(
+							Math.abs(at(grids.detail, col * perBlock + dx, row * perBlock + dy) - expected) <= 1,
+							`block ${col},${row} sample ${dx},${dy}`,
+						);
+					}
+				}
+			}
+		}
+	});
+
+	it("puts a coefficient where the picture varies, not somewhere else", () => {
+		// The first horizontal AC coefficient makes the block's left half dark and its
+		// right half bright, and nothing else. Getting the zig-zag order, the sign
+		// extension or the transpose wrong all still produce a picture — just a different
+		// one — so the direction of the gradient is the assertion.
+		const grids = coverGrids(
+			jpeg({ width: 8, height: 8, luma: () => 128, ac: () => new Map([[1, 100]]) }),
+		);
+		assert.ok(grids?.detail);
+		const left = at(grids.detail, 0, 0);
+		const right = at(grids.detail, 3, 0);
+		// Bright on the left: the basis function `cos((2x+1)*pi/16)` starts near +1 and
+		// ends near -1, so a positive coefficient darkens towards the right. Worth stating
+		// rather than just asserting, because the natural guess is the other way round.
+		assert.ok(left > right + 20, `expected a bright-to-dark ramp, got ${left} then ${right}`);
+		assert.equal(at(grids.detail, 0, 0), at(grids.detail, 0, 3), "and nothing vertical");
+	});
+
+	it("keeps the block mean whatever the block contains", () => {
+		// True of any JPEG and not only of the flat case: every AC basis function averages
+		// to zero over the block it describes, so the samples must still average to the DC
+		// value the coarse grid carries. That ties the two readings of the same cover
+		// together — one of them cannot drift without the other.
+		const ac = new Map([
+			[1, 90],
+			[2, -60],
+			[8, 45],
+			[16, -30],
+		]);
+		const grids = coverGrids(jpeg({ width: 16, height: 16, luma: () => 128, ac: () => ac }));
+		assert.ok(grids?.detail);
+		const perBlock = LUMA_BLOCK / DETAIL_BLOCK;
+		for (let row = 0; row < 2; row++) {
+			for (let col = 0; col < 2; col++) {
+				let sum = 0;
+				for (let dy = 0; dy < perBlock; dy++) {
+					for (let dx = 0; dx < perBlock; dx++) sum += at(grids.detail, col * perBlock + dx, row * perBlock + dy);
+				}
+				const mean = sum / (perBlock * perBlock);
+				assert.ok(Math.abs(mean - at(grids.luma, col, row)) <= 2, `block ${col},${row}: ${mean}`);
+			}
+		}
+	});
+
+	it("has none to offer for a BMP", () => {
+		// Not a gap to fill later: the coarse grid is all the colour rule needs, and the
+		// detector that wants pixels can simply not run for a container this firmware only
+		// sends as an alternative to JPEG at best.
+		assert.equal(coverGrids(bmp(16, 16, [200, 100, 50]))?.detail, undefined);
 	});
 });
 

@@ -22,8 +22,15 @@
  * Only the DC coefficient of each 8x8 block, which is that block's average — an
  * eight-times smaller picture, and all a colour decision needs. The 63 AC coefficients
  * are decoded and thrown away, because a Huffman stream cannot be skipped through.
- * Everything else about the image (the IDCT, the chroma planes, upsampling) is never
- * touched.
+ * Everything else about the image (the IDCT, upsampling) is never touched.
+ *
+ * **All three planes are kept, not just luminance**, and that costs almost nothing: the
+ * DC predictor is carried for every component anyway — a stream cannot be walked
+ * otherwise — so Cb and Cr were being computed and dropped one line before they were
+ * stored. What they buy is a rough answer to "where are there people in this picture",
+ * which is what stops the touch strip cropping through a face. Chroma is subsampled
+ * (usually 2x2), so it is nailed onto the luminance grid on the way out and everything
+ * downstream can work on one raster.
  *
  * ## Bounded by construction, because the bytes are hostile
  *
@@ -43,8 +50,47 @@ export interface LumaGrid {
 	data: Uint8Array;
 }
 
+/**
+ * The three planes of a cover, all on the luminance grid.
+ *
+ * `cb`/`cr` are absent for a greyscale image, which is a normal answer rather than a
+ * failure: there is no colour to read, so nothing downstream that needs colour can run.
+ * Both are stored the way JPEG stores them — 128 is neutral, below is one direction and
+ * above the other — so a consumer can use them without knowing where they came from.
+ */
+export interface CoverGrids {
+	luma: LumaGrid;
+	cb?: LumaGrid;
+	cr?: LumaGrid;
+	/**
+	 * The brightness again, at half the source resolution — actual samples rather than
+	 * block averages.
+	 *
+	 * Same shape as the grids above and a completely different meaning: here one entry is
+	 * 2x2 source pixels (`DETAIL_BLOCK`), not 8x8. It exists because a face detector needs
+	 * to see eyes, and a block average is exactly the resolution at which eyes disappear.
+	 * Absent for BMP, for an image too large to be worth it, and whenever the scan did not
+	 * produce one.
+	 */
+	detail?: LumaGrid;
+}
+
 /** Source pixels per grid cell, in both directions. */
 export const LUMA_BLOCK = 8;
+
+/**
+ * Source pixels per sample of the `detail` image, in both directions.
+ *
+ * Half scale: four samples across each 8x8 block. See `decodeDetailBlock` for why that
+ * falls out of keeping a 4x4 corner of the coefficients rather than being chosen.
+ */
+export const DETAIL_BLOCK = 2;
+
+/** Largest detail image built, in samples. A cover is 256x256 here; this is 16x that. */
+const MAX_DETAIL_SAMPLES = 1024 * 1024;
+
+/** What a chroma sample means when it says "no colour in this direction". */
+export const CHROMA_NEUTRAL = 128;
 
 /** Caps. Generous for real album art, finite for anything else. */
 const MAX_DIMENSION = 4096;
@@ -58,32 +104,37 @@ const MAX_COMPONENTS = 4;
  * decoded again on every repaint — which, with the progress ticking, would be once a
  * second.
  */
-const gridByArt = new WeakMap<Buffer, LumaGrid | null>();
+const gridsByArt = new WeakMap<Buffer, CoverGrids | null>();
 
 /**
- * The block-average brightness of a cover, or `undefined` when it cannot be read.
+ * The block averages of a cover, or `undefined` when it cannot be read.
  *
  * `undefined` is a normal answer, not a failure to report: progressive JPEGs, unusual
- * BMP variants and anything malformed all land here, and the caller's fallback (white)
- * is a perfectly good colour.
+ * BMP variants and anything malformed all land here, and every caller has a defined
+ * fallback for it (a white ring, a centred crop).
  */
-export function lumaGrid(art: ArtImage): LumaGrid | undefined {
-	const cached = gridByArt.get(art.bytes);
+export function coverGrids(art: ArtImage): CoverGrids | undefined {
+	const cached = gridsByArt.get(art.bytes);
 	if (cached !== undefined) return cached ?? undefined;
-	let grid: LumaGrid | undefined;
+	let grids: CoverGrids | undefined;
 	try {
-		grid = art.bytes.length > MAX_ART_BYTES ? undefined : decode(art);
+		grids = art.bytes.length > MAX_ART_BYTES ? undefined : decode(art);
 	} catch {
 		// Every parse error, cap breach and short read arrives here. There is nothing to
 		// log: this runs per cover, the input is device-controlled, and the consequence
 		// is a white ring.
-		grid = undefined;
+		grids = undefined;
 	}
-	gridByArt.set(art.bytes, grid ?? null);
-	return grid;
+	gridsByArt.set(art.bytes, grids ?? null);
+	return grids;
 }
 
-function decode(art: ArtImage): LumaGrid | undefined {
+/** The brightness plane on its own, which is all the progress colour needs. */
+export function lumaGrid(art: ArtImage): LumaGrid | undefined {
+	return coverGrids(art)?.luma;
+}
+
+function decode(art: ArtImage): CoverGrids | undefined {
 	return art.type === "bmp" ? decodeBmp(art.bytes) : decodeJpegDc(art.bytes);
 }
 
@@ -91,7 +142,7 @@ function decode(art: ArtImage): LumaGrid | undefined {
 // BMP — the easy half: the pixels are simply there
 // ---------------------------------------------------------------------------
 
-function decodeBmp(b: Buffer): LumaGrid | undefined {
+function decodeBmp(b: Buffer): CoverGrids | undefined {
 	if (b.length < 54) return undefined;
 	const dataOffset = b.readUInt32LE(10);
 	const width = b.readInt32LE(18);
@@ -110,26 +161,48 @@ function decodeBmp(b: Buffer): LumaGrid | undefined {
 	const stride = Math.floor((width * bytesPerPixel + 3) / 4) * 4;
 	if (dataOffset + stride * height > b.length) return undefined;
 
-	const grid = emptyGrid(width, height);
-	const sums = new Float64Array(grid.width * grid.height);
-	const counts = new Uint32Array(grid.width * grid.height);
+	const luma = emptyGrid(width, height);
+	const cb = emptyGrid(width, height);
+	const cr = emptyGrid(width, height);
+	const cells = luma.width * luma.height;
+	const lumaSums = new Float64Array(cells);
+	const cbSums = new Float64Array(cells);
+	const crSums = new Float64Array(cells);
+	const counts = new Uint32Array(cells);
 	for (let y = 0; y < height; y++) {
 		const sourceRow = topDown ? y : height - 1 - y;
 		const rowStart = dataOffset + sourceRow * stride;
 		const cellRow = Math.floor(y / LUMA_BLOCK);
 		for (let x = 0; x < width; x++) {
 			const p = rowStart + x * bytesPerPixel;
-			// BMP stores BGR.
-			const luma = 0.114 * b[p]! + 0.587 * b[p + 1]! + 0.299 * b[p + 2]!;
-			const cell = cellRow * grid.width + Math.floor(x / LUMA_BLOCK);
-			sums[cell]! += luma;
+			// BMP stores BGR. The same BT.601 conversion JPEG uses, so a cover in either
+			// container produces comparable numbers — which matters, because the skin test
+			// downstream is expressed in JPEG's own Cb/Cr units.
+			const blue = b[p]!;
+			const green = b[p + 1]!;
+			const red = b[p + 2]!;
+			const cell = cellRow * luma.width + Math.floor(x / LUMA_BLOCK);
+			const y601 = 0.299 * red + 0.587 * green + 0.114 * blue;
+			lumaSums[cell]! += y601;
+			cbSums[cell]! += CHROMA_NEUTRAL + (0.5 * (blue - y601)) / (1 - 0.114);
+			crSums[cell]! += CHROMA_NEUTRAL + (0.5 * (red - y601)) / (1 - 0.299);
 			counts[cell]!++;
 		}
 	}
-	for (let i = 0; i < grid.data.length; i++) {
-		grid.data[i] = counts[i] ? Math.round(sums[i]! / counts[i]!) : 0;
+	for (const [plane, sums] of [
+		[luma, lumaSums],
+		[cb, cbSums],
+		[cr, crSums],
+	] as const) {
+		for (let cell = 0; cell < plane.data.length; cell++) {
+			plane.data[cell] = counts[cell] ? clampByte(sums[cell]! / counts[cell]!) : 0;
+		}
 	}
-	return grid;
+	return { luma, cb, cr };
+}
+
+function clampByte(value: number): number {
+	return Math.max(0, Math.min(255, Math.round(value)));
 }
 
 function emptyGrid(width: number, height: number): LumaGrid {
@@ -247,7 +320,81 @@ function extend(value: number, length: number): number {
 	return value < 1 << (length - 1) ? value - (1 << length) + 1 : value;
 }
 
-function decodeJpegDc(b: Buffer): LumaGrid | undefined {
+/** Zig-zag order to natural `row * 8 + col`. The order coefficients arrive in. */
+const ZIGZAG = new Uint8Array([
+	0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21,
+	28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54,
+	47, 55, 62, 63,
+]);
+
+/** How far into the block a coefficient may sit and still be kept, per axis. */
+const DETAIL_ORDER = 4;
+
+/**
+ * `C(u) * cos(u*pi/16) * cos((2X+1)*u*pi/8)`, indexed `[X * 4 + u]`.
+ *
+ * The whole of the transform below, and every term in it is there for a reason:
+ *
+ *   - `C(u)` is JPEG's own normalisation, `1/sqrt(2)` at `u = 0`.
+ *   - `cos(u*pi/16)` is what averaging pairs of pixels does to the basis functions.
+ *     Summing `cos((2x+1)u*pi/16)` over `x = 2X, 2X+1` gives exactly
+ *     `2*cos(u*pi/16)*cos((2X+1)u*pi/8)`, so the pooling folds into the constants and
+ *     costs nothing at run time.
+ *   - the second cosine is the four-point basis the output is expressed in.
+ */
+const DETAIL_COS = buildDetailCosines();
+
+function buildDetailCosines(): Float64Array {
+	const table = new Float64Array(DETAIL_ORDER * DETAIL_ORDER);
+	for (let x = 0; x < DETAIL_ORDER; x++) {
+		for (let u = 0; u < DETAIL_ORDER; u++) {
+			const normalise = u === 0 ? Math.SQRT1_2 : 1;
+			table[x * DETAIL_ORDER + u] =
+				normalise * Math.cos((u * Math.PI) / 16) * Math.cos(((2 * x + 1) * u * Math.PI) / 8);
+		}
+	}
+	return table;
+}
+
+/**
+ * Turn one block's low-frequency corner into 4x4 samples of the picture.
+ *
+ * **Half scale is what a 4x4 corner gives, not a target that was aimed at.** An 8x8 block
+ * described by its lowest 4x4 coefficients reconstructs as 4x4 samples, each the average
+ * of a 2x2 group of pixels — so keeping a quarter of the coefficients per axis halves the
+ * resolution per axis. For the covers this sees that is 512 -> 256, which is what makes a
+ * face detector's smallest window mean a face of ~90 source pixels rather than ~180.
+ *
+ * Everything above the corner is dropped rather than approximated. That is a downscale
+ * with no low-pass filter, so it aliases, and for finding faces that does not matter: the
+ * cost of the alternative is a full inverse transform and four times the samples, to give
+ * a detector a sharper version of a picture it is going to blur into rectangle sums
+ * anyway.
+ *
+ * The samples come back level-shifted and clamped, ready to use as pixels.
+ */
+function detailBlock(coefficients: Float64Array, out: Float64Array): void {
+	// Rows first, then columns: 32 multiplications instead of 256 for the same result.
+	const rows = new Float64Array(DETAIL_ORDER * DETAIL_ORDER);
+	for (let v = 0; v < DETAIL_ORDER; v++) {
+		for (let x = 0; x < DETAIL_ORDER; x++) {
+			let sum = 0;
+			for (let u = 0; u < DETAIL_ORDER; u++) sum += DETAIL_COS[x * DETAIL_ORDER + u]! * coefficients[v * DETAIL_ORDER + u]!;
+			rows[v * DETAIL_ORDER + x] = sum;
+		}
+	}
+	for (let y = 0; y < DETAIL_ORDER; y++) {
+		for (let x = 0; x < DETAIL_ORDER; x++) {
+			let sum = 0;
+			for (let v = 0; v < DETAIL_ORDER; v++) sum += DETAIL_COS[y * DETAIL_ORDER + v]! * rows[v * DETAIL_ORDER + x]!;
+			// A quarter, and then the level shift: at DC alone this has to come out as
+			// `F(0,0) / 8 + 128`, the same block mean the grid above carries.
+			out[y * DETAIL_ORDER + x] = sum / 4 + 128;
+		}
+	}
+}
+
+function decodeJpegDc(b: Buffer): CoverGrids | undefined {
 	if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return undefined;
 
 	const quantTables: (Uint16Array | undefined)[] = [];
@@ -380,7 +527,7 @@ function scan(
 	frameHeight: number,
 	restartInterval: number,
 	tables: Tables,
-): LumaGrid | undefined {
+): CoverGrids | undefined {
 	if (!components || components.length === 0) return undefined;
 	const scanCount = b[headerStart]!;
 	if (scanCount < 1 || scanCount > components.length) return undefined;
@@ -399,18 +546,68 @@ function scan(
 
 	const maxH = Math.max(...components.map((c) => c.h));
 	const maxV = Math.max(...components.map((c) => c.v));
-	const mcusX = Math.ceil(frameWidth / (LUMA_BLOCK * maxH));
-	const mcusY = Math.ceil(frameHeight / (LUMA_BLOCK * maxV));
+
+	/**
+	 * **A scan carrying one component is not interleaved, and its data unit is one block.**
+	 *
+	 * The sampling factors in the frame header describe how components relate to each
+	 * other; with only one component there is nothing to relate it to, so the spec says the
+	 * blocks arrive as a plain raster and the factors group nothing. Greyscale JPEGs
+	 * routinely still declare `2x2` — the Library of Congress's scans of the Gottlieb jazz
+	 * photographs all do — and reading those as interleaved asks for 4x the blocks per MCU
+	 * over an MCU grid that is half as wide and half as tall. For a 500x529 picture that is
+	 * 4352 blocks demanded against 4221 present: the reader runs off the end of the scan and
+	 * the whole cover comes back as "unreadable".
+	 *
+	 * Found by pointing the corpus at real photographs. Nothing synthetic had caught it,
+	 * because the suite's own encoder writes `1x1` for greyscale — which is legal, common,
+	 * and exactly the case that already worked.
+	 */
+	const interleaved = components.length > 1;
+	const unitH = interleaved ? undefined : 1;
+	const unitV = interleaved ? undefined : 1;
+	const mcusX = interleaved ? Math.ceil(frameWidth / (LUMA_BLOCK * maxH)) : Math.ceil(frameWidth / LUMA_BLOCK);
+	const mcusY = interleaved ? Math.ceil(frameHeight / (LUMA_BLOCK * maxV)) : Math.ceil(frameHeight / LUMA_BLOCK);
+	/** Blocks of `component` in one data unit, which is one when the scan is not interleaved. */
+	const unitsOf = (component: FrameComponent): { h: number; v: number } => ({
+		h: unitH ?? component.h,
+		v: unitV ?? component.v,
+	});
+
 	let blocksPerMcu = 0;
-	for (const c of components) blocksPerMcu += c.h * c.v;
+	for (const c of components) blocksPerMcu += unitsOf(c).h * unitsOf(c).v;
 	if (mcusX * mcusY * blocksPerMcu > MAX_BLOCKS) return undefined;
 
 	// Component 0 is the luminance plane in every layout this can meet: three-component
 	// YCbCr, or a single-component greyscale image where it is the image itself.
 	const luma = components[0]!;
-	const quant = tables.quantTables[luma.quantTable];
-	if (!quant || quant[0] === 0) return undefined;
-	const grid = emptyGrid(frameWidth, frameHeight);
+	if (!tables.quantTables[luma.quantTable]?.[0]) return undefined;
+
+	// One plane of block means per component, at that component's own sampling. They are
+	// nailed onto a common grid at the end rather than here, because the alignment needs
+	// the frame's maximum sampling factors and this loop is the hot one.
+	//
+	// A component whose quantisation table is missing is simply not collected. Strictly
+	// that file is broken — but only the luminance table was ever required here, so
+	// rejecting the whole cover for a missing chroma table would turn covers that render
+	// today into "unreadable", i.e. a white ring, to gain nothing.
+	const planes = components.map((c) => {
+		const quant = tables.quantTables[c.quantTable];
+		const unit = unitsOf(c);
+		return quant?.[0] ? new Uint8Array(mcusX * unit.h * mcusY * unit.v) : undefined;
+	});
+
+	// The half-resolution picture, built as the scan goes rather than from stored
+	// coefficients: one block's worth of scratch is all it needs, so a cover of any size
+	// costs the output image and nothing else.
+	const detail =
+		Math.ceil(frameWidth / DETAIL_BLOCK) * Math.ceil(frameHeight / DETAIL_BLOCK) <= MAX_DETAIL_SAMPLES
+			? { width: Math.ceil(frameWidth / DETAIL_BLOCK), height: Math.ceil(frameHeight / DETAIL_BLOCK), data: new Uint8Array(0) }
+			: undefined;
+	if (detail) detail.data = new Uint8Array(detail.width * detail.height);
+	const lumaQuant = tables.quantTables[luma.quantTable]!;
+	const coefficients = new Float64Array(DETAIL_ORDER * DETAIL_ORDER);
+	const samples = new Float64Array(DETAIL_ORDER * DETAIL_ORDER);
 
 	const reader = new BitReader(b, headerEnd);
 	const predictors = new Int32Array(components.length);
@@ -427,14 +624,21 @@ function scan(
 				const dcTable = tables.dcTables[dcOf.get(component.id) ?? -1];
 				const acTable = tables.acTables[acOf.get(component.id) ?? -1];
 				if (!dcTable || !acTable) return undefined;
-				for (let by = 0; by < component.v; by++) {
-					for (let bx = 0; bx < component.h; bx++) {
+				const unit = unitsOf(component);
+				for (let by = 0; by < unit.v; by++) {
+					for (let bx = 0; bx < unit.h; bx++) {
 						const length = reader.decode(dcTable);
 						if (length > 16) return undefined;
 						const diff = length === 0 ? 0 : extend(reader.receive(length), length);
 						predictors[ci] = predictors[ci]! + diff;
-						// The 63 AC coefficients are read only to reach the next block. `k`
-						// strictly increases, so this cannot run more than 64 times.
+						// The AC coefficients have to be walked whatever happens — a Huffman
+						// stream cannot be skipped through — so the only question is whether
+						// anything is done with them. For the brightness plane the lowest 4x4
+						// are kept, which is a store rather than any extra decoding; the rest
+						// are still read and dropped. `k` strictly increases, so this cannot
+						// run more than 64 times.
+						const wantDetail = detail !== undefined && component === luma;
+						if (wantDetail) coefficients.fill(0);
 						for (let k = 1; k < 64; ) {
 							const rs = reader.decode(acTable);
 							const size = rs & 15;
@@ -446,24 +650,86 @@ function scan(
 							}
 							k += run + 1;
 							if (k > 64) return undefined;
-							reader.receive(size);
+							const raw = reader.receive(size);
+							if (!wantDetail) continue;
+							// `k` has already moved past this coefficient, so it belongs to
+							// `k - 1` — and the quantisation table is stored in the same
+							// zig-zag order the coefficients arrive in.
+							const natural = ZIGZAG[k - 1]!;
+							const row = natural >> 3;
+							const col = natural & 7;
+							if (row < DETAIL_ORDER && col < DETAIL_ORDER) {
+								coefficients[row * DETAIL_ORDER + col] = extend(raw, size) * lumaQuant[k - 1]!;
+							}
 						}
-						if (component !== luma) continue;
+						if (wantDetail && detail) {
+							coefficients[0] = predictors[ci]! * lumaQuant[0]!;
+							detailBlock(coefficients, samples);
+							writeDetail(detail, samples, (mx * unit.h + bx) * DETAIL_ORDER, (my * unit.v + by) * DETAIL_ORDER);
+						}
+						const plane = planes[ci];
+						if (!plane) continue;
 						// The DC coefficient dequantised is eight times the block's mean, and
-						// samples are stored level-shifted by 128.
-						const mean = (predictors[ci]! * quant[0]!) / 8 + 128;
-						const row = my * component.v + by;
-						const col = mx * component.h + bx;
-						// MCUs are padded out past the image edge; those blocks are decoded
-						// (the stream demands it) but must not reach the grid.
-						if (row < grid.height && col < grid.width) {
-							grid.data[row * grid.width + col] = Math.max(0, Math.min(255, Math.round(mean)));
-						}
+						// samples are stored level-shifted by 128. True for chroma as well —
+						// there 128 is the neutral point rather than mid grey.
+						const mean = (predictors[ci]! * tables.quantTables[component.quantTable]![0]!) / 8 + 128;
+						const row = my * unit.v + by;
+						const col = mx * unit.h + bx;
+						plane[row * (mcusX * unit.h) + col] = clampByte(mean);
 					}
 				}
 			}
 			sinceRestart++;
 		}
 	}
-	return grid;
+
+	// MCUs are padded out past the image edge, so the planes are at least as large as the
+	// grid and often larger; the sampling below simply never reaches the padding.
+	const grids: CoverGrids = { luma: emptyGrid(frameWidth, frameHeight), ...(detail ? { detail } : {}) };
+	// Components 1 and 2 are Cb and Cr **only** in a three-component frame. One component
+	// is greyscale, and four is CMYK or YCCK — where the same indices mean something else
+	// entirely, so the colour is left unread rather than misread.
+	const hasChroma = components.length === 3;
+	for (const [ci, component] of components.entries()) {
+		const plane = planes[ci];
+		if (!plane || (ci > 0 && !hasChroma)) continue;
+		const target = ci === 0 ? grids.luma : emptyGrid(frameWidth, frameHeight);
+		const unit = unitsOf(component);
+		resample(plane, mcusX * unit.h, target, component.h / maxH, component.v / maxV);
+		if (ci === 1) grids.cb = target;
+		else if (ci === 2) grids.cr = target;
+	}
+	return grids;
+}
+
+/**
+ * Copy a component's own block plane onto the grid every consumer works on.
+ *
+ * Nearest neighbour, which for the ratios JPEG actually uses (1 or 1/2) means each chroma
+ * block is repeated over the two-by-two luminance cells it covers. Interpolating would be
+ * inventing detail that is not in the file, and everything downstream averages over
+ * regions far larger than a cell anyway.
+ */
+/** Place one block's samples, dropping whatever falls past the picture's edge. */
+function writeDetail(detail: LumaGrid, samples: Float64Array, left: number, top: number): void {
+	for (let y = 0; y < DETAIL_ORDER; y++) {
+		const row = top + y;
+		if (row >= detail.height) break;
+		for (let x = 0; x < DETAIL_ORDER; x++) {
+			const col = left + x;
+			if (col >= detail.width) break;
+			detail.data[row * detail.width + col] = clampByte(samples[y * DETAIL_ORDER + x]!);
+		}
+	}
+}
+
+function resample(plane: Uint8Array, planeWidth: number, target: LumaGrid, ratioX: number, ratioY: number): void {
+	const planeHeight = Math.floor(plane.length / planeWidth);
+	for (let y = 0; y < target.height; y++) {
+		const sourceRow = Math.min(planeHeight - 1, Math.floor(y * ratioY));
+		for (let x = 0; x < target.width; x++) {
+			const sourceCol = Math.min(planeWidth - 1, Math.floor(x * ratioX));
+			target.data[y * target.width + x] = plane[sourceRow * planeWidth + sourceCol]!;
+		}
+	}
 }
