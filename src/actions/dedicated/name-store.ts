@@ -495,7 +495,7 @@ export function noteFld(host: string, hex: string): boolean {
 		// in a digit — and unlike the volume readout there is no command to blame it on,
 		// because the source wrote it. The number is the check: it has to be the volume.
 		if (!trailingNumberIsVolume(s, text))
-			return refuse(host, s, "SLI", text, `it does not end in the volume (${s.volume})`);
+			return refuse(host, s, `SLI ${s.sliCode?.value ?? "?"}`, text, `it does not end in the volume (${s.volume})`);
 		s.sliName = { value: stripVolume(text), at: now };
 		return tryPairSli(host);
 	}
