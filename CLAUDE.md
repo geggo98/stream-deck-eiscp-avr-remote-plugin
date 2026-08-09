@@ -452,6 +452,12 @@ keeps the captured order but drops the captured waits, so CI stays fast).
     switches off the guard for exactly the sweep that needs it. The `MVL` **query** stays and is
     not wasted: neither recorded sweep contains an `MVL` frame, so `s.volume` is `undefined` and
     that guard is dormant during sweeps today. Asking arms it.
+  - **The cached `NST` is not enough on its own.** The receiver broadcasts it only when
+    the transport *changes*, so a plugin that connected while the music was already
+    playing has never seen one — measured on the first live sweep, which reported "not
+    playing" about a source that was, paused it, and then honoured its own safe default
+    by not resuming. An empty cache is a question: `NST QSTN` does answer (the hop
+    capture snapshots it as `Pxx`), so ask, and only treat *no answer* as no evidence.
   - **"Was it playing?" comes from `NST`, not from `metadataAt`.** `METADATA_COMMANDS` includes
     `NLS`/`NLT`/`NFI`, which arrive when a network source is merely *browsed*: the recorded sweep
     of an **idle** receiver has 29 `NLS` + 4 `NLT` + 2 `NFI` and no `NJA`/`NTM` at all, so a

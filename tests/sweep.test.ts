@@ -245,9 +245,31 @@ describe("runSweep: silencing the receiver before it walks the inputs", () => {
 		assert.ok(!rx.sent.includes("NTC:PLAY"), `it started playback: ${rx.sent.join(" ")}`);
 	});
 
-	it("does not resume when it never learned what the transport was doing", async () => {
-		// No NST frame has ever arrived: no evidence is not evidence of playing.
+	it("asks the receiver when no NST frame has been broadcast yet", async () => {
+		// This one cost a user their music. `NST` is broadcast only when the transport
+		// *changes*, so a plugin that connected while the music was already playing has
+		// never seen one — and the first live sweep duly reported "not playing" about a
+		// source that was, paused it, and left it paused. An empty cache is a question.
 		const rx = inputs({ others: { NST: "" } });
+		rx.deps.getCached = (_h, command) => (command === "NST" ? undefined : rx.value());
+		let asked = false;
+		const query = rx.deps.query;
+		rx.deps.query = (host, command) => {
+			if (command === "NST") {
+				asked = true;
+				return Promise.resolve("P--");
+			}
+			return query(host, command);
+		};
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.ok(asked, "it never asked what the transport was doing");
+		assert.ok(rx.sent.includes("NTC:PLAY"), `it did not resume: ${rx.sent.join(" ")}`);
+	});
+
+	it("does not resume when even asking gets no answer", async () => {
+		// No cached frame and no reply: no evidence is still not evidence of playing.
+		const rx = inputs({ others: { NST: "" }, failQuery: ["NST"] });
+		rx.deps.getCached = (_h, command) => (command === "NST" ? undefined : rx.value());
 		await runSweep("h", "SLI", undefined, rx.deps);
 		assert.ok(!rx.sent.includes("NTC:PLAY"));
 	});

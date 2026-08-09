@@ -181,13 +181,28 @@ async function quietenForSweep(host: string, deps: SweepDeps): Promise<(expected
 		});
 	}
 
-	// Was it playing? `NST` is re-broadcast unsolicited and the ConnectionManager caches
-	// every message, so this costs nothing and — unlike a "metadata arrived recently"
-	// heuristic — cannot mistake a *browsed* network source for a playing one. The idle
+	// Was it playing? `NST` says so directly — and unlike a "metadata arrived recently"
+	// heuristic it cannot mistake a *browsed* network source for a playing one: the idle
 	// recording contains 29 NLS + 4 NLT + 2 NFI and no playback at all.
-	const wasPlaying = parsePlayStatus(deps.getCached(host, "NST")) === "play";
+	//
+	// The cache is tried first because `NST` is broadcast on every transport change, but
+	// it is **not enough on its own**, and that cost a user their music: the receiver
+	// broadcasts it only when the state *changes*, so a plugin that connected while the
+	// music was already playing has never seen one. Measured — the first live sweep
+	// reported "not playing" about a source that was, paused it, and then honoured its
+	// own safe default by not resuming. So an empty cache is a question, not an answer,
+	// and `NST QSTN` does answer (`input-hop-capture.json` snapshots it as `Pxx`).
+	let status = parsePlayStatus(deps.getCached(host, "NST"));
+	if (status === undefined) {
+		try {
+			status = parsePlayStatus(await deps.query(host, "NST"));
+		} catch (err) {
+			log.info(`sweep: the receiver did not say what the transport is doing (${err})`);
+		}
+	}
+	const wasPlaying = status === "play";
 	await deps.send(host, "NTC", "PAUSE");
-	log.info(`sweep: paused the source (it ${wasPlaying ? "was" : "was not reported as"} playing)`);
+	log.info(`sweep: paused the source (it was ${status ?? "not reported"}${wasPlaying ? ", so it will be resumed" : ""})`);
 	await deps.sleep(PAUSE_SETTLE_MS);
 
 	// Snapshot before silencing. The volume is read but never written; see above.
@@ -204,8 +219,10 @@ async function quietenForSweep(host: string, deps: SweepDeps): Promise<(expected
 			log.info("sweep: already muted; leaving it alone");
 		} else {
 			await deps.send(host, "AMT", "01");
+			log.info("sweep: muted for the walk");
 			undo.push(async () => {
 				await deps.send(host, "AMT", "00");
+				log.info("sweep: unmuted");
 			});
 			await deps.sleep(MUTE_SETTLE_MS);
 		}
