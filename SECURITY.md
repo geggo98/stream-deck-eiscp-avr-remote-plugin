@@ -56,15 +56,26 @@ without the ones after it:
 4. **A way out without an update.** A global "do not display cover art" switch, so
    users can react before a release is available.
 
-Related, and a different question: the plugin also reads cover *pixels* itself, to pick
-a colour for the progress ring. That decoder is our own (`src/actions/image-luma.ts`),
-deliberately. The obvious dependency, `jpeg-js`, last shipped in June 2022 and carries
+Related, and a different question: the plugin also reads cover *pixels* itself — to pick a
+colour for the progress ring, and to place the touch strip's crop clear of anybody's face.
+That decoder is our own (`src/actions/image-luma.ts`), deliberately. The obvious dependency, `jpeg-js`, last shipped in June 2022 and carries
 CVE-2022-25851 (infinite loop, CVSS 7.5) and CVE-2020-8175 (unbounded resource use) —
 both **denial of service, not remote code execution**, which is the general shape of the
 risk in a pure-JavaScript parser: it cannot corrupt memory. So the mitigations that
 matter are caps and a `try/catch`, both of which are cheaper than operating someone
-else's unmaintained parser safely. It reads only DC coefficients, is bounded by
-construction, and answers `undefined` for anything it does not fully understand.
+else's unmaintained parser safely. It is bounded by construction and answers `undefined`
+for anything it does not fully understand.
+
+It no longer reads *only* DC coefficients: the face-aware crop needs to see eyes, and a
+block average is exactly the resolution at which eyes disappear, so the lowest 4×4
+coefficients of each block are now kept and inverse-transformed into a half-resolution
+picture. That widens what is parsed, not what can go wrong with it — the AC coefficients
+were already being decoded to reach the next block, so this is a store rather than new
+parsing; the extra output is capped (`MAX_DETAIL_SAMPLES`); and it stays inside the same
+`try/catch`, in JavaScript, where the worst case is still a wrong picture or an exception.
+The face detector on top of it (`src/actions/face-cascade.ts`) allocates nothing per
+window, does not recurse, and stops after `MAX_WINDOWS` however large the image claims to
+be.
 
 ## Review history
 
@@ -164,6 +175,32 @@ that way. `style-src` needs `'unsafe-inline'` because Lit falls back to injectin
 a `<style>` element when constructable stylesheets are unavailable, and
 `connect-src` must permit the loopback WebSocket the PI uses to talk to Stream
 Deck.
+
+## Frozen third-party data: the face cascade
+
+The face detector's training data is not code and is not ours. It is treated the same way
+as the vendored Property Inspector bundle above — checked in, hashed, and derived by a
+generator rather than fetched at build time, so a build is reproducible and this question
+has an answer:
+
+| | |
+|---|---|
+| File | `src/actions/generated/face-cascade.ts` (generated) |
+| Source | `https://raw.githubusercontent.com/opencv/opencv/4.x/data/lbpcascades/lbpcascade_frontalface.xml` |
+| SHA-256 of the source | `6f5f20091b0d20311c929bcd8c927074e50bd0ac6424321016c679f43cf5ebcf` |
+| Size | 50.6 KB of XML in, 19.9 KB of TypeScript out |
+| Licence | Apache-2.0 — the file carries no notice of its own, so OpenCV's repository licence applies |
+
+Regenerate with `npm run generate:cascade` (or `-- ./local-copy.xml`). The generator
+records the source and hash in the generated file's header, and reproduces a per-file
+licence notice verbatim when there is one — `lbpcascade_frontalface_improved.xml` carries
+a three-clause BSD notice, this one does not, and it checks rather than assuming.
+
+**`pico.js` was rejected on licence grounds**, not on technical ones: the repository
+states no licence at all (`license: null` from the GitHub API) and does not even contain
+the cascade its examples load.
+
+Nothing is loaded at runtime and no network access is involved once generated.
 
 ## License posture
 

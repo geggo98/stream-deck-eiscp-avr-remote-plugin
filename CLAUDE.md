@@ -541,6 +541,140 @@ same pattern, less visible, because a key that loses its cover still looks like 
 `tests/now-playing.test.ts` pins both halves: primed again after a drop, still refused
 while somebody is watching.
 
+### Not cutting through somebody's face
+
+`fit: "cover"` on a 200×100 segment shows the **middle half** of a square sleeve — source
+rows 128…384 of 512 — and a head in the top or bottom quarter gets sliced. Human face
+detection is not something a viewer can switch off, so a bisected head reads as a fault
+while a bisected guitar reads as a crop. `face-crop.ts` moves that window; `keepFacesWhole`
+(default on, one checkbox in the Now Playing dial's PI) is the way out when it guesses
+wrong.
+
+- **The crop is ours**, which is why this is affordable at all: `artElement` already
+  computes the geometry itself because Qt ignores `preserveAspectRatio`, so the whole
+  feature is one term in one line (`ComposeOptions.focusY`, −1 top … +1 bottom). It is a
+  pure function of the cover and the box, both already in `composeShared`'s cache key, so
+  **the cache does not grow**.
+- **The evidence is free.** `scan()` carried a DC predictor for every component and threw
+  Cb/Cr away one line before storing them; and the AC coefficients were being decoded and
+  discarded, so keeping the low 4×4 corner is a *store*, not extra decoding. A 4×4 corner
+  reconstructs as 4×4 samples per block — **half** scale, not quarter — because averaging
+  pixel pairs folds into the cosine constants (`DETAIL_COS`). Verified by rendering a real
+  512² cover's `detail` image: the sleeve's title is legible at 256², which it is not if
+  the zig-zag, the sign extension or the scale factor is wrong.
+- **Two detectors, because they fail on different sleeves.** Skin chrominance
+  (Chai/Ngan) finds people at any angle in a colour photograph; the LBP cascade finds
+  frontal faces in black-and-white, in duotone and in drawings. Neither covers the other.
+- **The flatness test is *relative*, and that is not a refinement.** With an absolute
+  threshold the same synthetic face was found at Fitzpatrick I and IV and refused at VI:
+  sRGB puts ~147 levels between cheek and pupil on light skin and ~59 on dark skin for the
+  same reflectances, so "16 levels of spread" quietly asks darker-skinned subjects to be
+  more contrasty to be seen at all. Dividing by the region's own mean removes the scale.
+  `tests/face-crop.test.ts` pins seven tones down to one that only just clears the lower
+  luminance bound.
+- **Three rules, and the second does nearly all the work.** Minimise face cut, then
+  maximise face shown, then stay near the middle. Rule one rarely fires: the window is
+  half the picture, so its extreme positions are disjoint and any single region can simply
+  be stepped around — "two faces, one has to go" resolves at zero cost and rule two picks
+  the larger. Without rule two the minimiser "saves" a straddling face by pushing it out of
+  frame, which was the first thing it tried.
+- **A region taller than the window is excluded from the cut cost.** It is cut wherever the
+  window goes, so what it contributes is a constant with a tilt on it — and the tilt is
+  enough to drown out a region that can be rescued. Measured: on a real portrait the
+  subject's hand and the desk below him formed one tall skin region three times the face's
+  area, and minimising total cut moved the crop *away* from the face to lose slightly less
+  desk. Such regions still count towards rule two, which is what places the window over as
+  much of a too-tall face as it can.
+- **Two constants were set by reasoning, and seven real sleeves refuted both.** In the
+  first configuration — `MIN_NEIGHBOURS = 4`, regions from 5 cells up — **three of the four
+  covers with faces moved the wrong way**, one of them the full ±1. The causes were
+  separate and both instructive:
+  - **Requiring agreement bought silence, not safety.** At three or four the cascade found
+    *nothing* on either big-single-face cover; at one it found both and still found nothing
+    on either faceless cover. Few windows agree about a **large** face because the step
+    grows with the scale. Fixing that instead was measured and rejected: stepping by
+    `scale` on a 1.1 ladder cost 7× the time (520 ms vs 73 ms), still missed the hardest
+    cover, and invented a false positive on a black-and-white abstract that had been clean.
+  - **Tiny regions were swinging the whole crop.** A 7-cell patch of shadow, and an 8-cell
+    piece of the *lettering*, each moved a cover the full ±1. The floor now follows from
+    the premise — this exists because a **big** face gets sliced, so anything under 2 % of
+    the picture does not get a vote.
+- **The 24×24 cascade, not the 45×45 "improved" one.** Measured through this plugin's own
+  half-resolution path against a real portrait: at 45×45 the window cannot see a face
+  smaller than ~18 % of the cover's height and found nothing; at 24×24 it found the face
+  with four agreeing detections and still found nothing on a faceless sleeve. Reach won,
+  because small faces are exactly what the colour test cannot help with either.
+- **Measured, not estimated:** the cascade costs **55–74 ms once per cover** and the
+  placement **0.001–0.010 ms per repaint**, so the 1 Hz display pays nothing. The one-off
+  lands *after* the art transfer rather than during it — the cover arrives ~760 ms before
+  the text that triggers the repaint — and even inside a transfer 70 ms of blocked event
+  loop buffers ~19 KB against `MAX_RECEIVE_BUFFER_BYTES` (256 KB).
+- **`npm run probe:focus -- <folder|receiver-ip>`** is the only honest test of any of this:
+  it writes a contact sheet of each cover with the regions drawn on it and both crops
+  composed by the real composer. Every threshold here is a starting value that a sleeve can
+  disprove — use it rather than arguing. Nothing it reads belongs in this repository.
+- **What the colour test is worth on real album art is: much less than it looks.** Two
+  measured failures, both structural rather than tunable. On a warm-toned sleeve the face
+  is correctly found as skin — and so are the neck, the bare shoulder and the background,
+  as one connected mass covering 47 % of the picture, which the "that is a backdrop"
+  cap then discards *whole*; what survives is the lettering. On a duotone sleeve the
+  subject is lit blue and only 4 % of cells pass the test at all. Colour cannot separate a
+  face from its own neck — that is what the cascade is for. On the seven sleeves measured
+  the colour path changed no decision the cascade did not already make, and before the
+  floor above it caused every wrong one. It is kept for the cases the cascade structurally
+  cannot reach (profiles, tilted heads, BMP covers, which have no `detail` image), not
+  because it has earned its keep on evidence.
+- **A crude ink drawing of a face is found, and that is not luck.** EMF's *Schubert Dip* is
+  a black-and-white caricature; the colour test sees 1 % skin and returns nothing, and the
+  cascade fires four times, one of them square in the middle of the face. An LBP feature
+  compares only the *ordering* of brightness in a neighbourhood — dark eye socket, lighter
+  cheek, dark mouth — and a caricature exaggerates precisely that ordering. It works
+  **because** it is a caricature, not despite it.
+  Worth knowing how thin that is, though: all four detections are single windows. Under the
+  configuration of an hour earlier this sleeve found nothing at all. It rests entirely on
+  the lowered agreement threshold.
+- **Still not solved:** faces below ~48 source pixels (four figures in the corners of an
+  M People sleeve are ~10 px — nothing sees those), and heads tilted far enough that a
+  frontal cascade will not match. Both find nothing and leave the crop centred, which is
+  what it did before.
+- **`tests/fixtures` contains no artwork.** The sleeves this was measured against are
+  copyrighted. What *is* committed is `cover-corpus.json`: Wikimedia Commons file titles,
+  their licences and where each one's crop ought to go. `probe:focus` takes the manifest,
+  fetches through `scripts/lib/commons-cache.ts` and prints a verdict per entry, exiting
+  non-zero when one lands in the wrong place.
+  - **Fetching is somebody else's donated infrastructure**, so: cached images are never
+    re-requested (not even revalidated — a title plus a width names one immutable image, so
+    a second run makes *zero* requests), requests are serial and at least a second apart
+    however many callers there are, `429`/`503` and `Retry-After` are obeyed, and the
+    User-Agent carries a contact address because Wikimedia's policy requires it.
+  - **Two URL facts, both measured:** an arbitrary thumbnail width from
+    `upload.wikimedia.org/.../thumb/.../512px-…` answers **400** ("Use thumbnail sizes
+    listed on…"); `Special:FilePath/<name>?width=N` answers 200 and is what is used.
+  - **Corpus entries must be roughly square**, and this is not fussiness: the same NASA
+    portrait decides **`up` at 512×512 and `down` at 960×1200**. A taller picture shows a
+    smaller share of its own height and turns up a different set of regions, so a
+    non-square entry tests a geometry the receiver never sends and reports a verdict that
+    means nothing.
+  - **English Wikipedia is not a source.** It hosts album covers as non-free "fair use";
+    only files on Commons are free.
+  - **An entry may carry `knownGap`**, and one does. A corpus holding only cases the code
+    passes teaches nobody anything; a known gap shows on the sheet, does not fail the run,
+    and — the useful half — is reported loudly if it ever starts *passing*, because the
+    note has then become a lie.
+  - **The corpus found two real bugs within minutes of first containing real photographs,
+    both in code that 978 synthetic tests were happy with:**
+    1. **A scan carrying one component is not interleaved.** Greyscale JPEGs routinely
+       declare `2x2` sampling anyway — every Library of Congress scan in the Gottlieb jazz
+       collection does — and reading that as interleaved demands four blocks per MCU over
+       an MCU grid half as wide and half as tall: 4352 blocks against 4221 present, the
+       reader runs off the end, and the cover is "unreadable". The suite's own encoder
+       wrote `1x1`, which is legal, common, and exactly the case that already worked.
+    2. **`coverFocus` gave up on a greyscale cover before the cascade ran.** It returned
+       "no colour" and stopped — so a black-and-white sleeve got no face detection at all,
+       while the cascade, which is the *entire* answer for black-and-white, reads
+       brightness and never wanted chroma. A test asserted that behaviour, so the bug was
+       pinned rather than caught.
+
 ### A source that loses its input says nothing on the way out
 
 Move the input away from a streaming source and the metadata frames simply **stop**.
