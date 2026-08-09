@@ -16,7 +16,9 @@ import {
 	KEY_TITLE_CHARS,
 	keyTitleFor,
 	DEFAULT_TRACK_CHANGE_SECONDS,
+	compositionsHeld,
 	formatTime,
+	MAX_COMPOSITIONS_PER_ART,
 	MAX_TRACK_CHANGE_SECONDS,
 	MIN_TRACK_CHANGE_SECONDS,
 	overlayIsActive,
@@ -24,6 +26,7 @@ import {
 	trackOverlayEnabled,
 	trackOverlaySeconds,
 } from "../src/actions/track-overlay.ts";
+import { tinyJpeg } from "./helpers/tiny-jpeg.ts";
 
 /** A state shaped like the measured one: "Cruel Summer" / Taylor Swift / Lover. */
 function playing(over: Partial<NowPlaying> = {}): NowPlaying {
@@ -42,6 +45,12 @@ function playing(over: Partial<NowPlaying> = {}): NowPlaying {
 function art(bytes = 512): NowPlaying["art"] {
 	const data = Buffer.alloc(bytes, 0x41);
 	return { type: "jpeg", bytes: data, frames: 2, hash: `h${bytes}` };
+}
+
+let coverCounter = 0;
+/** A real, decodable JPEG of one flat brightness — for the colour rule to look at. */
+function coverOfLuma(mean: number): NonNullable<NowPlaying["art"]> {
+	return { type: "jpeg", bytes: tinyJpeg({ width: 64, height: 64, luma: () => mean }), frames: 1, hash: `c${coverCounter++}` };
 }
 
 describe("track overlay settings", () => {
@@ -92,13 +101,30 @@ describe("when the overlay shows", () => {
 });
 
 describe("progress", () => {
-	it("comes from the receiver's own statement, not from the numbers being present", () => {
-		// NMS field t says whether the time readout means anything. With it disabled the
-		// values are meaningless and a bar drawn from them would be confidently wrong.
+	it("refuses the numbers when the receiver says they mean nothing", () => {
+		// NMS field t. Disabled means the values are meaningless, and a bar drawn from
+		// them would be confidently wrong; elapsed-only means there is no total at all,
+		// so a stale one left in the state must not be believed either.
 		assert.equal(overlayProgress(playing()), 68 / 221);
 		assert.equal(overlayProgress(playing({ timeDisplay: "off" })), undefined);
 		assert.equal(overlayProgress(playing({ timeDisplay: "elapsed" })), undefined, "elapsed-only has no total");
-		assert.equal(overlayProgress(playing({ timeDisplay: "unknown" })), undefined);
+	});
+
+	it("believes the clock while the receiver has said nothing at all", () => {
+		// `unknown` is the initial value, not a statement — and on the reference device it
+		// is a *lasting* one: `NMS` cannot be obtained by asking, only volunteered on a
+		// track change. Reading it as "no progress" left a plugin restarted mid-track with
+		// no ring until the song ended, which is exactly what the key exists to show.
+		// Observed in the plugin's own log on 2026-08-09: a cover at 11:18:57 with
+		// timeDisplay=unknown and no ring, and no second chance until 11:20:36.
+		assert.equal(overlayProgress(playing({ timeDisplay: "unknown" })), 68 / 221);
+	});
+
+	it("still invents nothing when the clock has nothing to say", () => {
+		// The safety net for the case above: a source with no track length reports
+		// `--:--`, which `parseTimeInfo` already turns into absent.
+		assert.equal(overlayProgress(playing({ timeDisplay: "unknown", total: undefined })), undefined);
+		assert.equal(overlayProgress(playing({ timeDisplay: "unknown", elapsed: undefined })), undefined);
 	});
 
 	it("refuses to divide by an unknown or zero total", () => {
@@ -202,13 +228,13 @@ describe("composing is shared, not repeated per element", () => {
 		// One track change notifies every configured element at once, and each used to
 		// compose its own copy: for a 97 KB cover that is two base64 passes over ~100
 		// and ~260 KB, per element, at the exact moment the receiver is streaming ~1 800
-		// frames a second. Identity — not just equality — is the assertion, because that
-		// is what proves the work was done once.
-		const shared = art(4096);
+		// frames a second. Equality alone would not prove anything — two strings built
+		// separately compare equal — so the cache is asked how many it is holding.
+		const shared = art(4096)!;
 		const first = buildOverlayFace(playing({ art: shared }))!;
 		const second = buildOverlayFace(playing({ art: shared }))!;
 		assert.equal(first.image, second.image);
-		assert.ok(first.image === second.image, "the same string instance, i.e. composed once");
+		assert.equal(compositionsHeld(shared), 1, "one composition, however many elements asked");
 	});
 
 	it("still distinguishes a key from a strip", () => {
@@ -266,5 +292,111 @@ describe("the key title", () => {
 	it("has nothing to show for nothing", () => {
 		assert.equal(keyTitleFor(undefined, ""), "");
 		assert.equal(keyTitleFor("   ", "  "), "");
+	});
+});
+
+describe("drawing the progress into the image", () => {
+	/** Decode a composed data URI back to its SVG. */
+	function svgOf(image: string | undefined): string {
+		const prefix = "data:image/svg+xml;base64,";
+		assert.ok(image !== undefined && image.startsWith(prefix), "expected a composed SVG");
+		return Buffer.from(image.slice(prefix.length), "base64").toString("utf8");
+	}
+
+	it("draws nothing unless an element asked for it", () => {
+		// Every other element composed the same way before this existed, and must still.
+		assert.doesNotMatch(svgOf(buildOverlayFace(playing({ art: art() }))!.image), /stroke-dasharray|rx="3"/);
+	});
+
+	it("obeys the receiver, not the numbers", () => {
+		// `NMS` field t is the only thing that says whether the time means anything. With
+		// it off the elapsed/total pair is still populated and still meaningless, so a bar
+		// drawn from it would be confidently wrong.
+		const off = playing({ art: art(), timeDisplay: "off" });
+		assert.equal(overlayProgress(off), undefined, "the premise");
+		assert.doesNotMatch(svgOf(buildOverlayFace(off, { progressStyle: "ring" })!.image), /stroke-dasharray/);
+		assert.match(
+			svgOf(buildOverlayFace(playing({ art: art() }), { progressStyle: "ring" })!.image),
+			/stroke-dasharray/,
+		);
+	});
+
+	it("keeps the picture identical across ticks inside one step", () => {
+		// This is what lets writeKeyImage keep dropping repaints while the clock ticks
+		// once a second. Two elapsed values a fraction of a step apart must compose to
+		// the same string, or nothing is ever de-duplicated again.
+		const shared = art(4096);
+		const at = (elapsed: number): string =>
+			buildOverlayFace(playing({ art: shared, elapsed, total: 1000 }), { progressStyle: "ring" })!.image!;
+		assert.equal(at(300), at(302), "0.300 and 0.302 land in the same step");
+		assert.notEqual(at(300), at(320), "but a whole step apart must not");
+	});
+
+	it("colours the ring from the cover it will sit on", () => {
+		// Real JPEGs, so this exercises the decoder and the colour rule together — the
+		// pair is what a user actually sees, and either half being right on its own is
+		// no comfort.
+		const dark = svgOf(buildOverlayFace(playing({ art: coverOfLuma(20) }), { progressStyle: "ring" })!.image);
+		assert.match(dark, /stroke="#FFFFFF"/, "a dark sleeve wants a white ring");
+		const bright = svgOf(
+			buildOverlayFace(playing({ art: coverOfLuma(250) }), { progressStyle: "ring", scrimOpacity: 0 })!.image,
+		);
+		assert.match(bright, /stroke="#000000"/, "and a bright one a black ring");
+	});
+
+	it("chooses the colour against the darkened cover, not the raw one", () => {
+		// The scrim is applied before the ring is drawn, so a white sleeve at the default
+		// darkening is really a mid-grey backdrop. Picking black there would be exactly
+		// backwards, and the composer's own clamp is what decides how dark it gets.
+		const white = coverOfLuma(250);
+		assert.match(
+			svgOf(buildOverlayFace(playing({ art: white }), { progressStyle: "ring", scrimOpacity: 0 })!.image),
+			/stroke="#000000"/,
+		);
+		assert.match(
+			svgOf(buildOverlayFace(playing({ art: white }), { progressStyle: "ring", scrimOpacity: 0.8 })!.image),
+			/stroke="#FFFFFF"/,
+		);
+		// And an element that names no scrim still gets one. This cover is chosen to sit
+		// where that matters: bright enough for a black ring on its own, dark enough for a
+		// white one once the composer's default 0.45 has been applied. Reading the raw
+		// setting here would pick the colour for a picture that never reaches the screen.
+		const middling = coverOfLuma(153);
+		assert.match(
+			svgOf(buildOverlayFace(playing({ art: middling }), { progressStyle: "ring", scrimOpacity: 0 })!.image),
+			/stroke="#000000"/,
+		);
+		assert.match(
+			svgOf(buildOverlayFace(playing({ art: middling }), { progressStyle: "ring" })!.image),
+			/stroke="#FFFFFF"/,
+		);
+	});
+
+	it("carries the progress onto the placeholder when there is no cover", () => {
+		const svg = svgOf(buildOverlayFace(playing(), { progressStyle: "bar" })!.image);
+		assert.match(svg, /fill="#1A1A1A"/, "the placeholder backdrop");
+		assert.match(svg, /rx="3"/, "and the bar on top of it");
+	});
+
+	it("keeps the compositions per cover bounded as the progress moves", () => {
+		// Without a limit a five-minute track leaves a hundred ~173 KB strings behind, per
+		// cover, for as long as the cover is alive.
+		const shared = art(4096)!;
+		for (let step = 0; step <= 100; step++) {
+			buildOverlayFace(playing({ art: shared, elapsed: step, total: 100 }), { progressStyle: "ring" });
+		}
+		assert.equal(compositionsHeld(shared), MAX_COMPOSITIONS_PER_ART);
+	});
+
+	it("still caches, rather than evicting on principle", () => {
+		// The other half: a bound that dropped everything would also pass the test above
+		// and would recompose ~173 KB on every single tick.
+		const shared = art(8192)!;
+		for (let step = 0; step < 5; step++) {
+			buildOverlayFace(playing({ art: shared, elapsed: step, total: 100 }), { progressStyle: "ring" });
+		}
+		assert.equal(compositionsHeld(shared), 5);
+		buildOverlayFace(playing({ art: shared, elapsed: 3, total: 100 }), { progressStyle: "ring" });
+		assert.equal(compositionsHeld(shared), 5, "asking again for a step it already has adds nothing");
 	});
 });

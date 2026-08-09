@@ -22,7 +22,17 @@
 
 import type { DeviceStatus } from "../adapter/eiscp/device-status.ts";
 import type { NowPlaying } from "../adapter/eiscp/now-playing.ts";
-import { composeCoverImage, composePlaceholder, type CoverFit, type CoverSlice } from "./cover-image.ts";
+import {
+	composeCoverImage,
+	composePlaceholder,
+	type CoverFit,
+	type CoverSlice,
+	effectiveScrim,
+	type ProgressShape,
+	quantiseProgress,
+} from "./cover-image.ts";
+import { lumaGrid } from "./image-luma.ts";
+import { progressColour } from "./progress-colour.ts";
 import { wrapToChars } from "./text-fit.ts";
 
 /**
@@ -113,6 +123,14 @@ export interface OverlayFaceOptions {
 	glyph?: string;
 	/** `contain` on the wide touch strip, so a square cover is not cropped in half. */
 	fit?: CoverFit;
+	/**
+	 * Draw the elapsed fraction into the image, as a ring or a bar.
+	 *
+	 * Only a key needs this — a dial has a layout with a real bar in it. Absent means
+	 * nothing is drawn, which is why every element that had no progress before still has
+	 * none.
+	 */
+	progressStyle?: ProgressShape;
 }
 
 /** `68` -> `1:08`, `3800` -> `1:03:20`. */
@@ -129,13 +147,28 @@ export function formatTime(seconds: number): string {
  * How far through the track we are, or `undefined`.
  *
  * Gated on the receiver's own statement (`NMS` field `t`) rather than on the numbers
- * being present: with the time display disabled the values are meaningless, and a
+ * being present: with the time readout **disabled** the values are meaningless, and a
  * bar drawn from them would be confidently wrong. `--:--` already arrives as absent
- * (see `parseTimeInfo`), so this only has to reject the "not meaningful" case and
+ * (see `parseTimeInfo`), so this only has to reject the stated-meaningless cases and
  * division by zero.
+ *
+ * **`unknown` is not one of them, and the difference is measured.** `unknown` is the
+ * initial value — "nobody has told us" — not a statement. On the reference VSX-S520D
+ * `NMS` cannot be obtained by asking: `prime()` queries it and gets nothing usable, and
+ * the receiver volunteers it only on a track change, about 94 ms after the cover
+ * (observed 2026-08-09, 11:20:36.326 → .420 in the plugin's own log). Treating
+ * `unknown` as "no progress" therefore meant that a plugin restarted mid-track showed
+ * no ring at all until the song ended — minutes, on the one key whose job is to show
+ * how far through it is.
+ *
+ * So `unknown` believes the numbers instead, and `NTM` is where they come from. Nothing
+ * is invented by that: a receiver with no track length reports `--:--`, which arrives
+ * here as `undefined` and is rejected two lines down.
  */
 export function overlayProgress(state: NowPlaying): number | undefined {
-	if (state.timeDisplay !== "elapsed-total") return undefined;
+	// `off` says the readout means nothing; `elapsed` says there is no total, so a stale
+	// one left in the state must not be believed either.
+	if (state.timeDisplay === "off" || state.timeDisplay === "elapsed") return undefined;
 	const { elapsed, total } = state;
 	if (elapsed === undefined || total === undefined || total <= 0) return undefined;
 	return Math.min(1, Math.max(0, elapsed / total));
@@ -157,13 +190,46 @@ export function overlayProgress(state: NowPlaying): number | undefined {
  */
 const composedByArt = new WeakMap<Buffer, Map<string, string | undefined>>();
 
-function composeShared(art: NonNullable<NowPlaying["art"]>, options: OverlayFaceOptions): string | undefined {
+/**
+ * Compositions kept per cover.
+ *
+ * There was no need for a limit while the only variation came from element shapes — a
+ * handful at most. The progress changes that: it is part of the picture, so every step
+ * of it is another entry, and a track would leave a hundred ~173 KB strings behind.
+ * Oldest out, which is the right order here because the progress only ever moves
+ * forward.
+ */
+export const MAX_COMPOSITIONS_PER_ART = 16;
+
+/**
+ * How many compositions are being held for one cover.
+ *
+ * Exists for the tests, and it has to: string identity is not observable in JavaScript
+ * — two equal strings compare equal however many times they were built — so "was this
+ * composed again?" cannot be asked from outside without looking at the cache itself.
+ */
+export function compositionsHeld(art: NonNullable<NowPlaying["art"]>): number {
+	return composedByArt.get(art.bytes)?.size ?? 0;
+}
+
+/** What the progress layer will be drawn as, resolved once per face. */
+interface ProgressPaint {
+	value: number;
+	style: ProgressShape;
+	colour: string;
+}
+
+function composeShared(
+	art: NonNullable<NowPlaying["art"]>,
+	options: OverlayFaceOptions,
+	paint: ProgressPaint | undefined,
+): string | undefined {
 	let byOptions = composedByArt.get(art.bytes);
 	if (!byOptions) {
 		byOptions = new Map();
 		composedByArt.set(art.bytes, byOptions);
 	}
-	const key = `${options.width ?? ""}x${options.height ?? ""}|${options.glyph ?? ""}|${options.scrimOpacity ?? ""}|${options.slice?.index ?? ""}/${options.slice?.count ?? ""}|${options.fit ?? ""}`;
+	const key = `${options.width ?? ""}x${options.height ?? ""}|${options.glyph ?? ""}|${options.scrimOpacity ?? ""}|${options.slice?.index ?? ""}/${options.slice?.count ?? ""}|${options.fit ?? ""}|${paint ? `${paint.style}${paint.value}${paint.colour}` : ""}`;
 	if (byOptions.has(key)) return byOptions.get(key);
 
 	const composed = composeCoverImage({
@@ -174,9 +240,36 @@ function composeShared(art: NonNullable<NowPlaying["art"]>, options: OverlayFace
 		width: options.width,
 		height: options.height,
 		fit: options.fit,
+		progress: paint?.value,
+		progressStyle: paint?.style,
+		progressColour: paint?.colour,
 	});
+	if (byOptions.size >= MAX_COMPOSITIONS_PER_ART) {
+		const oldest = byOptions.keys().next().value;
+		if (oldest !== undefined) byOptions.delete(oldest);
+	}
 	byOptions.set(key, composed);
 	return composed;
+}
+
+/**
+ * Resolve the progress layer, or `undefined` when none should be drawn.
+ *
+ * The colour is chosen from the cover itself, against the *darkened* version of it —
+ * hence `effectiveScrim`, which is the composer's own clamp rather than a second copy
+ * of it. Without art there is nothing to sample and `progressColour` answers white,
+ * which is right for the near-black placeholder.
+ */
+function progressPaint(state: NowPlaying, options: OverlayFaceOptions): ProgressPaint | undefined {
+	if (!options.progressStyle) return undefined;
+	const fraction = overlayProgress(state);
+	if (fraction === undefined) return undefined;
+	const grid = state.art ? lumaGrid(state.art) : undefined;
+	return {
+		value: quantiseProgress(fraction),
+		style: options.progressStyle,
+		colour: progressColour(grid, options.progressStyle, effectiveScrim(options.scrimOpacity)),
+	};
 }
 
 /**
@@ -213,9 +306,20 @@ export function buildOverlayFace(state: NowPlaying, options: OverlayFaceOptions 
 
 	// Over budget the composer returns undefined; fall back to the placeholder so the
 	// element still says "something is playing" rather than going blank.
-	const composed = state.art ? composeShared(state.art, options) : undefined;
+	const paint = progressPaint(state, options);
+	const composed = state.art ? composeShared(state.art, options, paint) : undefined;
 	const image =
-		composed ?? composePlaceholder({ glyph: options.glyph ?? "music", width: options.width, height: options.height });
+		composed ??
+		composePlaceholder({
+			glyph: options.glyph ?? "music",
+			width: options.width,
+			height: options.height,
+			// A source with a clock but no artwork is ordinary — radio, a stream without a
+			// sleeve — so the placeholder carries the progress too.
+			progress: paint?.value,
+			progressStyle: paint?.style,
+			progressColour: paint?.colour,
+		});
 
 	return {
 		image,
