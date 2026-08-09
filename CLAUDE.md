@@ -470,6 +470,38 @@ keeps the captured order but drops the captured waits, so CI stays fast).
     and if the resume fails, a receiver left silent reads as broken hardware while a source left
     paused is one button.
 
+- **What the hop actually looks like, measured** (`npm run capture:hop` →
+  `tests/fixtures/input-hop-capture.json`, taken with AirPlay playing). Two runs, one input
+  step and two quick ones:
+
+  | | one step | two quick steps |
+  |---|---|---|
+  | our `SLI` landed | 1128 ms (`29` USB) | 1545 ms (`2E` BT AUDIO) |
+  | receiver hopped back to `2B` | 9545 ms (**+8.4 s**) | 9404 ms (**+7.9 s**) |
+  | its own `LMD 82` after the hop | +10 ms | **+780 ms** |
+  | `FLD "   AirPlay    "` | +28 ms | +790 ms |
+  | `NST` play again | +606 ms | +1406 ms |
+  | volume | `MVL 00` +2291 ms | `MVL 0A` +3107 ms, then `MVL 00` +3182 ms |
+
+  Three things fell out of it, and two of them changed the code:
+  - **`INPUT_ECHO_MS` was nearly too small.** Every earlier sample of the receiver's own
+    `LMD` was under 340 ms; this recording caught one at **780 ms**, twenty milliseconds
+    inside the 800 ms window. Widened to **1500 ms** — still clear of the 2410 ms
+    deliberate mode change, but now sitting in the middle of the gap instead of at the
+    edge of what had been seen. `tests/name-store-capture.test.ts` reads the worst gap out
+    of the fixture, so a slower receiver fails the test rather than silently disarming the
+    guard.
+  - **At volume 0 this receiver prints `Min`, not a number**: `"NET        Min"`,
+    `"BT AUDIO   Min"`, `"Volume     Min"`. That is the measurement that settles the
+    mute-versus-`MVL 00` question for good — with the volume at zero the input readout
+    stops ending in digits, `endsWithVolume` fails, and every readout would be routed to
+    the *mode* branch instead. A sweep that set the volume to 0 could not name anything.
+  - **The volume drop is not the input change.** It lands ~1.7 s after `NST` reports
+    playing again, in both runs, and the second run shows the receiver first restoring its
+    own level (`MVL 0A`) and something overriding it **75 ms later** (`MVL 00`). That is
+    the AirPlay sender pushing its own volume as the session re-attaches — the plugin has
+    no absolute volume set anywhere in its code.
+
   **The premise — that a paused source stops the hop — is device knowledge, not measured here.**
   It is modelled in the double (`autoReturn` honours `NTC PAUSE`), and the other kind of receiver
   is modelled too (`autoReturn.ignoresPause`), because the detect-and-report path above is what
@@ -512,6 +544,15 @@ keeps the captured order but drops the captured waits, so CI stays fast).
   flags are worth a second look and the third costs one reading — which is why a
   mismatch **never vetoes**, it only asks for corroboration. `recordSli` returns
   `doubtful` in that case and still stores the name.
+- **`npm run capture:hop`** (`scripts/capture-input-hop.ts`) records what the receiver
+  does *on its own* when the input is taken away from a playing network source: the hop
+  back, the mode it announces with it, the display text, and any volume it changes
+  without being asked. Two runs (one input step, then two quickly, to catch the race)
+  with a 25 s watch each. State-changing, so it snapshots power/input/volume/mute,
+  restores them, and refuses to run without `EISCP_ALLOW_STATE_CHANGES=1`. Cover-art
+  frames are folded into one entry per run (`collapseArt`) — 1909 of the 2199 frames
+  were `NJA`, and left expanded the fixture was eight times larger than every other
+  capture while proving nothing extra.
 - **`npm run capture:standby`** (`scripts/capture-standby-behaviour.ts`) measures
   what a set does in standby versus awake, as `query — set — wait — query`, so
   "the receiver ignored it" is observed rather than assumed. Also state-changing

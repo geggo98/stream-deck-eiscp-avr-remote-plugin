@@ -57,16 +57,22 @@ const SLI_PAIR_MS = 3000;
  * recordings, timed from the last input change, the two populations do not overlap
  * and there is nothing at all in between:
  *
- *   receiver's own:  9, 9, 10, 13, 13, 15, 36, 40, 70, 255, 337 ms
+ *   receiver's own:  9, 9, 10, 13, 13, 15, 36, 40, 70, 255, 337, **780** ms
  *   —————————— nothing measured in this band ——————————
  *   the user's:      2410 ms (`LMD 80` -> `LMD 00`, display "    Stereo    ")
  *
- * So the value is picked from the gap, not from a margin around one side of it: 2.4x
- * the slowest echo, and a third of the fastest deliberate change. A wider window was
- * the first attempt and the standby recording refuted it — it swallowed that "Stereo",
- * which is a name the passive learner is supposed to get.
+ * So the value is picked from the gap, not from a margin around one side of it. A
+ * *wider* window was the first attempt and the standby recording refuted it — it
+ * swallowed that "Stereo", which is a name the passive learner is supposed to get.
+ *
+ * Then 800 ms was nearly refuted from the other side: `input-hop-capture.json`, taken
+ * while AirPlay was playing, caught the receiver announcing its own mode **780 ms**
+ * after hopping back — 20 ms inside the window. Every earlier sample was under 340 ms,
+ * so the spread is much wider than the first eleven suggested and the value has to sit
+ * in the middle of the gap rather than at the edge of what has been seen: 1.9x the
+ * slowest echo, and 0.6x the fastest deliberate change.
  */
-const INPUT_ECHO_MS = 800;
+const INPUT_ECHO_MS = 1500;
 const PERSIST_DEBOUNCE_MS = 1500;
 
 // Everything learned here comes from the receiver's display field: untrusted

@@ -1,0 +1,2120 @@
+{
+	"capturedAt": "2026-08-09T18:23:17.786Z",
+	"host": "10.2.0.32",
+	"port": 60128,
+	"model": "VSX-S520D",
+	"note": "Input taken away from a playing AirPlay source, twice: one step and two quick steps. Records the receiver's unsolicited hop back and any volume change it makes on its own. NJA cover-art payloads are recorded as byte counts only. Runs of NJA cover-art frames are folded into one entry each (count, bytes, span) by collapseArt in the capture script.",
+	"snapshot": {
+		"PWR": "01",
+		"SLI": "2B",
+		"MVL": "0A",
+		"AMT": "00",
+		"NST": "Pxx"
+	},
+	"watchMs": 25000,
+	"quickStepMs": 400,
+	"phases": [
+		{
+			"name": "one step away",
+			"steps": 1,
+			"before": {
+				"SLI": "2B",
+				"MVL": "0A",
+				"AMT": "00",
+				"NST": "Pxx"
+			},
+			"after": {
+				"SLI": "2B",
+				"MVL": "00",
+				"AMT": "00",
+				"NST": "Pxx"
+			},
+			"frames": [
+				{
+					"dir": "out",
+					"ms": 0,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP"
+				},
+				{
+					"dir": "in",
+					"ms": 8,
+					"iscp": "!1NJA<art x 25>",
+					"command": "NJA",
+					"bytes": 3100,
+					"frames": 25,
+					"spanMs": 38
+				},
+				{
+					"dir": "in",
+					"ms": 56,
+					"iscp": "!1FLD5553422020202020202020203130",
+					"command": "FLD",
+					"parameter": "5553422020202020202020203130"
+				},
+				{
+					"dir": "in",
+					"ms": 61,
+					"iscp": "!1NJA<art x 430>",
+					"command": "NJA",
+					"bytes": 53297,
+					"frames": 430,
+					"spanMs": 315
+				},
+				{
+					"dir": "in",
+					"ms": 412,
+					"iscp": "!1NLT44220000000000011C4400",
+					"command": "NLT",
+					"parameter": "44220000000000011C4400"
+				},
+				{
+					"dir": "in",
+					"ms": 422,
+					"iscp": "!1NLSC-P",
+					"command": "NLS",
+					"parameter": "C-P"
+				},
+				{
+					"dir": "in",
+					"ms": 600,
+					"iscp": "!1NTM00:00:38/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:38/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 1128,
+					"iscp": "!1SLI29",
+					"command": "SLI",
+					"parameter": "29"
+				},
+				{
+					"dir": "in",
+					"ms": 1147,
+					"iscp": "!1LMD00",
+					"command": "LMD",
+					"parameter": "00"
+				},
+				{
+					"dir": "in",
+					"ms": 1883,
+					"iscp": "!1MOT00",
+					"command": "MOT",
+					"parameter": "00"
+				},
+				{
+					"dir": "in",
+					"ms": 1896,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 2192,
+					"iscp": "!1NLTF3000000000C0000FFFF00NET",
+					"command": "NLT",
+					"parameter": "F3000000000C0000FFFF00NET"
+				},
+				{
+					"dir": "in",
+					"ms": 2198,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 2198,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn"
+				},
+				{
+					"dir": "in",
+					"ms": 2198,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora"
+				},
+				{
+					"dir": "in",
+					"ms": 2198,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify"
+				},
+				{
+					"dir": "in",
+					"ms": 2198,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer"
+				},
+				{
+					"dir": "in",
+					"ms": 2208,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal"
+				},
+				{
+					"dir": "in",
+					"ms": 2212,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic"
+				},
+				{
+					"dir": "in",
+					"ms": 2212,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect"
+				},
+				{
+					"dir": "in",
+					"ms": 2212,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in"
+				},
+				{
+					"dir": "in",
+					"ms": 2212,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi"
+				},
+				{
+					"dir": "in",
+					"ms": 2212,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 2212,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server"
+				},
+				{
+					"dir": "in",
+					"ms": 2212,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue"
+				},
+				{
+					"dir": "in",
+					"ms": 2284,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 2345,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 2396,
+					"iscp": "!1NSTSxx",
+					"command": "NST",
+					"parameter": "Sxx"
+				},
+				{
+					"dir": "in",
+					"ms": 2458,
+					"iscp": "!1NSTSxx",
+					"command": "NST",
+					"parameter": "Sxx"
+				},
+				{
+					"dir": "in",
+					"ms": 2474,
+					"iscp": "!1NLTF00100000001010002FF00USB",
+					"command": "NLT",
+					"parameter": "F00100000001010002FF00USB"
+				},
+				{
+					"dir": "in",
+					"ms": 2481,
+					"iscp": "!1NLSU0-No Storage",
+					"command": "NLS",
+					"parameter": "U0-No Storage"
+				},
+				{
+					"dir": "in",
+					"ms": 2493,
+					"iscp": "!1NSTSxx",
+					"command": "NST",
+					"parameter": "Sxx"
+				},
+				{
+					"dir": "in",
+					"ms": 4467,
+					"iscp": "!1NLTF00100000001010002FF00USB",
+					"command": "NLT",
+					"parameter": "F00100000001010002FF00USB"
+				},
+				{
+					"dir": "in",
+					"ms": 4475,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 4475,
+					"iscp": "!1NLSU0-No Storage",
+					"command": "NLS",
+					"parameter": "U0-No Storage"
+				},
+				{
+					"dir": "in",
+					"ms": 7814,
+					"iscp": "!1FLD204E6F2053746F72616765202020",
+					"command": "FLD",
+					"parameter": "204E6F2053746F72616765202020"
+				},
+				{
+					"dir": "in",
+					"ms": 9386,
+					"iscp": "!1NLTF3000000000C0000FFFF00NET",
+					"command": "NLT",
+					"parameter": "F3000000000C0000FFFF00NET"
+				},
+				{
+					"dir": "in",
+					"ms": 9392,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 9407,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server"
+				},
+				{
+					"dir": "in",
+					"ms": 9414,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue"
+				},
+				{
+					"dir": "in",
+					"ms": 9484,
+					"iscp": "!1NLTF02200000000000102FF00",
+					"command": "NLT",
+					"parameter": "F02200000000000102FF00"
+				},
+				{
+					"dir": "in",
+					"ms": 9492,
+					"iscp": "!1NLSC-P",
+					"command": "NLS",
+					"parameter": "C-P"
+				},
+				{
+					"dir": "in",
+					"ms": 9519,
+					"iscp": "!1NLTF02200000000000102FF00",
+					"command": "NLT",
+					"parameter": "F02200000000000102FF00"
+				},
+				{
+					"dir": "in",
+					"ms": 9523,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 9545,
+					"iscp": "!1SLI2B",
+					"command": "SLI",
+					"parameter": "2B"
+				},
+				{
+					"dir": "in",
+					"ms": 9555,
+					"iscp": "!1LMD82",
+					"command": "LMD",
+					"parameter": "82"
+				},
+				{
+					"dir": "in",
+					"ms": 9562,
+					"iscp": "!1MOT01",
+					"command": "MOT",
+					"parameter": "01"
+				},
+				{
+					"dir": "in",
+					"ms": 9573,
+					"iscp": "!1FLD202020416972506C617920202020",
+					"command": "FLD",
+					"parameter": "202020416972506C617920202020"
+				},
+				{
+					"dir": "in",
+					"ms": 9711,
+					"iscp": "!1NLTF3000000000C0000FFFF00NET",
+					"command": "NLT",
+					"parameter": "F3000000000C0000FFFF00NET"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in"
+				},
+				{
+					"dir": "in",
+					"ms": 9728,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi"
+				},
+				{
+					"dir": "in",
+					"ms": 9745,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 9752,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server"
+				},
+				{
+					"dir": "in",
+					"ms": 9760,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue"
+				},
+				{
+					"dir": "in",
+					"ms": 10151,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 10169,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 10183,
+					"iscp": "!1NTIAirPlay",
+					"command": "NTI",
+					"parameter": "AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 10205,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 10352,
+					"iscp": "!1NLT44220000000000011C4400",
+					"command": "NLT",
+					"parameter": "44220000000000011C4400"
+				},
+				{
+					"dir": "in",
+					"ms": 10363,
+					"iscp": "!1NLSC-P",
+					"command": "NLS",
+					"parameter": "C-P"
+				},
+				{
+					"dir": "in",
+					"ms": 10381,
+					"iscp": "!1NLT44220000000000011C4400",
+					"command": "NLT",
+					"parameter": "44220000000000011C4400"
+				},
+				{
+					"dir": "in",
+					"ms": 10387,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 10547,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 10556,
+					"iscp": "!1NMSxxxxxx244",
+					"command": "NMS",
+					"parameter": "xxxxxx244"
+				},
+				{
+					"dir": "in",
+					"ms": 10582,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 10802,
+					"iscp": "!1NMSxxxxxx244",
+					"command": "NMS",
+					"parameter": "xxxxxx244"
+				},
+				{
+					"dir": "in",
+					"ms": 10815,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 10829,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 10838,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 11836,
+					"iscp": "!1MVL00",
+					"command": "MVL",
+					"parameter": "00"
+				},
+				{
+					"dir": "in",
+					"ms": 11854,
+					"iscp": "!1FLD566F6C756D6520202020204D696E",
+					"command": "FLD",
+					"parameter": "566F6C756D6520202020204D696E"
+				},
+				{
+					"dir": "in",
+					"ms": 11919,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 11947,
+					"iscp": "!1NTI100% Pure Love",
+					"command": "NTI",
+					"parameter": "100% Pure Love"
+				},
+				{
+					"dir": "in",
+					"ms": 11968,
+					"iscp": "!1NDN",
+					"command": "NDN",
+					"parameter": ""
+				},
+				{
+					"dir": "in",
+					"ms": 12007,
+					"iscp": "!1NJA<art x 727>",
+					"command": "NJA",
+					"bytes": 90125,
+					"frames": 727,
+					"spanMs": 1863
+				},
+				{
+					"dir": "in",
+					"ms": 13883,
+					"iscp": "!1NMSxxxxxx244",
+					"command": "NMS",
+					"parameter": "xxxxxx244"
+				},
+				{
+					"dir": "in",
+					"ms": 13895,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 13921,
+					"iscp": "!1NMSxxxxxx144",
+					"command": "NMS",
+					"parameter": "xxxxxx144"
+				},
+				{
+					"dir": "in",
+					"ms": 13931,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 13943,
+					"iscp": "!1NTR----/----",
+					"command": "NTR",
+					"parameter": "----/----"
+				},
+				{
+					"dir": "in",
+					"ms": 13950,
+					"iscp": "!1NTM00:00:39/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:39/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 13959,
+					"iscp": "!1NTM00:00:40/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:40/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 13965,
+					"iscp": "!1NTM00:00:41/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:41/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 14734,
+					"iscp": "!1NTM00:00:42/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:42/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 14816,
+					"iscp": "!1FLD1A313030252050757265204C6F76",
+					"command": "FLD",
+					"parameter": "1A313030252050757265204C6F76"
+				},
+				{
+					"dir": "in",
+					"ms": 15634,
+					"iscp": "!1FLD1A3030252050757265204C6F7665",
+					"command": "FLD",
+					"parameter": "1A3030252050757265204C6F7665"
+				},
+				{
+					"dir": "in",
+					"ms": 15744,
+					"iscp": "!1NTM00:00:43/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:43/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 15929,
+					"iscp": "!1FLD1A30252050757265204C6F766520",
+					"command": "FLD",
+					"parameter": "1A30252050757265204C6F766520"
+				},
+				{
+					"dir": "in",
+					"ms": 16228,
+					"iscp": "!1FLD1A252050757265204C6F76652020",
+					"command": "FLD",
+					"parameter": "1A252050757265204C6F76652020"
+				},
+				{
+					"dir": "in",
+					"ms": 16551,
+					"iscp": "!1FLD1A2050757265204C6F7665202020",
+					"command": "FLD",
+					"parameter": "1A2050757265204C6F7665202020"
+				},
+				{
+					"dir": "in",
+					"ms": 16733,
+					"iscp": "!1NTM00:00:44/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:44/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 16843,
+					"iscp": "!1FLD1A50757265204C6F766520202020",
+					"command": "FLD",
+					"parameter": "1A50757265204C6F766520202020"
+				},
+				{
+					"dir": "in",
+					"ms": 17144,
+					"iscp": "!1FLD1A757265204C6F76652020202020",
+					"command": "FLD",
+					"parameter": "1A757265204C6F76652020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 17435,
+					"iscp": "!1FLD1A7265204C6F7665202020202020",
+					"command": "FLD",
+					"parameter": "1A7265204C6F7665202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 17740,
+					"iscp": "!1NTM00:00:45/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:45/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 17754,
+					"iscp": "!1FLD1A65204C6F766520202020202020",
+					"command": "FLD",
+					"parameter": "1A65204C6F766520202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 18040,
+					"iscp": "!1FLD1A204C6F76652020202020202020",
+					"command": "FLD",
+					"parameter": "1A204C6F76652020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 18341,
+					"iscp": "!1FLD1A4C6F7665202020202020202020",
+					"command": "FLD",
+					"parameter": "1A4C6F7665202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 18648,
+					"iscp": "!1FLD1A6F766520202020202020202020",
+					"command": "FLD",
+					"parameter": "1A6F766520202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 18734,
+					"iscp": "!1NTM00:00:46/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:46/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 18940,
+					"iscp": "!1FLD1A76652020202020202020202020",
+					"command": "FLD",
+					"parameter": "1A76652020202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 19249,
+					"iscp": "!1FLD1A65202020202020202020202020",
+					"command": "FLD",
+					"parameter": "1A65202020202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 19574,
+					"iscp": "!1FLD1A20202020202020202020202020",
+					"command": "FLD",
+					"parameter": "1A20202020202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 19590,
+					"iscp": "!1FLD1A313030252050757265204C6F76",
+					"command": "FLD",
+					"parameter": "1A313030252050757265204C6F76"
+				},
+				{
+					"dir": "in",
+					"ms": 19739,
+					"iscp": "!1NTM00:00:47/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:47/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 20747,
+					"iscp": "!1NTM00:00:48/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:48/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 21729,
+					"iscp": "!1NTM00:00:49/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:49/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 22741,
+					"iscp": "!1NTM00:00:50/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:50/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 22884,
+					"iscp": "!1FLD1A3030252050757265204C6F7665",
+					"command": "FLD",
+					"parameter": "1A3030252050757265204C6F7665"
+				},
+				{
+					"dir": "in",
+					"ms": 23180,
+					"iscp": "!1FLD1A30252050757265204C6F766520",
+					"command": "FLD",
+					"parameter": "1A30252050757265204C6F766520"
+				},
+				{
+					"dir": "in",
+					"ms": 23499,
+					"iscp": "!1FLD1A252050757265204C6F76652020",
+					"command": "FLD",
+					"parameter": "1A252050757265204C6F76652020"
+				},
+				{
+					"dir": "in",
+					"ms": 23736,
+					"iscp": "!1NTM00:00:51/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:51/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 23792,
+					"iscp": "!1FLD1A2050757265204C6F7665202020",
+					"command": "FLD",
+					"parameter": "1A2050757265204C6F7665202020"
+				},
+				{
+					"dir": "in",
+					"ms": 24088,
+					"iscp": "!1FLD1A50757265204C6F766520202020",
+					"command": "FLD",
+					"parameter": "1A50757265204C6F766520202020"
+				},
+				{
+					"dir": "in",
+					"ms": 24392,
+					"iscp": "!1FLD1A757265204C6F76652020202020",
+					"command": "FLD",
+					"parameter": "1A757265204C6F76652020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 24694,
+					"iscp": "!1FLD1A7265204C6F7665202020202020",
+					"command": "FLD",
+					"parameter": "1A7265204C6F7665202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 24734,
+					"iscp": "!1NTM00:00:52/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:52/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 24993,
+					"iscp": "!1FLD1A65204C6F766520202020202020",
+					"command": "FLD",
+					"parameter": "1A65204C6F766520202020202020"
+				},
+				{
+					"dir": "out",
+					"ms": 25001,
+					"iscp": "!1SLIQSTN",
+					"command": "SLI",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25064,
+					"iscp": "!1SLI2B",
+					"command": "SLI",
+					"parameter": "2B"
+				},
+				{
+					"dir": "out",
+					"ms": 25065,
+					"iscp": "!1MVLQSTN",
+					"command": "MVL",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25119,
+					"iscp": "!1MVL00",
+					"command": "MVL",
+					"parameter": "00"
+				},
+				{
+					"dir": "out",
+					"ms": 25119,
+					"iscp": "!1AMTQSTN",
+					"command": "AMT",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25189,
+					"iscp": "!1AMT00",
+					"command": "AMT",
+					"parameter": "00"
+				},
+				{
+					"dir": "out",
+					"ms": 25189,
+					"iscp": "!1NSTQSTN",
+					"command": "NST",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25237,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				}
+			]
+		},
+		{
+			"name": "two steps away, quickly",
+			"steps": 2,
+			"before": {
+				"SLI": "2B",
+				"MVL": "00",
+				"AMT": "00",
+				"NST": "Pxx"
+			},
+			"after": {
+				"SLI": "2B",
+				"MVL": "00",
+				"AMT": "00",
+				"NST": "Pxx"
+			},
+			"frames": [
+				{
+					"dir": "out",
+					"ms": 0,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP"
+				},
+				{
+					"dir": "in",
+					"ms": 103,
+					"iscp": "!1FLD55534220202020202020204D696E",
+					"command": "FLD",
+					"parameter": "55534220202020202020204D696E"
+				},
+				{
+					"dir": "in",
+					"ms": 281,
+					"iscp": "!1NTM00:00:59/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:59/00:04:40"
+				},
+				{
+					"dir": "out",
+					"ms": 401,
+					"iscp": "!1SLIUP",
+					"command": "SLI",
+					"parameter": "UP"
+				},
+				{
+					"dir": "in",
+					"ms": 463,
+					"iscp": "!1FLD425420415544494F2020204D696E",
+					"command": "FLD",
+					"parameter": "425420415544494F2020204D696E"
+				},
+				{
+					"dir": "in",
+					"ms": 1283,
+					"iscp": "!1NTM00:01:00/00:04:40",
+					"command": "NTM",
+					"parameter": "00:01:00/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 1545,
+					"iscp": "!1SLI2E",
+					"command": "SLI",
+					"parameter": "2E"
+				},
+				{
+					"dir": "in",
+					"ms": 2370,
+					"iscp": "!1NLTF3000000000C0000FFFF00NET",
+					"command": "NLT",
+					"parameter": "F3000000000C0000FFFF00NET"
+				},
+				{
+					"dir": "in",
+					"ms": 2375,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 2375,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn"
+				},
+				{
+					"dir": "in",
+					"ms": 2375,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora"
+				},
+				{
+					"dir": "in",
+					"ms": 2375,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify"
+				},
+				{
+					"dir": "in",
+					"ms": 2375,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer"
+				},
+				{
+					"dir": "in",
+					"ms": 2375,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal"
+				},
+				{
+					"dir": "in",
+					"ms": 2385,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic"
+				},
+				{
+					"dir": "in",
+					"ms": 2390,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect"
+				},
+				{
+					"dir": "in",
+					"ms": 2397,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in"
+				},
+				{
+					"dir": "in",
+					"ms": 2397,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi"
+				},
+				{
+					"dir": "in",
+					"ms": 2397,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 2397,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server"
+				},
+				{
+					"dir": "in",
+					"ms": 2397,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue"
+				},
+				{
+					"dir": "in",
+					"ms": 2418,
+					"iscp": "!1LMD00",
+					"command": "LMD",
+					"parameter": "00"
+				},
+				{
+					"dir": "in",
+					"ms": 2430,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 2518,
+					"iscp": "!1NLTF422000000000001FFFF00",
+					"command": "NLT",
+					"parameter": "F422000000000001FFFF00"
+				},
+				{
+					"dir": "in",
+					"ms": 2530,
+					"iscp": "!1NLSC-P",
+					"command": "NLS",
+					"parameter": "C-P"
+				},
+				{
+					"dir": "in",
+					"ms": 2546,
+					"iscp": "!1NLTF422000000000001FFFF00",
+					"command": "NLT",
+					"parameter": "F422000000000001FFFF00"
+				},
+				{
+					"dir": "in",
+					"ms": 2551,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 2683,
+					"iscp": "!1NSTSxx",
+					"command": "NST",
+					"parameter": "Sxx"
+				},
+				{
+					"dir": "in",
+					"ms": 2725,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 2740,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 2761,
+					"iscp": "!1NSTSxx",
+					"command": "NST",
+					"parameter": "Sxx"
+				},
+				{
+					"dir": "in",
+					"ms": 2766,
+					"iscp": "!1NSTSxx",
+					"command": "NST",
+					"parameter": "Sxx"
+				},
+				{
+					"dir": "in",
+					"ms": 3326,
+					"iscp": "!1NTINow Pairing...",
+					"command": "NTI",
+					"parameter": "Now Pairing..."
+				},
+				{
+					"dir": "in",
+					"ms": 3333,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 3355,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 3772,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 3791,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 7466,
+					"iscp": "!1FLD832050616972696E672E2E2E2020",
+					"command": "FLD",
+					"parameter": "832050616972696E672E2E2E2020"
+				},
+				{
+					"dir": "in",
+					"ms": 7675,
+					"iscp": "!1FLD8350616972696E672E2E2E202020",
+					"command": "FLD",
+					"parameter": "8350616972696E672E2E2E202020"
+				},
+				{
+					"dir": "in",
+					"ms": 7964,
+					"iscp": "!1FLD83616972696E672E2E2E20202020",
+					"command": "FLD",
+					"parameter": "83616972696E672E2E2E20202020"
+				},
+				{
+					"dir": "in",
+					"ms": 8653,
+					"iscp": "!1FLD836972696E672E2E2E2020202020",
+					"command": "FLD",
+					"parameter": "836972696E672E2E2E2020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 8704,
+					"iscp": "!1FLD8372696E672E2E2E202020202020",
+					"command": "FLD",
+					"parameter": "8372696E672E2E2E202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 9001,
+					"iscp": "!1FLD83696E672E2E2E20202020202020",
+					"command": "FLD",
+					"parameter": "83696E672E2E2E20202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 9404,
+					"iscp": "!1SLI2B",
+					"command": "SLI",
+					"parameter": "2B"
+				},
+				{
+					"dir": "in",
+					"ms": 10028,
+					"iscp": "!1NLTF3000000000C0000FFFF00NET",
+					"command": "NLT",
+					"parameter": "F3000000000C0000FFFF00NET"
+				},
+				{
+					"dir": "in",
+					"ms": 10035,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 10040,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn"
+				},
+				{
+					"dir": "in",
+					"ms": 10044,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server"
+				},
+				{
+					"dir": "in",
+					"ms": 10051,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue"
+				},
+				{
+					"dir": "in",
+					"ms": 10124,
+					"iscp": "!1NLTF422000000000001FFFF00",
+					"command": "NLT",
+					"parameter": "F422000000000001FFFF00"
+				},
+				{
+					"dir": "in",
+					"ms": 10128,
+					"iscp": "!1NLSC-P",
+					"command": "NLS",
+					"parameter": "C-P"
+				},
+				{
+					"dir": "in",
+					"ms": 10160,
+					"iscp": "!1NLTF422000000000001FFFF00",
+					"command": "NLT",
+					"parameter": "F422000000000001FFFF00"
+				},
+				{
+					"dir": "in",
+					"ms": 10170,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 10184,
+					"iscp": "!1LMD82",
+					"command": "LMD",
+					"parameter": "82"
+				},
+				{
+					"dir": "in",
+					"ms": 10194,
+					"iscp": "!1FLD202020416972506C617920202020",
+					"command": "FLD",
+					"parameter": "202020416972506C617920202020"
+				},
+				{
+					"dir": "in",
+					"ms": 10415,
+					"iscp": "!1NLTF3000000000C0000FFFF00NET",
+					"command": "NLT",
+					"parameter": "F3000000000C0000FFFF00NET"
+				},
+				{
+					"dir": "in",
+					"ms": 10426,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU0-TuneIn",
+					"command": "NLS",
+					"parameter": "U0-TuneIn"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU1-Pandora",
+					"command": "NLS",
+					"parameter": "U1-Pandora"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU2-Spotify",
+					"command": "NLS",
+					"parameter": "U2-Spotify"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU3-Deezer",
+					"command": "NLS",
+					"parameter": "U3-Deezer"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU4-Tidal",
+					"command": "NLS",
+					"parameter": "U4-Tidal"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU5-AmazonMusic",
+					"command": "NLS",
+					"parameter": "U5-AmazonMusic"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU6-FlareConnect",
+					"command": "NLS",
+					"parameter": "U6-FlareConnect"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU7-Chromecast built-in",
+					"command": "NLS",
+					"parameter": "U7-Chromecast built-in"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU8-DTS Play-Fi",
+					"command": "NLS",
+					"parameter": "U8-DTS Play-Fi"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU9-AirPlay",
+					"command": "NLS",
+					"parameter": "U9-AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU0-Music Server",
+					"command": "NLS",
+					"parameter": "U0-Music Server"
+				},
+				{
+					"dir": "in",
+					"ms": 10433,
+					"iscp": "!1NLSU1-Play Queue",
+					"command": "NLS",
+					"parameter": "U1-Play Queue"
+				},
+				{
+					"dir": "in",
+					"ms": 10810,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 10880,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 10885,
+					"iscp": "!1NTIAirPlay",
+					"command": "NTI",
+					"parameter": "AirPlay"
+				},
+				{
+					"dir": "in",
+					"ms": 10913,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 11142,
+					"iscp": "!1NLT44220000000000011C4400",
+					"command": "NLT",
+					"parameter": "44220000000000011C4400"
+				},
+				{
+					"dir": "in",
+					"ms": 11148,
+					"iscp": "!1NLSC-P",
+					"command": "NLS",
+					"parameter": "C-P"
+				},
+				{
+					"dir": "in",
+					"ms": 11177,
+					"iscp": "!1NLT44220000000000011C4400",
+					"command": "NLT",
+					"parameter": "44220000000000011C4400"
+				},
+				{
+					"dir": "in",
+					"ms": 11193,
+					"iscp": "!1NLSC0P",
+					"command": "NLS",
+					"parameter": "C0P"
+				},
+				{
+					"dir": "in",
+					"ms": 11357,
+					"iscp": "!1NMSxxxxxx244",
+					"command": "NMS",
+					"parameter": "xxxxxx244"
+				},
+				{
+					"dir": "in",
+					"ms": 11391,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 11460,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 11700,
+					"iscp": "!1NMSxxxxxx244",
+					"command": "NMS",
+					"parameter": "xxxxxx244"
+				},
+				{
+					"dir": "in",
+					"ms": 11707,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 11707,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 11707,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				},
+				{
+					"dir": "in",
+					"ms": 12511,
+					"iscp": "!1MVL0A",
+					"command": "MVL",
+					"parameter": "0A"
+				},
+				{
+					"dir": "in",
+					"ms": 12527,
+					"iscp": "!1FLD566F6C756D652020202020203130",
+					"command": "FLD",
+					"parameter": "566F6C756D652020202020203130"
+				},
+				{
+					"dir": "in",
+					"ms": 12586,
+					"iscp": "!1MVL00",
+					"command": "MVL",
+					"parameter": "00"
+				},
+				{
+					"dir": "in",
+					"ms": 12590,
+					"iscp": "!1FLD566F6C756D6520202020204D696E",
+					"command": "FLD",
+					"parameter": "566F6C756D6520202020204D696E"
+				},
+				{
+					"dir": "in",
+					"ms": 12624,
+					"iscp": "!1NTI100% Pure Love",
+					"command": "NTI",
+					"parameter": "100% Pure Love"
+				},
+				{
+					"dir": "in",
+					"ms": 12641,
+					"iscp": "!1NTM--:--:--/00:04:40",
+					"command": "NTM",
+					"parameter": "--:--:--/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 12677,
+					"iscp": "!1NJA<art x 727>",
+					"command": "NJA",
+					"bytes": 90125,
+					"frames": 727,
+					"spanMs": 1472
+				},
+				{
+					"dir": "in",
+					"ms": 14149,
+					"iscp": "!1NDN",
+					"command": "NDN",
+					"parameter": ""
+				},
+				{
+					"dir": "in",
+					"ms": 14189,
+					"iscp": "!1NMSxxxxxx144",
+					"command": "NMS",
+					"parameter": "xxxxxx144"
+				},
+				{
+					"dir": "in",
+					"ms": 14203,
+					"iscp": "!1NFI//",
+					"command": "NFI",
+					"parameter": "//"
+				},
+				{
+					"dir": "in",
+					"ms": 14265,
+					"iscp": "!1NTR----/----",
+					"command": "NTR",
+					"parameter": "----/----"
+				},
+				{
+					"dir": "in",
+					"ms": 14270,
+					"iscp": "!1NTM00:00:38/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:38/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 14275,
+					"iscp": "!1NTM00:00:39/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:39/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 14279,
+					"iscp": "!1NTM00:00:40/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:40/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 14332,
+					"iscp": "!1NTM00:00:41/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:41/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 15329,
+					"iscp": "!1NTM00:00:42/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:42/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 15508,
+					"iscp": "!1FLD1A313030252050757265204C6F76",
+					"command": "FLD",
+					"parameter": "1A313030252050757265204C6F76"
+				},
+				{
+					"dir": "in",
+					"ms": 16339,
+					"iscp": "!1FLD1A3030252050757265204C6F7665",
+					"command": "FLD",
+					"parameter": "1A3030252050757265204C6F7665"
+				},
+				{
+					"dir": "in",
+					"ms": 16353,
+					"iscp": "!1NTM00:00:43/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:43/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 16616,
+					"iscp": "!1FLD1A30252050757265204C6F766520",
+					"command": "FLD",
+					"parameter": "1A30252050757265204C6F766520"
+				},
+				{
+					"dir": "in",
+					"ms": 16918,
+					"iscp": "!1FLD1A252050757265204C6F76652020",
+					"command": "FLD",
+					"parameter": "1A252050757265204C6F76652020"
+				},
+				{
+					"dir": "in",
+					"ms": 17309,
+					"iscp": "!1FLD1A2050757265204C6F7665202020",
+					"command": "FLD",
+					"parameter": "1A2050757265204C6F7665202020"
+				},
+				{
+					"dir": "in",
+					"ms": 17330,
+					"iscp": "!1NTM00:00:44/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:44/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 17513,
+					"iscp": "!1FLD1A50757265204C6F766520202020",
+					"command": "FLD",
+					"parameter": "1A50757265204C6F766520202020"
+				},
+				{
+					"dir": "in",
+					"ms": 17823,
+					"iscp": "!1FLD1A757265204C6F76652020202020",
+					"command": "FLD",
+					"parameter": "1A757265204C6F76652020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 18126,
+					"iscp": "!1FLD1A7265204C6F7665202020202020",
+					"command": "FLD",
+					"parameter": "1A7265204C6F7665202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 18329,
+					"iscp": "!1NTM00:00:45/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:45/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 18429,
+					"iscp": "!1FLD1A65204C6F766520202020202020",
+					"command": "FLD",
+					"parameter": "1A65204C6F766520202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 18716,
+					"iscp": "!1FLD1A204C6F76652020202020202020",
+					"command": "FLD",
+					"parameter": "1A204C6F76652020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 19032,
+					"iscp": "!1FLD1A4C6F7665202020202020202020",
+					"command": "FLD",
+					"parameter": "1A4C6F7665202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 19335,
+					"iscp": "!1FLD1A6F766520202020202020202020",
+					"command": "FLD",
+					"parameter": "1A6F766520202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 19350,
+					"iscp": "!1NTM00:00:46/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:46/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 19636,
+					"iscp": "!1FLD1A76652020202020202020202020",
+					"command": "FLD",
+					"parameter": "1A76652020202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 19928,
+					"iscp": "!1FLD1A65202020202020202020202020",
+					"command": "FLD",
+					"parameter": "1A65202020202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 20266,
+					"iscp": "!1FLD1A20202020202020202020202020",
+					"command": "FLD",
+					"parameter": "1A20202020202020202020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 20301,
+					"iscp": "!1FLD1A313030252050757265204C6F76",
+					"command": "FLD",
+					"parameter": "1A313030252050757265204C6F76"
+				},
+				{
+					"dir": "in",
+					"ms": 20327,
+					"iscp": "!1NTM00:00:47/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:47/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 21344,
+					"iscp": "!1NTM00:00:48/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:48/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 22351,
+					"iscp": "!1NTM00:00:49/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:49/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 23331,
+					"iscp": "!1NTM00:00:50/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:50/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 23569,
+					"iscp": "!1FLD1A3030252050757265204C6F7665",
+					"command": "FLD",
+					"parameter": "1A3030252050757265204C6F7665"
+				},
+				{
+					"dir": "in",
+					"ms": 23865,
+					"iscp": "!1FLD1A30252050757265204C6F766520",
+					"command": "FLD",
+					"parameter": "1A30252050757265204C6F766520"
+				},
+				{
+					"dir": "in",
+					"ms": 24165,
+					"iscp": "!1FLD1A252050757265204C6F76652020",
+					"command": "FLD",
+					"parameter": "1A252050757265204C6F76652020"
+				},
+				{
+					"dir": "in",
+					"ms": 24342,
+					"iscp": "!1NTM00:00:51/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:51/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 24567,
+					"iscp": "!1FLD1A2050757265204C6F7665202020",
+					"command": "FLD",
+					"parameter": "1A2050757265204C6F7665202020"
+				},
+				{
+					"dir": "in",
+					"ms": 24764,
+					"iscp": "!1FLD1A50757265204C6F766520202020",
+					"command": "FLD",
+					"parameter": "1A50757265204C6F766520202020"
+				},
+				{
+					"dir": "in",
+					"ms": 25063,
+					"iscp": "!1FLD1A757265204C6F76652020202020",
+					"command": "FLD",
+					"parameter": "1A757265204C6F76652020202020"
+				},
+				{
+					"dir": "in",
+					"ms": 25321,
+					"iscp": "!1NTM00:00:52/00:04:40",
+					"command": "NTM",
+					"parameter": "00:00:52/00:04:40"
+				},
+				{
+					"dir": "in",
+					"ms": 25384,
+					"iscp": "!1FLD1A7265204C6F7665202020202020",
+					"command": "FLD",
+					"parameter": "1A7265204C6F7665202020202020"
+				},
+				{
+					"dir": "out",
+					"ms": 25402,
+					"iscp": "!1SLIQSTN",
+					"command": "SLI",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25465,
+					"iscp": "!1SLI2B",
+					"command": "SLI",
+					"parameter": "2B"
+				},
+				{
+					"dir": "out",
+					"ms": 25465,
+					"iscp": "!1MVLQSTN",
+					"command": "MVL",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25518,
+					"iscp": "!1MVL00",
+					"command": "MVL",
+					"parameter": "00"
+				},
+				{
+					"dir": "out",
+					"ms": 25518,
+					"iscp": "!1AMTQSTN",
+					"command": "AMT",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25576,
+					"iscp": "!1AMT00",
+					"command": "AMT",
+					"parameter": "00"
+				},
+				{
+					"dir": "out",
+					"ms": 25576,
+					"iscp": "!1NSTQSTN",
+					"command": "NST",
+					"parameter": "QSTN"
+				},
+				{
+					"dir": "in",
+					"ms": 25644,
+					"iscp": "!1NSTPxx",
+					"command": "NST",
+					"parameter": "Pxx"
+				}
+			]
+		}
+	]
+}

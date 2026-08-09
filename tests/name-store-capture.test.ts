@@ -47,6 +47,11 @@ const sweepCapture = JSON.parse(
 	readFileSync(new URL("./fixtures/name-discovery-capture.json", import.meta.url), "utf-8"),
 ) as { sweeps: Record<string, { frames: Frame[] }> };
 
+/** The receiver taking its input back while AirPlay played (`npm run capture:hop`). */
+const hopCapture = JSON.parse(
+	readFileSync(new URL("./fixtures/input-hop-capture.json", import.meta.url), "utf-8"),
+) as { snapshot: Record<string, string>; phases: { name: string; frames: Frame[] }[] };
+
 const hex = (s: string) => Buffer.from(s, "ascii").toString("hex");
 
 /**
@@ -240,6 +245,93 @@ describe("name store: the receiver's own mode is not a mode the user chose", () 
 			setSliSweeping(host, false);
 		}
 		assert.equal(serialize()[host]?.LMD, undefined, "a station name is not a listening mode");
+	});
+});
+
+describe("name store: the receiver taking its input back, as recorded", () => {
+	/** The hop and what the receiver announced with it, read out of each recorded run. */
+	function hops(): { input: string; hopAt: number; lmdAt: number; mode: string; frames: Frame[] }[] {
+		const home = hopCapture.snapshot["SLI"]!;
+		const found: { input: string; hopAt: number; lmdAt: number; mode: string; frames: Frame[] }[] = [];
+		for (const phase of hopCapture.phases) {
+			const inbound = phase.frames.filter((f) => f.dir === "in");
+			const ours = inbound.find((f) => f.command === "SLI" && f.parameter !== home);
+			const hop = inbound.find((f) => f.command === "SLI" && f.parameter === home && f.ms > (ours?.ms ?? 0));
+			const lmd = hop && inbound.find((f) => f.command === "LMD" && f.ms >= hop.ms);
+			if (!hop || !lmd) continue;
+			found.push({ input: home, hopAt: hop.ms, lmdAt: lmd.ms, mode: lmd.parameter!, frames: inbound });
+		}
+		return found;
+	}
+
+	it("the recording really caught the receiver steering itself", () => {
+		// The premise: nothing asked for this input change, and a listening mode came
+		// with it. Both runs, read from the fixture rather than typed in.
+		const runs = hops();
+		assert.equal(runs.length, hopCapture.phases.length, "every recorded run should contain a hop");
+		for (const run of runs) assert.ok(run.lmdAt >= run.hopAt, "the mode follows the input, never precedes it");
+	});
+
+	it("INPUT_ECHO_MS still covers the slowest mode the receiver announced for itself", () => {
+		// This is the number the capture nearly refuted: every earlier sample was under
+		// 340 ms, and this recording caught one at 780 ms. If a re-capture finds a slower
+		// one, this fails rather than the guard silently going quiet.
+		const gaps = hops().map((r) => r.lmdAt - r.hopAt);
+		const worst = Math.max(...gaps);
+		assert.ok(worst < 1500, `the receiver's own mode came ${worst} ms after the hop, outside INPUT_ECHO_MS`);
+		// And the guard must not have swallowed the far side: a deliberate mode change
+		// was measured at 2410 ms in the standby recording.
+		assert.ok(1500 < 2410, "the window has to stay clear of a mode the user chose");
+	});
+
+	it("learns nothing at all from the hop, at the recorded timings", () => {
+		// The whole episode, replayed frame by frame with the recording as the clock:
+		// the service name, the scrolling title, the volume announcement, everything.
+		for (const [index, phase] of hopCapture.phases.entries()) {
+			const host = `capture-hop-${index}`;
+			const realNow = Date.now;
+			try {
+				for (const frame of phase.frames) {
+					if (frame.dir !== "in" || !frame.command || frame.parameter === undefined) continue;
+					Date.now = () => frame.ms;
+					if (frame.command === "SLI" || frame.command === "LMD") noteChange(host, frame.command, frame.parameter);
+					else if (frame.command === "FLD") noteFld(host, frame.parameter);
+					else noteDisplayChange(host, frame.command, frame.parameter);
+				}
+			} finally {
+				Date.now = realNow;
+			}
+			assert.equal(
+				serialize()[host]?.LMD,
+				undefined,
+				`"${phase.name}" taught the mode a name: ${JSON.stringify(serialize()[host])}`,
+			);
+			const inputs = Object.values(serialize()[host]?.SLI ?? {});
+			assert.deepEqual(
+				inputs.filter((name) => /love|airplay|pairing/i.test(name)),
+				[],
+				`"${phase.name}" stored a title or service as an input name: ${JSON.stringify(inputs)}`,
+			);
+		}
+	});
+
+	it("shows why the sweep mutes instead of setting the volume to zero", () => {
+		// Measured here for the first time: at volume 0 this receiver prints "Min"
+		// instead of a number — "NET        Min", "BT AUDIO   Min". Had the sweep set
+		// MVL 00, every input readout would have lost its digits, `endsWithVolume` would
+		// have failed, and the readouts would have gone to the *mode* branch instead.
+		const texts = hopCapture.phases
+			.flatMap((p) => p.frames)
+			.filter((f) => f.dir === "in" && f.command === "FLD" && f.parameter !== undefined)
+			.map((f) => decodeDisplayText(f.parameter!));
+		assert.ok(
+			texts.some((t) => /Min\s*$/.test(t)),
+			"the recording should contain a readout ending in Min",
+		);
+		assert.ok(
+			texts.some((t) => /\d\s*$/.test(t)),
+			"and one ending in digits, from before the volume dropped",
+		);
 	});
 });
 
