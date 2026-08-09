@@ -23,6 +23,9 @@ import {
 	KEY_SIZE,
 	MAX_RENDER_BYTES,
 	MAX_SCRIM,
+	PROGRESS_STEPS,
+	quantiseProgress,
+	ringGeometry,
 	STRIP_HEIGHT,
 	STRIP_SEGMENT_WIDTH,
 } from "../src/actions/cover-image.ts";
@@ -327,5 +330,146 @@ describe("fitting the art into a box that is not its shape", () => {
 		// Falling back to the old behaviour keeps a cover on screen; refusing would not.
 		const svg = svgOf(composeCoverImage({ art: art(64), width: STRIP_SEGMENT_WIDTH, height: STRIP_HEIGHT }));
 		assert.match(svg, /preserveAspectRatio="xMidYMid slice"/);
+	});
+});
+
+describe("drawing how far through the track we are", () => {
+	/** Every `<rect>` in the composed SVG, as attribute maps. */
+	function rects(uri: string | undefined): Record<string, string>[] {
+		return [...svgOf(uri).matchAll(/<rect\b([^>]*)\/>/g)].map((m) => {
+			const attrs: Record<string, string> = {};
+			for (const a of m[1]!.matchAll(/([\w-]+)="([^"]*)"/g)) attrs[a[1]!] = a[2]!;
+			return attrs;
+		});
+	}
+
+	/** The two rects the ring is made of: the track, then the elapsed part. */
+	function ringRects(uri: string | undefined): Record<string, string>[] {
+		return rects(uri).filter((r) => r["fill"] === "none");
+	}
+
+	it("computes the ring's length instead of declaring pathLength", () => {
+		// pathLength is not in SVG Tiny 1.2, which is roughly what Qt implements — and
+		// this repo has already been bitten by assuming an attribute would be honoured.
+		// So the closed form is the contract, and it is checked here rather than trusted.
+		const g = ringGeometry(KEY_SIZE, KEY_SIZE);
+		const expected = 2 * (g.width - 2 * g.radius) + 2 * (g.height - 2 * g.radius) + 2 * Math.PI * g.radius;
+		assert.ok(Math.abs(g.perimeter - expected) < 1e-9, `${g.perimeter} vs ${expected}`);
+		assert.doesNotMatch(svgOf(composeCoverImage({ art: art(), progress: 0.5 })), /pathLength/);
+	});
+
+	it("gives the elapsed part exactly its share of the perimeter", () => {
+		const g = ringGeometry(KEY_SIZE, KEY_SIZE);
+		for (const fraction of [0.25, 0.5, 0.75]) {
+			const dash = ringRects(composeCoverImage({ art: art(), progress: fraction })).at(-1)?.["stroke-dasharray"];
+			assert.ok(dash, `expected a dash pattern at ${fraction}`);
+			const [len, gap] = dash.split(" ").map(Number) as [number, number];
+			assert.ok(Math.abs(len - g.perimeter * fraction) < 0.02, `${len} is not ${fraction} of ${g.perimeter}`);
+			assert.ok(Math.abs(len + gap - g.perimeter) < 0.02, "the gap must close the ring exactly");
+		}
+	});
+
+	it("starts the ring at twelve o'clock, not where the rect's path happens to begin", () => {
+		const g = ringGeometry(KEY_SIZE, KEY_SIZE);
+		const offset = Number(ringRects(composeCoverImage({ art: art(), progress: 0.5 })).at(-1)?.["stroke-dashoffset"]);
+		assert.ok(Math.abs(offset - (g.perimeter - g.topCentre)) < 0.02, `${offset}`);
+		// Positive, because a partial renderer may well not handle a negative one.
+		assert.ok(offset > 0);
+	});
+
+	it("draws a full ring plain, since a zero-length gap is not defined", () => {
+		// And "full" is not an edge case: it happens at the end of every single track.
+		const full = ringRects(composeCoverImage({ art: art(), progress: 1 }));
+		assert.equal(full.length, 2, "track plus elapsed");
+		assert.equal(full[1]!["stroke-dasharray"], undefined, "no dash pattern at all");
+	});
+
+	it("leaves only the track at zero, rather than a zero-length dash", () => {
+		const none = ringRects(composeCoverImage({ art: art(), progress: 0 }));
+		assert.equal(none.length, 1);
+		assert.equal(none[0]!["opacity"], "0.3", "and that one is the unfilled track");
+	});
+
+	it("draws nothing at all when there is no elapsed fraction", () => {
+		// The receiver saying "the time means nothing" must produce no ring, not an empty
+		// one — an empty ring reads as a frame someone chose to draw.
+		const svg = svgOf(composeCoverImage({ art: art() }));
+		assert.doesNotMatch(svg, /stroke-dasharray/);
+		assert.equal(rects(composeCoverImage({ art: art() })).filter((r) => r["fill"] === "none").length, 0);
+	});
+
+	it("keeps the ring inside the canvas, stroke included", () => {
+		const g = ringGeometry(KEY_SIZE, KEY_SIZE);
+		const half = g.strokeWidth / 2;
+		assert.ok(g.x - half >= 0, "the stroke must not bleed off the left edge");
+		assert.ok(g.y - half >= 0);
+		assert.ok(g.x + g.width + half <= KEY_SIZE);
+		assert.ok(g.y + g.height + half <= KEY_SIZE);
+		assert.ok(g.radius * 2 <= Math.min(g.width, g.height), "the corners must not meet");
+	});
+
+	it("draws the bar along the bottom, filled to its share of the width", () => {
+		const bars = rects(composeCoverImage({ art: art(), progress: 0.25, progressStyle: "bar" })).filter(
+			(r) => r["rx"] !== undefined,
+		);
+		assert.equal(bars.length, 2, "track plus elapsed");
+		const [track, fill] = bars as [Record<string, string>, Record<string, string>];
+		assert.equal(track["x"], fill["x"], "both start at the same place");
+		assert.equal(track["y"], fill["y"]);
+		assert.ok(Math.abs(Number(fill["width"]) - Number(track["width"]) * 0.25) < 0.02);
+		assert.ok(Number(track["y"]) + Number(track["height"]) <= KEY_SIZE, "inside the canvas");
+		// The bar is the fallback for a renderer that ignores dash patterns, so it may
+		// not depend on one.
+		assert.doesNotMatch(svgOf(composeCoverImage({ art: art(), progress: 0.25, progressStyle: "bar" })), /dasharray/);
+	});
+
+	it("paints the progress over the scrim and the glyph, never under them", () => {
+		const svg = svgOf(composeCoverImage({ art: art(), glyph: "play", scrimOpacity: 0.4, progress: 0.5 }));
+		assert.ok(svg.indexOf("<g transform") < svg.lastIndexOf("stroke-dasharray"), "glyph first, ring last");
+		assert.ok(svg.indexOf('fill="#000000"') < svg.lastIndexOf("stroke-dasharray"), "scrim first, ring last");
+	});
+
+	it("uses the colour it was given for both halves, and white when it was given none", () => {
+		const dark = ringRects(composeCoverImage({ art: art(), progress: 0.5, progressColour: "#000000" }));
+		assert.deepEqual(
+			dark.map((r) => r["stroke"]),
+			["#000000", "#000000"],
+		);
+		const plain = ringRects(composeCoverImage({ art: art(), progress: 0.5 }));
+		assert.deepEqual(
+			plain.map((r) => r["stroke"]),
+			["#FFFFFF", "#FFFFFF"],
+		);
+	});
+
+	it("still shows the progress when there is no cover to draw it on", () => {
+		// A source with a clock but no artwork is normal; the placeholder must carry it.
+		assert.match(svgOf(composePlaceholder({ progress: 0.5 })), /stroke-dasharray/);
+	});
+
+	it("rounds the fraction to a step the eye can tell apart", () => {
+		// This is what lets writeKeyImage keep dropping repaints: two ticks that land in
+		// one step compose to the same string, so nothing is written.
+		assert.equal(quantiseProgress(0.5), 0.5);
+		assert.equal(quantiseProgress(0.50001), 0.5);
+		assert.equal(quantiseProgress(0.504), 0.5);
+		assert.equal(quantiseProgress(0.506), 0.51);
+		assert.equal(quantiseProgress(1 / PROGRESS_STEPS / 3), 0);
+		assert.equal(
+			composeCoverImage({ art: art(), progress: quantiseProgress(0.5001) }),
+			composeCoverImage({ art: art(), progress: quantiseProgress(0.5004) }),
+			"two ticks inside one step must produce the identical payload",
+		);
+	});
+
+	it("never lets a nonsense fraction reach the geometry", () => {
+		// Settings and device data both arrive untyped; NaN in an SVG length has been a
+		// real finding in this repo.
+		assert.equal(quantiseProgress(Number.NaN), 0);
+		assert.equal(quantiseProgress(-1), 0);
+		assert.equal(quantiseProgress(7), 1);
+		for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -3, 9]) {
+			assert.doesNotMatch(svgOf(composeCoverImage({ art: art(), progress: bad })), /NaN|Infinity|-\d/);
+		}
 	});
 });

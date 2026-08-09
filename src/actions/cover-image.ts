@@ -99,7 +99,47 @@ export const DEFAULT_SCRIM = 0.45;
 
 const GLYPH_STROKE = "#FFFFFF";
 /** Backdrop when there is no art to show. Matches the generated key images. */
-const PLACEHOLDER_BG = "#1A1A1A";
+export const PLACEHOLDER_BG = "#1A1A1A";
+
+/**
+ * How the elapsed fraction is drawn on a key.
+ *
+ * A key has no layout, so unlike a dial there is no native bar to feed — the progress
+ * has to become part of the composed image. `ring` traces the key's border, `bar` sits
+ * along the bottom. The bar is also the fallback: it needs nothing but two rectangles,
+ * whereas the ring depends on `stroke-dasharray`, which Qt may or may not honour.
+ */
+export type ProgressShape = "ring" | "bar";
+
+/**
+ * Steps the elapsed fraction is rounded to before it is drawn.
+ *
+ * Not cosmetic — it is what keeps a once-a-second repaint affordable. A key is 72 px
+ * on the physical device, so 1 % is about 1.5 px along the bar and less around the
+ * ring: a finer step would change the composed string without changing the picture,
+ * and `writeKeyImage`'s de-duplication would stop dropping anything. At 100 steps a
+ * typical 3:41 track moves on roughly every other tick.
+ */
+export const PROGRESS_STEPS = 100;
+
+/** Used when the cover's brightness could not be established. */
+export const PROGRESS_DEFAULT_COLOUR = "#FFFFFF";
+/** The unfilled part, in the same colour so one decision covers both. */
+const PROGRESS_TRACK_OPACITY = 0.3;
+
+/** Ring and bar geometry, in key units; scaled for boxes of another size. */
+const RING_INSET = 6;
+const RING_STROKE = 8;
+const RING_RADIUS = 16;
+const BAR_INSET = 8;
+const BAR_HEIGHT = 6;
+
+/** Clamp to 0…1 and round to `PROGRESS_STEPS`; nonsense becomes 0, never `NaN`. */
+export function quantiseProgress(value: number): number {
+	if (!Number.isFinite(value)) return 0;
+	const clamped = Math.min(1, Math.max(0, value));
+	return Math.round(clamped * PROGRESS_STEPS) / PROGRESS_STEPS;
+}
 
 export interface CoverSlice {
 	/** Which segment this instance draws, left to right. */
@@ -131,6 +171,12 @@ export interface ComposeOptions {
 	height?: number;
 	/** Defaults to `cover`, which is what a square key wants. */
 	fit?: CoverFit;
+	/** Elapsed fraction, 0…1. Absent draws no progress at all — see `overlayProgress`. */
+	progress?: number;
+	/** Defaults to `ring`. */
+	progressStyle?: ProgressShape;
+	/** Chosen from the cover by `progressColour`; defaults to white. */
+	progressColour?: string;
 }
 
 /**
@@ -190,7 +236,14 @@ export function imageSize(art: ArtImage): { width: number; height: number } | un
 /** Segments walked before giving up; a real header reaches the frame in a handful. */
 const MAX_JPEG_MARKERS = 64;
 
-function clampScrim(value: number | undefined): number {
+/**
+ * The darkening that will actually be applied.
+ *
+ * Exported because the progress colour has to be chosen against the *darkened* cover,
+ * and a second copy of this clamp would be a way for the two to disagree — which shows
+ * up as a black ring on a background the composer then left grey.
+ */
+export function effectiveScrim(value: number | undefined): number {
 	if (value === undefined || !Number.isFinite(value)) return DEFAULT_SCRIM;
 	return Math.min(MAX_SCRIM, Math.max(MIN_SCRIM, value));
 }
@@ -232,8 +285,35 @@ function svgToDataUri(svg: string): string {
  * 100, far wider than the square source, and letterboxing four strips would waste
  * most of them. The stretch is the point.
  */
-function artElement(art: ArtImage, width: number, height: number, slice?: CoverSlice, fit: CoverFit = "cover"): string {
+/**
+ * The art as a data URI, computed once per buffer.
+ *
+ * Worth caching only since the progress arrived: before that the *finished* image was
+ * cached per cover and this ran once anyway. Now a moving ring means a fresh
+ * composition every second or two, and base64-ing ~97 KB of cover each time would be
+ * the expensive part of it. Held weakly, so a superseded cover goes with the transfer
+ * it came from.
+ *
+ * **This is the line that hands device-controlled bytes to Stream Deck**, where Qt
+ * decodes them — the only native image decoder anywhere in this feature, and one we do
+ * not control. If a decoder CVE ever lands there, this plugin is the delivery path: a
+ * receiver on the LAN only has to announce a cover. `SECURITY.md` records the staged
+ * way out (metadata is already stripped on receipt; the next step is decoding in WASM,
+ * downscaling to the key size and re-encoding as PNG, so Stream Deck only ever sees
+ * bytes we produced).
+ */
+const hrefByArt = new WeakMap<Buffer, string>();
+
+function artHref(art: ArtImage): string {
+	const cached = hrefByArt.get(art.bytes);
+	if (cached !== undefined) return cached;
 	const href = `data:${mimeFor(art)};base64,${art.bytes.toString("base64")}`;
+	hrefByArt.set(art.bytes, href);
+	return href;
+}
+
+function artElement(art: ArtImage, width: number, height: number, slice?: CoverSlice, fit: CoverFit = "cover"): string {
+	const href = artHref(art);
 	if (slice && slice.count > 1) {
 		const total = width * slice.count;
 		const offset = -width * Math.min(Math.max(slice.index, 0), slice.count - 1);
@@ -258,6 +338,103 @@ function artElement(art: ArtImage, width: number, height: number, slice?: CoverS
 	return `<image x="${round(x)}" y="${round(y)}" width="${round(drawn.w)}" height="${round(drawn.h)}" preserveAspectRatio="none" href="${href}"/>`;
 }
 
+const round2 = (n: number): string => Number(n.toFixed(2)).toString();
+
+export interface RingGeometry {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	radius: number;
+	strokeWidth: number;
+	/** Length once around, from the closed form for a rounded rectangle. */
+	perimeter: number;
+	/** Distance from the path's start to twelve o'clock, clockwise. */
+	topCentre: number;
+}
+
+/**
+ * Where the ring sits, and how long it is.
+ *
+ * The perimeter is computed rather than declared because **`pathLength` is not usable
+ * here**: it is not part of SVG Tiny 1.2, which is roughly what Qt implements, and this
+ * repo has already been caught once by assuming an attribute would be honoured
+ * (`preserveAspectRatio`, see `imageSize`). Absolute lengths need nothing but
+ * `stroke-dasharray`.
+ *
+ * A `<rect>`'s path starts at `(x + r, y)` and runs clockwise, so twelve o'clock is
+ * half the top edge along it.
+ */
+export function ringGeometry(width: number, height: number): RingGeometry {
+	const scale = Math.min(width, height) / KEY_SIZE;
+	const inset = RING_INSET * scale;
+	const radius = RING_RADIUS * scale;
+	const w = width - 2 * inset;
+	const h = height - 2 * inset;
+	const straight = 2 * (w - 2 * radius) + 2 * (h - 2 * radius);
+	return {
+		x: inset,
+		y: inset,
+		width: w,
+		height: h,
+		radius,
+		strokeWidth: RING_STROKE * scale,
+		perimeter: straight + 2 * Math.PI * radius,
+		topCentre: (w - 2 * radius) / 2,
+	};
+}
+
+function progressRingMarkup(width: number, height: number, fraction: number, colour: string): string {
+	const g = ringGeometry(width, height);
+	const shape =
+		`x="${round2(g.x)}" y="${round2(g.y)}" width="${round2(g.width)}" height="${round2(g.height)}" ` +
+		`rx="${round2(g.radius)}" ry="${round2(g.radius)}" fill="none" stroke="${colour}" ` +
+		`stroke-width="${round2(g.strokeWidth)}"`;
+	const track = `<rect ${shape} opacity="${PROGRESS_TRACK_OPACITY}"/>`;
+	// A full ring is drawn plain: a dash pattern whose gap is zero is not defined in a
+	// partial renderer, and "full" happens at the end of every single track.
+	if (fraction >= 1) return `${track}<rect ${shape}/>`;
+	if (fraction <= 0) return track;
+	const len = g.perimeter * fraction;
+	return (
+		track +
+		`<rect ${shape} stroke-linecap="butt" ` +
+		`stroke-dasharray="${round2(len)} ${round2(g.perimeter - len)}" ` +
+		`stroke-dashoffset="${round2(g.perimeter - g.topCentre)}"/>`
+	);
+}
+
+function progressBarMarkup(width: number, height: number, fraction: number, colour: string): string {
+	const scale = Math.min(width, height) / KEY_SIZE;
+	const inset = BAR_INSET * scale;
+	const barHeight = BAR_HEIGHT * scale;
+	const y = height - inset - barHeight;
+	const full = width - 2 * inset;
+	const radius = barHeight / 2;
+	const track =
+		`<rect x="${round2(inset)}" y="${round2(y)}" width="${round2(full)}" height="${round2(barHeight)}" ` +
+		`rx="${round2(radius)}" fill="${colour}" opacity="${PROGRESS_TRACK_OPACITY}"/>`;
+	const filled = full * fraction;
+	if (filled <= 0) return track;
+	// A stub shorter than its own end caps would round into a lens; clamp instead.
+	const capped = Math.min(radius, filled / 2);
+	return (
+		track +
+		`<rect x="${round2(inset)}" y="${round2(y)}" width="${round2(filled)}" height="${round2(barHeight)}" ` +
+		`rx="${round2(capped)}" fill="${colour}"/>`
+	);
+}
+
+/** The progress layer, or "" when there is no usable elapsed fraction to show. */
+function progressMarkup(options: ComposeOptions, width: number, height: number): string {
+	if (options.progress === undefined || !Number.isFinite(options.progress)) return "";
+	const fraction = Math.min(1, Math.max(0, options.progress));
+	const colour = options.progressColour ?? PROGRESS_DEFAULT_COLOUR;
+	return options.progressStyle === "bar"
+		? progressBarMarkup(width, height, fraction, colour)
+		: progressRingMarkup(width, height, fraction, colour);
+}
+
 /**
  * Compose one image.
  *
@@ -277,13 +454,16 @@ export function composeCoverImage(options: ComposeOptions): string | undefined {
 			// letterboxed cover would sit on whatever the strip drew last.
 			`<rect width="${width}" height="${height}" fill="${PLACEHOLDER_BG}"/>` +
 			artElement(options.art, width, height, options.slice, options.fit) +
-			`<rect width="${width}" height="${height}" fill="#000000" opacity="${clampScrim(options.scrimOpacity)}"/>`
+			`<rect width="${width}" height="${height}" fill="#000000" opacity="${effectiveScrim(options.scrimOpacity)}"/>`
 		: `<rect width="${width}" height="${height}" fill="${PLACEHOLDER_BG}"/>`;
 
 	const svg =
 		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
 		layers +
 		glyph +
+		// Last, so neither the scrim nor the glyph can sit on top of it: the progress is
+		// the one part of the picture that has to stay readable at a glance.
+		progressMarkup(options, width, height) +
 		`</svg>`;
 
 	const uri = svgToDataUri(svg);
@@ -295,7 +475,23 @@ export function composeCoverImage(options: ComposeOptions): string | undefined {
  *
  * Separate from `composeCoverImage({})` only so callers read as what they mean.
  */
-export function composePlaceholder(options: { glyph?: string; width?: number; height?: number } = {}): string {
+export function composePlaceholder(
+	options: {
+		glyph?: string;
+		width?: number;
+		height?: number;
+		progress?: number;
+		progressStyle?: ProgressShape;
+		progressColour?: string;
+	} = {},
+): string {
 	// Cannot exceed the budget: no art, so the payload is a few hundred bytes.
-	return composeCoverImage({ glyph: options.glyph ?? "music", width: options.width, height: options.height })!;
+	return composeCoverImage({
+		glyph: options.glyph ?? "music",
+		width: options.width,
+		height: options.height,
+		progress: options.progress,
+		progressStyle: options.progressStyle,
+		progressColour: options.progressColour,
+	})!;
 }
