@@ -26,6 +26,7 @@ import {
 	trackOverlayEnabled,
 	trackOverlaySeconds,
 } from "../src/actions/track-overlay.ts";
+import { faceCoverBytes } from "./helpers/face-cover.ts";
 import { tinyJpeg } from "./helpers/tiny-jpeg.ts";
 
 /** A state shaped like the measured one: "Cruel Summer" / Taylor Swift / Lover. */
@@ -251,6 +252,49 @@ describe("composing is shared, not repeated per element", () => {
 		assert.notEqual(a.image, b.image);
 	});
 });
+
+describe("keeping a face out of the crop", () => {
+	const strip = { width: 200, height: 100 } as const;
+
+	it("leaves every element that did not ask for it exactly as it was", () => {
+		// The setting is per-action and off by default in every existing profile, so this
+		// is the guard that placing a Now Playing dial cannot change what a key draws.
+		const cover = coverWithFace();
+		const plain = buildOverlayFace(playing({ art: cover }), strip)!;
+		assert.equal(plain.focus, undefined, "nothing decided, so nothing to report");
+		assert.equal(
+			plain.image,
+			buildOverlayFace(playing({ art: cover }), { ...strip, keepFacesWhole: false })!.image,
+		);
+	});
+
+	it("moves the crop, and says where it put it", () => {
+		const cover = coverWithFace();
+		const centred = buildOverlayFace(playing({ art: cover }), strip)!;
+		const moved = buildOverlayFace(playing({ art: cover }), { ...strip, keepFacesWhole: true })!;
+		assert.ok(moved.focus, "the decision has to come back for the log line");
+		assert.equal(moved.focus.reason, "shifted");
+		assert.notEqual(moved.image, centred.image, "and it has to actually reach the picture");
+	});
+
+	it("does not ask the cache to hold a composition per position", () => {
+		// The focus is settled by the cover and the box, both of which the cache key
+		// already distinguishes — so it must not become another axis. With the progress
+		// also in there, a second axis is what would push a track past the cap.
+		const cover = coverWithFace();
+		for (let i = 0; i < 5; i++) buildOverlayFace(playing({ art: cover }), { ...strip, keepFacesWhole: true });
+		assert.equal(compositionsHeld(cover), 1);
+	});
+});
+
+/**
+ * A cover with a face high enough that the centred window would cut it, so the decision
+ * this exercises is not a no-op.
+ */
+function coverWithFace(): NonNullable<NowPlaying["art"]> {
+	const bytes = faceCoverBytes(32, [{ top: 4, bottom: 12, left: 12, right: 20 }]);
+	return { type: "jpeg", bytes, frames: 1, hash: `face${coverCounter++}` };
+}
 
 describe("the key title", () => {
 	// Measured on a real Stream Deck +: the app draws key titles in the user's own font

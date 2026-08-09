@@ -171,6 +171,15 @@ export interface ComposeOptions {
 	height?: number;
 	/** Defaults to `cover`, which is what a square key wants. */
 	fit?: CoverFit;
+	/**
+	 * Where the visible window sits when `cover` has to crop vertically: `-1` the top of
+	 * the picture, `0` centred as before, `+1` the bottom.
+	 *
+	 * Chosen by `face-crop.ts` so the strip does not slice through somebody's head. Absent
+	 * or `0` composes exactly what this module always did, and where nothing is cropped
+	 * away it has no effect at all — a square cover on a square key cannot move.
+	 */
+	focusY?: number;
 	/** Elapsed fraction, 0…1. Absent draws no progress at all — see `overlayProgress`. */
 	progress?: number;
 	/** Defaults to `ring`. */
@@ -312,7 +321,14 @@ function artHref(art: ArtImage): string {
 	return href;
 }
 
-function artElement(art: ArtImage, width: number, height: number, slice?: CoverSlice, fit: CoverFit = "cover"): string {
+function artElement(
+	art: ArtImage,
+	width: number,
+	height: number,
+	slice?: CoverSlice,
+	fit: CoverFit = "cover",
+	focusY = 0,
+): string {
 	const href = artHref(art);
 	if (slice && slice.count > 1) {
 		const total = width * slice.count;
@@ -333,7 +349,14 @@ function artElement(art: ArtImage, width: number, height: number, slice?: CoverS
 			: Math.max(width / size.width, height / size.height);
 	const drawn = { w: size.width * scale, h: size.height * scale };
 	const x = (width - drawn.w) / 2;
-	const y = (height - drawn.h) / 2;
+	// The crop is ours to place, which is the whole reason the picture can be moved at all:
+	// the geometry is computed here rather than declared, because Qt ignores
+	// `preserveAspectRatio` (see `imageSize`). `overhang` is what the box cannot show; at
+	// `focusY` -1 the picture's top edge meets the box's, at +1 its bottom does, and
+	// where there is no overhang the term vanishes on its own.
+	const overhang = Math.max(0, drawn.h - height);
+	const bias = Math.min(1, Math.max(-1, Number.isFinite(focusY) ? focusY : 0));
+	const y = (height - drawn.h) / 2 - (bias * overhang) / 2;
 	const round = (n: number): string => n.toFixed(2);
 	return `<image x="${round(x)}" y="${round(y)}" width="${round(drawn.w)}" height="${round(drawn.h)}" preserveAspectRatio="none" href="${href}"/>`;
 }
@@ -453,7 +476,7 @@ export function composeCoverImage(options: ComposeOptions): string | undefined {
 		? // The backdrop shows wherever `contain` leaves the box unfilled; without it a
 			// letterboxed cover would sit on whatever the strip drew last.
 			`<rect width="${width}" height="${height}" fill="${PLACEHOLDER_BG}"/>` +
-			artElement(options.art, width, height, options.slice, options.fit) +
+			artElement(options.art, width, height, options.slice, options.fit, options.focusY) +
 			`<rect width="${width}" height="${height}" fill="#000000" opacity="${effectiveScrim(options.scrimOpacity)}"/>`
 		: `<rect width="${width}" height="${height}" fill="${PLACEHOLDER_BG}"/>`;
 

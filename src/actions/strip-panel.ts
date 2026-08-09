@@ -45,6 +45,7 @@
  */
 
 import type { NowPlaying } from "../adapter/eiscp/now-playing.ts";
+import type { CropFocus } from "./face-crop.ts";
 import {
 	DEFAULT_SCRIM,
 	PANEL_TEXT_LINES,
@@ -130,6 +131,13 @@ export interface PanelFace {
 	time?: string;
 	/** How far through the track, 0…1. Same condition as `time`. */
 	progress?: number;
+	/**
+	 * Where the crop was placed, when the cover had to be cropped at all.
+	 *
+	 * Carried so the dial can log the decision. Only the permanent face sets it: the
+	 * cooperating panels fit the whole picture rather than cropping it.
+	 */
+	focus?: CropFocus;
 	/**
 	 * Draw the dial's own icon, label, value and bar **on top of** this face.
 	 *
@@ -328,6 +336,8 @@ export interface NowPlayingFaceOptions {
 	 * stays as a backdrop and the dial's own face goes on top of it.
 	 */
 	actionReadout?: boolean;
+	/** Move the crop so it does not run through a face. */
+	keepFacesWhole?: boolean;
 }
 
 /**
@@ -377,6 +387,9 @@ export function buildNowPlayingFace(state: NowPlaying, options: NowPlayingFaceOp
 		height: STRIP_HEIGHT,
 		fit: "cover",
 		scrimOpacity: options.actionReadout ? Math.max(wanted, ACTION_SCRIM_FLOOR) : wanted,
+		// This is the one face in the plugin where a square cover is cropped to a strip, so
+		// it is the only one with a crop to place.
+		...(options.keepFacesWhole ? { keepFacesWhole: true } : {}),
 	});
 	if (!composed) return undefined;
 	// Only a real cover becomes the backdrop. `buildOverlayFace` substitutes a music
@@ -401,5 +414,6 @@ export function buildNowPlayingFace(state: NowPlaying, options: NowPlayingFaceOp
 		passive: false,
 		...(composed.time !== undefined ? { time: composed.time } : {}),
 		...(composed.progress !== undefined ? { progress: composed.progress } : {}),
+		...(composed.focus !== undefined ? { focus: composed.focus } : {}),
 	};
 }

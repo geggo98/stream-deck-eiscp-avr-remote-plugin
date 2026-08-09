@@ -331,6 +331,49 @@ describe("fitting the art into a box that is not its shape", () => {
 		const svg = svgOf(composeCoverImage({ art: art(64), width: STRIP_SEGMENT_WIDTH, height: STRIP_HEIGHT }));
 		assert.match(svg, /preserveAspectRatio="xMidYMid slice"/);
 	});
+
+	describe("moving the crop off a face", () => {
+		const strip = { art: jpegOf(512, 512), width: STRIP_SEGMENT_WIDTH, height: STRIP_HEIGHT };
+
+		it("composes exactly what it always did when nothing asks it to move", () => {
+			// The regression bar for every element that already exists: a cover with no
+			// opinion attached has to land byte for byte where it landed before.
+			assert.equal(composeCoverImage({ ...strip, focusY: 0 }), composeCoverImage(strip));
+		});
+
+		it("puts the top of the picture at the top of the box, and the bottom at the bottom", () => {
+			const top = geometry(composeCoverImage({ ...strip, focusY: -1 }));
+			const bottom = geometry(composeCoverImage({ ...strip, focusY: 1 }));
+			const centre = geometry(composeCoverImage(strip));
+			assert.equal(top.y, 0, "at -1 the picture's top edge meets the box's");
+			assert.equal(bottom.y + bottom.h, STRIP_HEIGHT, "at +1 its bottom edge does");
+			assert.equal(centre.y, (STRIP_HEIGHT - centre.h) / 2, "and the middle is still the middle");
+			assert.deepEqual(
+				[top.w, top.h, bottom.w, bottom.h],
+				[centre.w, centre.h, centre.w, centre.h],
+				"moving the crop must not resize the picture",
+			);
+		});
+
+		it("never uncovers the box, whatever it is asked for", () => {
+			// A shift beyond the overhang would let the backdrop show through at one edge,
+			// which is a black band across half the touch strip.
+			for (const focusY of [-3, -1, -0.5, 0, 0.5, 1, 3, Number.NaN, Number.POSITIVE_INFINITY]) {
+				const g = geometry(composeCoverImage({ ...strip, focusY }));
+				assert.ok(g.y <= 0, `top gap at focusY=${focusY}: y=${g.y}`);
+				assert.ok(g.y + g.h >= STRIP_HEIGHT, `bottom gap at focusY=${focusY}: y+h=${g.y + g.h}`);
+			}
+		});
+
+		it("cannot move a picture that is not cropped in the first place", () => {
+			// A square cover on a square key has no overhang, so there is nowhere to go —
+			// and `contain` fits the whole picture by definition.
+			const key = { art: jpegOf(512, 512) };
+			assert.equal(composeCoverImage({ ...key, focusY: -1 }), composeCoverImage(key));
+			const contained = { ...strip, fit: "contain" as const };
+			assert.equal(composeCoverImage({ ...contained, focusY: -1 }), composeCoverImage(contained));
+		});
+	});
 });
 
 describe("drawing how far through the track we are", () => {

@@ -31,6 +31,7 @@ import {
 	type ProgressShape,
 	quantiseProgress,
 } from "./cover-image.ts";
+import { type CropFocus, coverFocus } from "./face-crop.ts";
 import { lumaGrid } from "./image-luma.ts";
 import { progressColour } from "./progress-colour.ts";
 import { wrapToChars } from "./text-fit.ts";
@@ -112,6 +113,14 @@ export interface OverlayFace {
 	time?: string;
 	/** 0…1 for a progress bar, on the same condition. */
 	progress?: number;
+	/**
+	 * How the crop was placed, when it was placed at all.
+	 *
+	 * Returned rather than merely applied so the caller can log the decision: a picture
+	 * sitting somewhere unexpected on somebody else's deck is otherwise impossible to
+	 * account for from a log file, and this is a heuristic.
+	 */
+	focus?: CropFocus;
 }
 
 export interface OverlayFaceOptions {
@@ -131,6 +140,12 @@ export interface OverlayFaceOptions {
 	 * none.
 	 */
 	progressStyle?: ProgressShape;
+	/**
+	 * Move the crop so it does not run through a face, where `cover` has to crop at all.
+	 *
+	 * Off unless asked for, so nothing that composes an image today changes what it draws.
+	 */
+	keepFacesWhole?: boolean;
 }
 
 /** `68` -> `1:08`, `3800` -> `1:03:20`. */
@@ -223,13 +238,17 @@ function composeShared(
 	art: NonNullable<NowPlaying["art"]>,
 	options: OverlayFaceOptions,
 	paint: ProgressPaint | undefined,
+	focus: CropFocus | undefined,
 ): string | undefined {
 	let byOptions = composedByArt.get(art.bytes);
 	if (!byOptions) {
 		byOptions = new Map();
 		composedByArt.set(art.bytes, byOptions);
 	}
-	const key = `${options.width ?? ""}x${options.height ?? ""}|${options.glyph ?? ""}|${options.scrimOpacity ?? ""}|${options.slice?.index ?? ""}/${options.slice?.count ?? ""}|${options.fit ?? ""}|${paint ? `${paint.style}${paint.value}${paint.colour}` : ""}`;
+	// The focus is deliberately **not** in the key. It is a pure function of the cover —
+	// which is what this map hangs off — and of the box, which is already in the key, so
+	// adding it could only ever repeat information and never separate two entries.
+	const key = `${options.width ?? ""}x${options.height ?? ""}|${options.glyph ?? ""}|${options.scrimOpacity ?? ""}|${options.slice?.index ?? ""}/${options.slice?.count ?? ""}|${options.fit ?? ""}|${paint ? `${paint.style}${paint.value}${paint.colour}` : ""}|${options.keepFacesWhole ? "f" : ""}`;
 	if (byOptions.has(key)) return byOptions.get(key);
 
 	const composed = composeCoverImage({
@@ -240,6 +259,7 @@ function composeShared(
 		width: options.width,
 		height: options.height,
 		fit: options.fit,
+		focusY: focus?.y,
 		progress: paint?.value,
 		progressStyle: paint?.style,
 		progressColour: paint?.colour,
@@ -307,7 +327,14 @@ export function buildOverlayFace(state: NowPlaying, options: OverlayFaceOptions 
 	// Over budget the composer returns undefined; fall back to the placeholder so the
 	// element still says "something is playing" rather than going blank.
 	const paint = progressPaint(state, options);
-	const composed = state.art ? composeShared(state.art, options, paint) : undefined;
+	// Only where a crop actually happens and only when asked. `coverFocus` answers
+	// "uncropped" for everything else, but not calling it at all keeps the cost off every
+	// element that has no crop to place.
+	const focus =
+		options.keepFacesWhole && state.art && options.width !== undefined && options.height !== undefined
+			? coverFocus(state.art, { width: options.width, height: options.height }, options.fit ?? "cover")
+			: undefined;
+	const composed = state.art ? composeShared(state.art, options, paint, focus) : undefined;
 	const image =
 		composed ??
 		composePlaceholder({
@@ -328,6 +355,7 @@ export function buildOverlayFace(state: NowPlaying, options: OverlayFaceOptions 
 		keyTitle: keyTitleFor(primary, secondary),
 		time,
 		progress,
+		focus,
 	};
 }
 
