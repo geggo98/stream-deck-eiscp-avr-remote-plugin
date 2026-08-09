@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.1.0...v1.2.0) (2026-08-09)
+
+
+### Features
+
+* **names:** let the user name an option the receiver names badly ([f58a515](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/f58a5152169ed3ff574b0612ac2c88d4d3295cc5))
+* **ui:** put the option names in the panel that discovers them ([6e0fa24](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/6e0fa24ffaba659478505bc8d0bf00760b812137))
+
+
+### Bug Fixes
+
+* **ui:** adding an option to the editor is a local act ([482d7ff](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/482d7ff30242ccbd1faee3e7513ec23237bf182d))
+* **ui:** make the panel's own text legible ([8754e92](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/8754e926c91b0f2edc859e2e5dbc739f426e1a59))
+
 ## [1.1.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.0.2...v1.1.0) (2026-08-09)
 
 
