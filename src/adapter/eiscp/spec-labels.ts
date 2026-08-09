@@ -62,3 +62,29 @@ export function matchesSpecValue(code: string, param: string, text: string): boo
 		(label) => candidate === label || (label.length >= 2 && (candidate.startsWith(label) || label.startsWith(candidate))),
 	);
 }
+
+/**
+ * Whether two display strings name the same thing, ignoring case and punctuation.
+ *
+ * "BD/DVD", "bd-dvd" and "Bd Dvd" are the same label; the receiver is not consistent
+ * about which it shows.
+ */
+export function sameLabel(a: string, b: string): boolean {
+	const left = normaliseLabel(a);
+	return left !== "" && left === normaliseLabel(b);
+}
+
+/**
+ * Whether `text` is *exactly* what the spec calls this value.
+ *
+ * The strict counterpart to `matchesSpecValue`, and the difference is the point. That
+ * one matches prefixes in both directions, which is right for "is this reading
+ * plausible" and wrong for "is this text the name of something else": the listening
+ * mode "Game-RPG" starts with "GAME", and the `GAME` input is exactly when a user
+ * picks it. Its own doc also says it is a corroboration signal and never a veto — so
+ * a veto gets its own function rather than a second meaning bolted onto that one.
+ */
+export function equalsSpecValue(code: string, param: string, text: string): boolean {
+	const candidate = normaliseLabel(text);
+	return candidate !== "" && specValueLabels(code, param).includes(candidate);
+}

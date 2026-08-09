@@ -18,7 +18,7 @@
  * global settings, merged so the device IP is never clobbered.
  */
 import { streamDeck } from "@elgato/streamdeck";
-import { matchesSpecValue, specValueLabels } from "../../adapter/eiscp/spec-labels.ts";
+import { equalsSpecValue, matchesSpecValue, sameLabel } from "../../adapter/eiscp/spec-labels.ts";
 import { truncateForLog } from "../../adapter/logging.ts";
 import {
 	decodeDisplayText,
@@ -217,21 +217,12 @@ function inputEcho(s: HostState, at: number): boolean {
 	return s.inputChangedAt !== undefined && Math.abs(at - s.inputChangedAt) <= INPUT_ECHO_MS;
 }
 
-/** Letters and digits only, upper-cased — "BD/DVD", "bd-dvd" and "Bd Dvd" compare equal. */
-function normaliseLabel(value: string): string {
-	return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
 /**
  * Whether `text` is the name of the input that is selected right now — in which case
  * it is the input readout, whatever else is going on, and never a mode name.
  *
- * **Exact equality, unlike `matchesSpecValue`.** That one matches prefixes in both
- * directions, which is right for "is this reading plausible" and wrong here: the mode
- * "Game-RPG" starts with "GAME", and the `GAME` input is exactly when that mode gets
- * chosen. Its own doc also says it is a corroboration signal and never a veto; this is
- * a different question, so it gets its own answer rather than a second meaning bolted
- * onto that one.
+ * The comparison is *exact* (`sameLabel` / `equalsSpecValue`, not `matchesSpecValue`);
+ * the reason lives with those functions in `spec-labels.ts`.
  *
  * Worth knowing before it looks like the fix it is not: this does **not** catch the
  * AirPlay case it was written alongside. `specValueLabels("SLI", "2D")` is `["AIPLAY"]`
@@ -241,11 +232,9 @@ function normaliseLabel(value: string): string {
 function textNamesCurrentInput(s: HostState, text: string): boolean {
 	const code = s.sliCode?.value;
 	if (!code) return false;
-	const candidate = normaliseLabel(text);
-	if (!candidate) return false;
 	const learned = s.names.SLI.get(code);
-	if (learned !== undefined && normaliseLabel(learned) === candidate) return true;
-	return specValueLabels("SLI", code).includes(candidate);
+	if (learned !== undefined && sameLabel(learned, text)) return true;
+	return equalsSpecValue("SLI", code, text);
 }
 
 /**
