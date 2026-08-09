@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.3.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.2.0...v1.3.0) (2026-08-09)
+
+
+### Features
+
+* **actions:** add a Now Playing key and offer the preview in every PI ([9f20f7d](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/9f20f7d8b425e2b7c08c6b0590b91265bcfef91a))
+* **eiscp:** fetch cover art over HTTP, without ever setting the device's mode ([0219c1e](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/0219c1e7b5331c27a9a2b47b78c0ee1869bda2e6))
+* **eiscp:** reassemble the receiver's cover art, bounded and self-verifying ([38a42cd](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/38a42cdae7718cc56060b4a9906292690b83b71a))
+* **eiscp:** record a change of playback state ([9816364](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/98163648a029d6766b7ccd4b4c04fdfebf806d46))
+* **eiscp:** track now-playing metadata pushed by the receiver ([75a6952](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/75a69529cbe42b92a59f6e099766c555392a61a6))
+* **ui:** add a Now Playing dial with cover and progress bar ([4257262](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/4257262c4747e62a5f734172984fdd352d40e843))
+* **ui:** assign now-playing roles across adjacent touch strips ([f63f57f](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/f63f57fb26d392a24899c0eebc046c3a4c3c6bde))
+* **ui:** composite cover art with a scrim and a glyph into one image ([eb94f94](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/eb94f94fef0389ed72a1721c345ea08283398fe1))
+* **ui:** draw the elapsed fraction on a key, as a ring or a bar ([1b3ed84](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/1b3ed849377e1b123cd7b51ebe28fac3e1fb205f))
+* **ui:** let adjacent dials share one now-playing display ([d43ea08](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/d43ea0801c0850518f90ac7a0f6d19cac0c16188))
+* **ui:** let any element briefly show what just started playing ([7d4dd25](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/7d4dd251eec0c20ffe1400a441d1cec248571b01))
+* **ui:** let the Now Playing key show its cover ([8e2915f](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/8e2915fb2c6b569a3df4883884b22e80e35e51dc))
+* **ui:** pick the progress colour from the cover it will sit on ([52aae93](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/52aae93a88ef7ca41563d4c28083342d8aee5a79))
+* **ui:** read a cover's brightness without taking a dependency ([dcf0189](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/dcf018959b9847c8513f8e6b65cb1a087412adcc))
+
+
+### Bug Fixes
+
+* **eiscp:** confirm what is playing before announcing it ([4777e21](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/4777e21112b0a13ecb301d4b792eb5597d8bfd63))
+* **eiscp:** give the now-playing state a lifetime it survives ([df0b8b3](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/df0b8b39b7701a3ebdb3a931541b4789c0409090))
+* **eiscp:** strip JPEG application segments on receipt ([96f79d0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/96f79d0e3d0b61bd98b379bb21dcd7128adb16aa))
+* **ui:** stop the cover sticking to the strip, and stop querying NTC ([6a394ef](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/6a394ef1c9b9092504754e376d71153736432923))
+
+
+### Performance
+
+* **eiscp:** cap the query rate per receiver and cache the cover by content ([ca62b4b](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/ca62b4b77d7b3dc66ede25418b481d5ff8f7a368))
+
+
+### Refactoring
+
+* **ui:** order the Property Inspector by how its settings are used ([7015e41](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/7015e41c236a037ddf670452492e683a36152a5b))
+* **ui:** spend spare strip segments on text, not on the cover ([c321e33](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/c321e33f12b877caf1d2bc5fafe374710494aad3))
+
+
+### Documentation
+
+* record what the receiver and the deck actually do with metadata ([b4a6da7](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/b4a6da708573c18b61436784afb5ad2575acf229))
+* record what the receiver and the renderer actually do ([ad0efc7](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/ad0efc784f7be5047e007ff6d1e340a1ed509c89))
+
+
+### Build System
+
+* **ts:** make unreachable code an error, not a suggestion ([dfcb42c](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/commit/dfcb42ca9cfee1f7e487da9963f92ec7bc639652))
+
 ## [1.2.0](https://github.com/geggo98/stream-deck-eiscp-avr-remote-plugin/compare/v1.1.0...v1.2.0) (2026-08-09)
 
 
