@@ -114,6 +114,12 @@ export interface DialConfig {
 	pressParam?: string;
 	/** Raw value of pressCommand that means "on" (defaults to its registry onValue, then "01"). */
 	pressOnValue?: string;
+	/**
+	 * Set together with `pressOnValue` to make the press *flip* pressCommand rather
+	 * than send `pressParam`. Reads the current value first, exactly like a toggle
+	 * key does, so a press never assumes a state it has not seen.
+	 */
+	pressOffValue?: string;
 	/** Title shown while the press command reads on (e.g. "MUTED"); falls back to "ON". */
 	pressLabel?: string;
 }
@@ -1261,6 +1267,38 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		}
 	}
 
+	/**
+	 * What a press should actually send.
+	 *
+	 * Normally the configured parameter. A dial that declares both press values
+	 * flips instead, and reads the current one first for the same reason a toggle
+	 * key does: assuming "off" on a cold cache would send the on value and report
+	 * success for a press that changed nothing.
+	 */
+	private async pressValue(
+		host: string,
+		cfg: DialConfig,
+		pressCommand: string,
+		pressParam: string,
+	): Promise<string> {
+		const onValue = cfg.pressOnValue;
+		const offValue = cfg.pressOffValue;
+		if (!onValue || !offValue) return pressParam;
+		const mgr = ConnectionManager.getInstance();
+		let current = mgr.getCachedValue(host, pressCommand);
+		if (current === undefined) {
+			try {
+				current = await mgr.queryCommand(host, pressCommand);
+			} catch (err) {
+				// A press that cannot read is still better than no press: fall back to
+				// the configured parameter rather than dropping the interaction.
+				this.logger.warn(`onDialDown: could not read ${pressCommand} on ${host}: ${err}`);
+				return pressParam;
+			}
+		}
+		return nextToggleValue(current, { onValue, offValue });
+	}
+
 	override async onDialDown(ev: DialDownEvent<TSettings>): Promise<void> {
 		const cfg = this.getDialConfig(ev.payload.settings);
 		if (!cfg) return;
@@ -1278,7 +1316,8 @@ export abstract class DialActionBase<TSettings extends EiscpActionSettings> exte
 		const mgr = ConnectionManager.getInstance();
 		try {
 			await this.wakeIfNeeded(host, pressCommand);
-			await mgr.sendCommand(host, pressCommand, pressParam);
+			const param = await this.pressValue(host, cfg, pressCommand, pressParam);
+			await mgr.sendCommand(host, pressCommand, param);
 			// Dials have no checkmark, but they do have the alert — so a press the
 			// receiver is going to ignore still says so instead of looking fine.
 			this.reportPress(ev.action, pressCommand);

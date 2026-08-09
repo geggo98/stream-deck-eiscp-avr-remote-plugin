@@ -21,6 +21,8 @@ import {
 	presetLabel,
 	resolveDeviceIp,
 	resolveDialPress,
+	SUPER_RES_MAX,
+	superResLevel,
 	toneFeedback,
 	UNCONFIGURED_TITLE,
 } from "../eiscp-base.ts";
@@ -32,7 +34,7 @@ import {
 	type KeyConfig,
 	type ToggleConfig,
 } from "../eiscp-action-base.ts";
-import { SPEC_BY_ID, uuidFor, type DedicatedIdOfKind, type ToggleSpec } from "./catalog.ts";
+import { keyImagePath, SPEC_BY_ID, uuidFor, type DedicatedIdOfKind, type ToggleSpec } from "./catalog.ts";
 import { nameFor, type TrackedCommand } from "./name-store.ts";
 import { handleDiscoverMessage } from "./discovery.ts";
 import { handleOptionNamesMessage } from "./pi-names.ts";
@@ -77,6 +79,22 @@ export class MuteAction extends ToggleActionBase<EiscpActionSettings> {
 	}
 	protected getToggleConfig(): ToggleConfig {
 		return toggleCfg("mute");
+	}
+}
+
+// RES carries no TG, so this one flips via the base class' soft path (query the
+// current value, then send the other one). A receiver parked on a third value —
+// or on the N/A it answers to a value it does not support — reads as "off", and
+// one press moves it to Auto, which is the useful direction.
+@action({ UUID: uuidFor("upscale-4k") })
+export class Upscale4kAction extends ToggleActionBase<EiscpActionSettings> {
+	protected override coloredBackground = false;
+	protected override showTitle = false;
+	constructor() {
+		super("Upscale4k");
+	}
+	protected getToggleConfig(): ToggleConfig {
+		return toggleCfg("upscale-4k");
 	}
 }
 
@@ -496,6 +514,69 @@ export class TrebleDialAction extends ToneDialAction {
 	}
 }
 
+/**
+ * Super Resolution, 0-3, on a progress bar.
+ *
+ * The value is rendered from the raw parameter rather than through
+ * `formatCommandValue` because the interesting reading is not a number: while 4K
+ * upscaling is off the receiver refuses every rotation with `N/A`, and that is the
+ * one state the strip has to show honestly — a stale "2" beside a dead bar would
+ * read as a dial that simply stopped working.
+ */
+@action({ UUID: uuidFor("super-res-dial") })
+export class SuperResDialAction extends DialActionBase<EiscpActionSettings> {
+	constructor() {
+		super("SuperResDial");
+	}
+
+	protected getDialConfig(): DialConfig {
+		const s = SPEC_BY_ID["super-res-dial"];
+		return {
+			command: s.command,
+			upParam: s.upParam,
+			downParam: s.downParam,
+			pressCommand: s.pressCommand,
+			pressParam: s.pressParam,
+			// Both set, so the press flips upscaling instead of only switching it on —
+			// and the same pair lights the strip while it is on.
+			pressOnValue: s.pressOnValue,
+			pressOffValue: s.pressOffValue,
+			pressLabel: "UPSCALING",
+		};
+	}
+
+	protected buildFeedback(
+		cfg: DialConfig,
+		rawValue: string,
+		_settings: EiscpActionSettings,
+		pressOn: boolean,
+	): FeedbackPayload {
+		// Named for what the receiver is actually doing, not for what the dial
+		// adjusts: with upscaling off the signal is passed through untouched and the
+		// dial changes nothing, so calling it "Super Res" there would label a control
+		// that does not exist yet. The on label names the feature the receiver's own
+		// menu does ("1080p -> 4K Upscaling"). Both are as short as they can be and
+		// still be read: the strip's title field is one 200 px segment, and
+		// "1080p Upscaling (Super Res)" was tried on hardware and did not fit.
+		const title = pressOn ? "1080p Upscaling" : "4K Passthrough";
+		const icon = keyImagePath("super-res-dial", pressOn, false);
+		const level = superResLevel(rawValue);
+		if (level === undefined) {
+			// "N/A": the receiver's own word for "upscaling is off, this does nothing".
+			return { icon, title, value: "N/A", indicator: { value: 0, bar_fill_c: "#9E9E9E" } };
+		}
+		return {
+			icon,
+			title,
+			value: String(level),
+			indicator: {
+				value: (level / SUPER_RES_MAX) * 100,
+				bar_fill_c: pressOn ? "#4CAF50" : "#9E9E9E",
+			},
+		};
+	}
+}
+
 /** Tuner preset dial: rotate steps presets (PRS), press jumps to the Tuner input. */
 @action({ UUID: uuidFor("preset-dial") })
 export class PresetDialAction extends DialActionBase<EiscpActionSettings> {
@@ -543,6 +624,8 @@ export const DEDICATED_ACTIONS = [
 	new TrebleDownAction(),
 	new PresetNextAction(),
 	new PresetPrevAction(),
+	new Upscale4kAction(),
+	new SuperResDialAction(),
 	new InputDialAction(),
 	new ModeDialAction(),
 	new BassDialAction(),

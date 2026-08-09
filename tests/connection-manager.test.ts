@@ -100,6 +100,50 @@ describe("ConnectionManager", () => {
 		});
 	});
 
+	describe("publishDerivedValue", () => {
+		// Exists because a VSX-S520D never broadcasts RES and answers RES QSTN with
+		// whatever the protocol last wrote — so a change made at the receiver is only
+		// ever visible as front-panel text, and that text has to become a value.
+
+		it("reaches the cache, not just the subscribers", async () => {
+			// The cache is the half that matters for correctness: onKeyDown reads it to
+			// decide which way to flip, so a correction that only repainted the key
+			// would leave the next press sending the wrong value.
+			const mock = await startMockReceiver();
+			const mgr = new ConnectionManager();
+			const host = "127.0.0.1";
+			try {
+				// A host only has a cache once it has a client, so connect first.
+				const client = await mgr.ensureConnected(host, mock.port);
+				await mock.waitForClient();
+				const seen: string[] = [];
+				mgr.onCommandUpdate(host, "RES", (v) => seen.push(v));
+
+				mgr.publishDerivedValue(host, "RES", "00");
+
+				assert.deepEqual(seen, ["00"]);
+				assert.equal(mgr.getCachedValue(host, "RES"), "00");
+				client.disconnect();
+			} finally {
+				await mock.close();
+			}
+		});
+
+		it("does not tell the message observers the device said it", () => {
+			// Passive name discovery infers what owns the display from which commands
+			// arrive. Handing it a frame the receiver never sent would be a lie it then
+			// reasons from — and it is the FLD branch of that very observer that calls
+			// this method, so a loop would be one line away.
+			const mgr = new ConnectionManager();
+			const observed: string[] = [];
+			mgr.addMessageObserver((_host, command) => observed.push(command));
+
+			mgr.publishDerivedValue("derived-host", "RES", "01");
+
+			assert.deepEqual(observed, []);
+		});
+	});
+
 	describe("behaviour against the mock receiver", () => {
 		it("an incoming message updates the cache and notifies only matching subscribers", async () => {
 			const mock = await startMockReceiver();

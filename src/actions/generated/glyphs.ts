@@ -17,6 +17,7 @@ export const GLYPHS: Record<string, string> = {
 	"command": "<path d=\"M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3\" />",
 	"disc-3": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M6 12c0-1.7.7-3.2 1.8-4.2\" /> <circle cx=\"12\" cy=\"12\" r=\"2\" /> <path d=\"M18 12c0 1.7-.7 3.2-1.8 4.2\" />",
 	"gauge": "<path d=\"m12 14 4-4\" /> <path d=\"M3.34 19a10 10 0 1 1 17.32 0\" />",
+	"image-upscale": "<path d=\"M16 3h5v5\" /> <path d=\"M17 21h2a2 2 0 0 0 2-2\" /> <path d=\"M21 12v3\" /> <path d=\"m21 3-5 5\" /> <path d=\"M3 7V5a2 2 0 0 1 2-2\" /> <path d=\"m5 21 4.144-4.144a1.21 1.21 0 0 1 1.712 0L13 19\" /> <path d=\"M9 3h3\" /> <rect x=\"3\" y=\"11\" width=\"10\" height=\"10\" rx=\"1\" />",
 	"minus": "<path d=\"M5 12h14\" />",
 	"monitor": "<rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\" /> <line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\" /> <line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\" />",
 	"music": "<path d=\"M9 18V5l12-2v13\" /> <circle cx=\"6\" cy=\"18\" r=\"3\" /> <circle cx=\"18\" cy=\"16\" r=\"3\" />",

@@ -45,9 +45,29 @@ command, the rest of the plugin will most likely work.
   text or numeric values).
 - **Dedicated actions** — Power, Mute, Volume Up/Down, a Volume dial (press to
   mute), Next/Previous Input, Next/Previous Listening Mode, tuner Preset
-  controls, and Bass/Treble — pre-wired so they work without configuration.
+  controls, Bass/Treble, 4K Upscaling, and a Super Resolution dial — pre-wired so
+  they work without configuration.
 
 Most actions subscribe to the receiver and reflect its current state on the key.
+
+**4K Upscaling** switches the receiver's "1080p → 4K Upscaling" setting (`RES`).
+Note the trade-off, which is the receiver's, not the plugin's: while upscaling is
+on, the receiver no longer accepts 4K at its HDMI inputs; with it off, 4K comes
+in and is passed through. Receivers differ in which resolutions they support at
+all — the key uses the two values a Pioneer VSX-S520D accepts, and a model that
+wants a different one can be driven from the generic *Button* or *Toggle*, where
+every resolution the protocol defines is offered.
+
+**Super Resolution** is the sharpening level that rides on top of it, on a dial
+(0–3). It only does anything while 4K upscaling is on — pressing the dial toggles
+that. With upscaling off the receiver refuses the change and says so, and the
+dial shows `N/A` rather than a number that would not mean anything.
+
+Neither setting is reported back on this receiver: change one with its own remote
+and it keeps telling the network the *previous* value, however often you ask. So
+the plugin reads them off the receiver's front-panel display instead, which is
+where the change does show up — the key and the dial follow the receiver even
+when you use its own menu.
 
 ## Requirements
 

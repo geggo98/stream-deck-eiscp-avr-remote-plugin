@@ -63,6 +63,12 @@ const STEPPER_MAX: Record<string, number> = {
 	ZVL: 80,
 	CTL: 24,
 	PRS: 40,
+	// SPR's range really is 0-3, verified against the unit: SPR 01 is accepted and
+	// the panel confirms "Super Res   :1". Without an entry it would inherit the
+	// 24 default and paint a 4-step setting as a bar that never leaves the left
+	// eighth. The single-digit form `SPR 1` is refused (`!1SPRN/A`), so the two-char
+	// padding that normalizeParam applies is load-bearing here.
+	SPR: 3,
 };
 const STEPPER_MAX_DEFAULT = 24;
 
@@ -73,6 +79,9 @@ const INCLUDED_COMMANDS = [
 	"ADY", "ADQ", "PMB",
 	// Added: tone, preset, transport, Zone 2.
 	"TFR", "PRS", "NTC", "ZPW", "ZMT", "ZVL", "SLZ",
+	// Added: monitor-out resolution, i.e. 1080p -> 4K upscaling, and the Super
+	// Resolution level that rides on it.
+	"RES", "SPR",
 ];
 
 // Most commands live in the `main` section. A few of the included codes also
@@ -94,7 +103,8 @@ const CODE_CATEGORY: Record<string, string> = {
 	TFR: "Tone",
 	PRS: "Tuner",
 	NTC: "Transport",
-	DIM: "Display / Video", HDO: "Display / Video",
+	DIM: "Display / Video", HDO: "Display / Video", RES: "Display / Video",
+	SPR: "Display / Video",
 	SPA: "Speaker", SPB: "Speaker",
 	DIR: "Audio Processing", LTN: "Audio Processing", RAS: "Audio Processing",
 	ADY: "Audio Processing", ADQ: "Audio Processing", PMB: "Audio Processing",

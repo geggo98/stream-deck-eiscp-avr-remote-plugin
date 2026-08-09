@@ -14,7 +14,9 @@
 import { streamDeck, type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { ConnectionManager } from "../../adapter/eiscp/connection-manager.ts";
-import { type EiscpActionSettings, fireAndLog, resolveDeviceIp } from "../eiscp-base.ts";
+import { decodeDisplayText, type EiscpActionSettings, fireAndLog, resolveDeviceIp } from "../eiscp-base.ts";
+import { DEDICATED_SPECS, type DedicatedSpec, type DialSpec, type ToggleSpec } from "./catalog.ts";
+import { parseFldLevel, parseFldState } from "./fld-state.ts";
 import {
 	hasLearnedName,
 	nameFor,
@@ -34,6 +36,51 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 let registered = false;
 
+/**
+ * Toggles whose state the receiver only ever admits on its front panel.
+ *
+ * Computed once: the catalog is a frozen literal, and this runs inside the FLD
+ * branch of the message observer, which sees every display update — including the
+ * ~1 800 frames a second a cover-art transfer produces.
+ */
+// Widened to the interface the way toggleCfg does it, so the optional fldState is
+// reachable on the catalog literals that omit it.
+const FLD_STATE_TOGGLES: readonly ToggleSpec[] = (DEDICATED_SPECS as readonly DedicatedSpec[])
+	.filter((spec): spec is ToggleSpec => spec.kind === "toggle")
+	.filter((spec) => spec.fldState !== undefined);
+
+/** Dials whose level the receiver likewise only admits on its front panel. */
+const FLD_VALUE_DIALS: readonly DialSpec[] = (DEDICATED_SPECS as readonly DedicatedSpec[])
+	.filter((spec): spec is DialSpec => spec.kind === "dial")
+	.filter((spec) => spec.fldValue !== undefined);
+
+/**
+ * Correct a toggle's believed state from a line of display text.
+ *
+ * Publishing into the ConnectionManager rather than rendering directly is the
+ * point: `onKeyDown` decides which way to flip from the *cached* value, so a fix
+ * that only repainted the key would leave the next press sending the wrong value
+ * — the key would look right and then behave wrong, which is worse than either.
+ */
+function applyFldState(mgr: ConnectionManager, host: string, parameter: string): void {
+	if (FLD_STATE_TOGGLES.length === 0 && FLD_VALUE_DIALS.length === 0) return;
+	const text = decodeDisplayText(parameter);
+	if (!text) return;
+	for (const spec of FLD_STATE_TOGGLES) {
+		const state = parseFldState(text, spec.fldState!);
+		if (state === undefined) continue;
+		mgr.publishDerivedValue(host, spec.command, state === "on" ? spec.onValue : spec.offValue);
+	}
+	for (const spec of FLD_VALUE_DIALS) {
+		const level = parseFldLevel(text, spec.fldValue!);
+		if (level === undefined) continue;
+		// Two digits, because that is the only form the wire uses: the receiver
+		// reports "02" and refuses the single-digit `SPR 1` outright, so publishing
+		// "2" would seed the cache with a value no set could ever produce.
+		mgr.publishDerivedValue(host, spec.command, String(level).padStart(2, "0"));
+	}
+}
+
 /** Register the always-on passive observer (idempotent). */
 export function register(mgr: ConnectionManager): void {
 	if (registered) return;
@@ -43,6 +90,12 @@ export function register(mgr: ConnectionManager): void {
 			noteChange(host, command, parameter);
 		} else if (command === "FLD") {
 			noteFld(host, parameter);
+			// The same text, read a second way and for a different purpose: noteFld
+			// asks "is this an option's name?", this asks "is this a setting the
+			// receiver refuses to report?". They cannot be merged — the name store
+			// wants text it can attribute to a code it already saw, and this wants
+			// text no code will ever follow.
+			applyFldState(mgr, host, parameter);
 		} else {
 			// Volume, tone, mute and friends push the input readout off the display;
 			// the name store has to know so it does not learn their text as an input

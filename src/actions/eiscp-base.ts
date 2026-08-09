@@ -638,6 +638,27 @@ export function presetLabel(raw: string): string {
 	return Number.isNaN(num) ? raw : `P${num}`;
 }
 
+/** Highest Super Resolution level; the spec's range key is [0, 3] and the unit agrees. */
+export const SUPER_RES_MAX = 3;
+
+/**
+ * Super Resolution level, or `undefined` when the receiver is not reporting one.
+ *
+ * `undefined` is the interesting case, not an error case: while 4K upscaling is
+ * off the unit refuses every `SPR` set with `!1SPRN/A` (measured 2026-08-08,
+ * panel: "Not Available "), and `N/A` is then what the dial is handed. Anything
+ * outside 0-3 is treated the same way rather than clamped — a value this code
+ * does not understand should not be drawn as a confident bar position.
+ *
+ * `parseInt` alone is too permissive for wire data: it would read "N/A" as NaN
+ * (fine) but also "2x" as 2, so the shape is checked first.
+ */
+export function superResLevel(raw: string): number | undefined {
+	if (!/^[0-9]{1,2}$/.test(raw)) return undefined;
+	const num = Number(raw);
+	return num >= 0 && num <= SUPER_RES_MAX ? num : undefined;
+}
+
 /**
  * Soft-flip inversion for a two-state command without a hardware TG toggle:
  * if the current value reads "on", send the off value; anything else (off,

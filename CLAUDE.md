@@ -1243,6 +1243,85 @@ everything afterwards. Device quirks worth knowing:
   (`tests/fixtures/standby-behaviour-capture.json`, `npm run capture:standby`.)
 - Right after a power-on `LMD` reads `N/A` for a moment, and setting `MVL`
   auto-unmutes (`!1AMT00` arrives before the `!1MVL..` echo).
+- **`N/A` is also how it refuses a value it does not implement**, and `RES`
+  (Monitor Out Resolution) is the case that matters. Measured 2026-08-08 — and
+  it contradicts the spec, which lists eleven resolutions and marks every one of
+  them `set1`:
+
+  | sent | answer | front panel |
+  |---|---|---|
+  | `RES 00` | `!1RES00` | — (back to the input readout) |
+  | `RES 01` | `!1RES01` | **`Upscaling:Auto`** |
+  | `RES 05`, `RES 06`, `RES 08` | `!1RESN/A`, value unchanged | — |
+
+  So this unit implements exactly **two** of the eleven: `01` is the menu's
+  "1080p → 4K Upscaling: **Auto**" and `00` is **Off**. The spec's own 4K value,
+  `RES 08` ("4K Upcaling (HDMI Output Only)"), is **rejected here** — building
+  the `upscale-4k` key off the enumeration would have produced a key that does
+  nothing, silently, because a refused set still looks like a delivered one. The
+  registry keeps all eleven values because it is model-generic; the dedicated key
+  pins the measured pair (`tests/dial-catalog.test.ts`).
+  Consequence for the user, and the reason the tooltip says so: with upscaling on
+  the receiver stops accepting 4K at its **inputs**; off, 4K passes through.
+- **`RES` reports back only what the protocol set — never what the front panel
+  did, and it never broadcasts.** This is the sharper half of the same finding and
+  it cost an afternoon of chasing an "inverted" key that was rendering correctly
+  all along. Measured 2026-08-08, connection provably alive throughout (the `PWR`
+  heartbeat kept answering on either side of it):
+
+  | step | `RES QSTN` afterwards |
+  |---|---|
+  | upscaling switched to **Off in the receiver's own OSD** | **`01`** — unchanged |
+  | `RES 00` sent over ISCP | `00` |
+  | `RES 01` sent over ISCP | `01` |
+
+  The unit *applies* the OSD change (its display writes `Upscaling:Off `, the menu
+  agrees) and still answers `01`. So the ISCP-visible value is a shadow of the
+  protocol path alone. Two consequences:
+  - **A re-query cannot repair the key.** `bindKey` already queries on every
+    appear, and the query returns the same stale shadow — so a page or profile
+    switch does not fix it either. There is no way to read the true state at all.
+  - **The only trace of an out-of-band change is the `FLD` display text**
+    (`Upscaling:Off ` / `Upscaling:Auto`), which is model- and wording-specific.
+
+  The key is therefore authoritative for changes *it* made, which is the normal
+  case, and can show a stale state after someone uses the receiver's own remote.
+  Do not "fix" this by polling `RES`: polling returns the shadow value too.
+- **`SPR` (Super Resolution) behaves nothing like its neighbour, and every claim
+  below is measured** (2026-08-08) because the pessimistic reading of `RES` would
+  have said not to build the dial at all:
+
+  | sent | answer | front panel |
+  |---|---|---|
+  | `SPR UP` while `RES 00` | `!1SPRN/A`, value unchanged | **`Not Available `** |
+  | `SPR UP` while `RES 01` | `!1SPR03` after ~80 ms | `Super Res   :3` (~108 ms) |
+  | `SPR 01` | `!1SPR01` | `Super Res   :1` |
+  | `SPR 1` | **`!1SPRN/A`** | — |
+
+  Three things follow, and each one killed an objection to the dial:
+  - **Liveness needs no guessing.** The receiver *says* the setting is dead. That
+    matters because `SPR QSTN` answers `02` whether upscaling is on or off, so the
+    query never could have told you — but a rotation always does.
+  - **It echoes its own sets**, unlike `RES`, which broadcasts nothing at all. That
+    is the subscription `DialActionBase` repaints from; without it the strip would
+    freeze after every rotation.
+  - **Two digits are mandatory.** `SPR 1` is refused, so `normalizeParam`'s padding
+    is load-bearing and `SPR` must never join `NO_HEX_PAD`.
+
+  The registry entry needs three lines in the generator and nothing more: `"SPR"`
+  in `INCLUDED_COMMANDS`, a `CODE_CATEGORY`, and `STEPPER_MAX: 3` — without that
+  last one it inherits the default 24 and a 0-3 setting paints as a bar stuck in
+  the left eighth. Do **not** expand the range key into `00`..`03`: `extractValues`
+  skipping it is what keeps `formatCommandValue` from rendering the range's shared
+  name `no-0-3` as the level.
+
+  Still unverified, so not in any tooltip: **wrap-around**. It is inferred from
+  `description: "sets Super Resolution Wrap-Around Up"`, and that phrase is
+  boilerplate in this YAML — it is attached to `AMT TG` and `DIR TG`, which are
+  toggles, and to `SPB UP` on a unit that ignores `SPB` entirely.
+- **`UPS` is not what its name suggests.** It is called "Upsampling" and its
+  `QSTN` description even reads "gets The Upscaling State" — but it is *audio*
+  (x1/x2/x4/x8). The video control is `RES`.
 - **Its timing is not deterministic, and that is not noise — it is the reason the
   sweep polls instead of waiting a fixed delay.** Measured across the captured sweep
   steps (`tests/fixtures/name-discovery-capture.json`):

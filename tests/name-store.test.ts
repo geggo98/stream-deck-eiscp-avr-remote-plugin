@@ -326,6 +326,22 @@ describe("name-store: a playing source is not a mode name", () => {
 		assert.equal(nameFor(host, "LMD", "80"), "Dolby Surr");
 	});
 
+	it("does not learn the upscaling readout as a listening-mode name", async () => {
+		// The 4K key writes "Upscaling:Auto" to the panel. Neither that nor
+		// "Upscaling:Off " ends in digits, so both land on THIS branch — the same one
+		// that once learned a scrolling track title as mode 82 — and never on the
+		// input branch. Measured on a VSX-S520D: the RES echo arrives ~27 ms BEFORE
+		// the text, which is what lets the display-ownership guard get in front of it.
+		// The LMD here is an unrelated mode change, because a RES set broadcasts no
+		// LMD of its own. Fails if RES leaves DISPLAY_OWNING_COMMANDS (verified).
+		const host = "ns-upscaling";
+		noteChange(host, "LMD", "82");
+		await tick();
+		noteDisplayChange(host, "RES"); // the echo takes the display over
+		assert.equal(noteFld(host, hex("Upscaling:Auto")), false);
+		assert.notEqual(nameFor(host, "LMD", "82"), "Upscaling:Auto");
+	});
+
 	it("keeps the sweep able to name a streaming input", async () => {
 		// The recorded SLI sweep contains 35 metadata frames — it steps onto NET/USB
 		// while they stream. If playback metadata vetoed the sweep's own FLD query too,
@@ -334,6 +350,19 @@ describe("name-store: a playing source is not a mode name", () => {
 		noteDisplayChange(host, "NJA");
 		assert.notEqual(recordSli(host, "2B", hex("NET          14")), "rejected");
 		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+	});
+
+	it("does not learn the Super Resolution readout as an input name", async () => {
+		// This one is shaped like the volume readout, not like a mode name: measured
+		// as "Super Res   :2", trailing digit and all, so endsWithVolume claims it and
+		// strips the digits — which is exactly how an input came to be called
+		// "Bass : +". Fails if SPR leaves DISPLAY_OWNING_COMMANDS (verified).
+		const host = "ns-super-res";
+		noteChange(host, "SLI", "10");
+		await tick();
+		noteDisplayChange(host, "SPR"); // the echo takes the display over
+		assert.equal(noteFld(host, hex("Super Res   :2")), false);
+		assert.notEqual(nameFor(host, "SLI", "10"), "Super Res   :");
 	});
 
 	it("still refuses a swept name while the volume is on the display", async () => {

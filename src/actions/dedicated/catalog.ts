@@ -10,6 +10,8 @@
  * class decorator, the manifest, and the generated images can never drift.
  */
 
+import type { FldLevelAnchor, FldStateAnchor } from "./fld-state.ts";
+
 export const PLUGIN_ID = "de.schwetschke.sd.eiscp-avr-remote";
 export const uuidFor = (id: DedicatedId | GenericId): string => `${PLUGIN_ID}.${id}`;
 
@@ -43,6 +45,14 @@ export interface ToggleSpec extends DedicatedSpecBase {
 	offValue: string;
 	/** Hardware toggle parameter (TG), preferred over a soft flip when present. */
 	toggleValue?: string;
+	/**
+	 * Front-panel readout that reveals this setting's true state.
+	 *
+	 * Only for settings the receiver does not report — `PWR` and `AMT` broadcast
+	 * properly and must not have one, since a second source of truth could only
+	 * disagree with the first. See `fld-state.ts`.
+	 */
+	fldState?: FldStateAnchor;
 	states: 2;
 }
 
@@ -65,6 +75,16 @@ export interface DialSpec extends DedicatedSpecBase {
 	/** Default press behavior (several dials let the PI override it). */
 	pressCommand: string;
 	pressParam: string;
+	/**
+	 * Press flips between these instead of sending `pressParam`, when both are set.
+	 *
+	 * `pressParam` stays as the value a cold, unreadable press falls back to.
+	 * `pressOnValue` alone still just lights the strip (see `isPressOn`).
+	 */
+	pressOnValue?: string;
+	pressOffValue?: string;
+	/** Front-panel readout that reveals this setting's level (see fld-state.ts). */
+	fldValue?: FldLevelAnchor;
 	encoderLayout: string;
 	states: 1;
 }
@@ -170,6 +190,22 @@ export const DEDICATED_SPECS = [
 		kind: "key", controller: "Keypad", command: "PRS", parameter: "DOWN", showsState: true,
 		states: 1, icon: { primary: "radio", badge: "chevron-left" },
 	},
+	{
+		// The receiver's "1080p -> 4K Upscaling" menu item. Measured on a VSX-S520D
+		// (2026-08-08): it takes RES 01 ("Upscaling:Auto" on the front panel) and RES
+		// 00, and answers N/A to every other value the spec lists — so the two-value
+		// pair below is the whole of this setting on that unit, not a chosen subset.
+		id: "upscale-4k", name: "4K Upscaling",
+		tooltip: "Toggle 1080p→4K upscaling (RES). While it is on, the receiver stops accepting 4K at its HDMI inputs.",
+		kind: "toggle", controller: "Keypad", command: "RES", onValue: "01", offValue: "00",
+		// The panel is the ONLY trace of a change made anywhere but over the protocol:
+		// "Upscaling:Auto" / "Upscaling:Off " (measured, trailing space and all — and
+		// decodeDisplayText trims it). "Auto" is this setting's on word; it is not
+		// generically boolean, which is why it sits here rather than in the shared
+		// vocabulary in fld-state.ts.
+		fldState: { label: "Upscaling", onWords: ["Auto"] },
+		states: 2, icon: { primary: "monitor", onPrimary: "image-upscale" },
+	},
 	// --- Dials (Stream Deck Plus rotary encoders): rotate to adjust, press for a configurable action ---
 	// pressCommand/pressParam below are the DEFAULT; input/mode/bass/treble let the
 	// user pick the press from a PI dropdown (Mute / Direct / Stereo), so the manifest
@@ -197,6 +233,32 @@ export const DEDICATED_SPECS = [
 		kind: "dial", controller: "Encoder", command: "TFR", upParam: "TUP", downParam: "TDOWN",
 		pressCommand: "AMT", pressParam: "TG", encoderLayout: "$B1",
 		states: 1, icon: { primary: "audio-waveform" },
+	},
+	{
+		// Measured on a VSX-S520D (2026-08-08). Two findings shape this entry. The
+		// receiver **announces** when the setting is dead: with upscaling off, `SPR UP`
+		// answers `!1SPRN/A` and the panel writes "Not Available " — so the dial does
+		// not have to guess at liveness, and `SPR QSTN` could not tell it anyway (it
+		// answers `02` either way). And `SPR` **echoes** its own sets (~80 ms), which
+		// is what DialActionBase repaints from; without that the strip would freeze
+		// after every rotation. Hence the press: it sends `RES 01`, the one thing that
+		// makes the dial do anything at all.
+		id: "super-res-dial", name: "Super Resolution",
+		tooltip: "Rotate to set Super Resolution (0-3); press toggles 4K upscaling, which this setting needs.",
+		kind: "dial", controller: "Encoder", command: "SPR", upParam: "UP", downParam: "DOWN",
+		// The press toggles rather than only switching on: the two settings belong
+		// together, and a one-way press left no way back from the same key.
+		pressCommand: "RES", pressParam: "01", pressOnValue: "01", pressOffValue: "00",
+		// Same story as the toggle above — `SPR` is not reported either, so a change
+		// made at the receiver is only visible as "Super Res   :2" on the panel. Max
+		// mirrors STEPPER_MAX.SPR in the generator; both come from the same range key.
+		fldValue: { label: "Super Res", max: 3 },
+		encoderLayout: "$B1",
+		// The same visual language as the 4K key, because it reports the same thing:
+		// a plain monitor while the signal passes through, the upscale glyph while it
+		// is being scaled. `onPrimary` is also what makes the icon generator emit the
+		// ON pair for a dial (see generate-icons.ts).
+		states: 1, icon: { primary: "monitor", onPrimary: "image-upscale" },
 	},
 	{
 		id: "preset-dial", name: "Preset", tooltip: "Rotate to change the tuner preset; press to select the Tuner input.",

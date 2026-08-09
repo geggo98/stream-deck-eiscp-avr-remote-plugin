@@ -1377,5 +1377,83 @@ window.EISCP_COMMANDS = [
     ],
     "hasQuery": true,
     "hasUpDown": true
+  },
+  {
+    "code": "RES",
+    "name": "monitor-out-resolution",
+    "description": "Monitor Out Resolution",
+    "category": "Display / Video",
+    "actionType": "selector",
+    "values": [
+      {
+        "param": "08",
+        "name": "4k-upcaling"
+      },
+      {
+        "param": "13",
+        "name": "1680x720p"
+      },
+      {
+        "param": "15",
+        "name": "2560x1080p"
+      },
+      {
+        "param": "00",
+        "name": "through"
+      },
+      {
+        "param": "01",
+        "name": "auto"
+      },
+      {
+        "param": "02",
+        "name": "480p"
+      },
+      {
+        "param": "03",
+        "name": "720p"
+      },
+      {
+        "param": "04",
+        "name": "1080i"
+      },
+      {
+        "param": "05",
+        "name": "1080p"
+      },
+      {
+        "param": "07",
+        "name": "1080p"
+      },
+      {
+        "param": "06",
+        "name": "source"
+      },
+      {
+        "param": "UP",
+        "name": "up"
+      }
+    ],
+    "hasQuery": true,
+    "hasUpDown": true
+  },
+  {
+    "code": "SPR",
+    "name": "super-resolution",
+    "description": "Super Resolution",
+    "category": "Display / Video",
+    "actionType": "stepper",
+    "values": [
+      {
+        "param": "UP",
+        "name": "up"
+      },
+      {
+        "param": "DOWN",
+        "name": "down"
+      }
+    ],
+    "hasQuery": true,
+    "hasUpDown": true
   }
 ];

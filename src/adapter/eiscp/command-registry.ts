@@ -592,6 +592,43 @@ export const COMMAND_REGISTRY: Record<string, CommandDef> = {
 		hasQuery: true,
 		hasUpDown: true,
 	},
+	RES: {
+		code: "RES",
+		name: "monitor-out-resolution",
+		description: "Monitor Out Resolution",
+		category: "Display / Video",
+		actionType: "selector",
+		values: [
+			{ param: "08", name: "4k-upcaling", description: "sets 4K Upcaling(HDMI Output Only) 4K(HDMI Output Only)" },
+			{ param: "13", name: "1680x720p", description: "sets 1680x720p" },
+			{ param: "15", name: "2560x1080p", description: "sets 2560x1080p" },
+			{ param: "00", name: "through", description: "sets Through" },
+			{ param: "01", name: "auto", description: "sets Auto(HDMI Output Only)" },
+			{ param: "02", name: "480p", description: "sets 480p" },
+			{ param: "03", name: "720p", description: "sets 720p" },
+			{ param: "04", name: "1080i", description: "sets 1080i" },
+			{ param: "05", name: "1080p", description: "sets 1080p(HDMI Output Only)" },
+			{ param: "07", name: "1080p", description: "sets 1080p/24fs(HDMI Output Only)" },
+			{ param: "06", name: "source", description: "sets Source" },
+			{ param: "UP", name: "up", description: "sets Monitor Out Resolution Wrap-Around Up" },
+		],
+		hasQuery: true,
+		hasUpDown: true,
+	},
+	SPR: {
+		code: "SPR",
+		name: "super-resolution",
+		description: "Super Resolution",
+		category: "Display / Video",
+		actionType: "stepper",
+		values: [
+			{ param: "UP", name: "up", description: "sets Super Resolution Wrap-Around Up" },
+			{ param: "DOWN", name: "down", description: "sets Super Resolution Wrap-Around DOWN" },
+		],
+		hasQuery: true,
+		hasUpDown: true,
+		maxValue: 3,
+	},
 };
 
 export function getCommandDef(code: string): CommandDef | undefined {

@@ -425,6 +425,28 @@
       ]
     },
     {
+      "Name": "4K Upscaling",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.upscale-4k",
+      "Icon": "imgs/actions/upscale-4k/icon",
+      "Tooltip": "Toggle 1080p→4K upscaling (RES). While it is on, the receiver stops accepting 4K at its HDMI inputs.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Name": "Off",
+          "Image": "imgs/actions/upscale-4k/key",
+          "TitleAlignment": "middle"
+        },
+        {
+          "Name": "On",
+          "Image": "imgs/actions/upscale-4k/key-on",
+          "TitleAlignment": "middle"
+        }
+      ]
+    },
+    {
       "Name": "Input",
       "UUID": "de.schwetschke.sd.eiscp-avr-remote.input-dial",
       "Icon": "imgs/actions/input-dial/icon",
@@ -513,6 +535,29 @@
         "TriggerDescription": {
           "Push": "Mute",
           "Rotate": "Adjust treble"
+        }
+      }
+    },
+    {
+      "Name": "Super Resolution",
+      "UUID": "de.schwetschke.sd.eiscp-avr-remote.super-res-dial",
+      "Icon": "imgs/actions/super-res-dial/icon",
+      "Tooltip": "Rotate to set Super Resolution (0-3); press toggles 4K upscaling, which this setting needs.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "PropertyInspectorPath": "ui/dedicated.html",
+      "States": [
+        {
+          "Image": "imgs/actions/super-res-dial/key",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Press",
+          "Rotate": "Adjust super resolution"
         }
       }
     },
