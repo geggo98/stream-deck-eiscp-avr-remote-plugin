@@ -21,7 +21,21 @@ import { setAdapterLogger } from "./adapter/logging";
 // objects, LAN IPs and the whole learned-name map land in the plugin's log files
 // (up to 10x50 MB, plaintext, and routinely attached to bug reports). Opt in via
 // EISCP_DEBUG for local debugging; ship at INFO.
-streamDeck.logger.setLevel(process.env.EISCP_DEBUG ? "trace" : "info");
+//
+// **`"trace"` is unreachable in a release build, and asking for it silently gave
+// INFO** — so `EISCP_DEBUG=1` on anything `npm run build` produced did nothing at
+// all. The SDK builds the plugin logger with `minimumLevel: isDebugMode() ? "trace"
+// : "debug"`, `isDebugMode()` is true only when the process was launched with
+// `--inspect` (i.e. only under `npm run watch`, which writes `Nodejs.Debug:
+// "enabled"`), and `Logger.setLevel` does not clamp an out-of-range level — it
+// *resets to `"info"`*. So the honest ceiling off the watch loop is `"debug"`, and
+// anything that has to be visible in a shipped build belongs at INFO.
+//
+// Verified against the SDK's own logger with both option sets: release +
+// setLevel("trace") -> "info"; release + setLevel("debug") -> "debug"; watch +
+// setLevel("trace") -> "trace".
+const requestedLevel = process.env.EISCP_LOG_LEVEL ?? (process.env.EISCP_DEBUG ? "debug" : "info");
+streamDeck.logger.setLevel(requestedLevel as Parameters<typeof streamDeck.logger.setLevel>[0]);
 
 // Node runs with unhandled rejections fatal, and the SDK's own safety net is a
 // `process.once("uncaughtException", …)` — so it absorbs exactly one escaped

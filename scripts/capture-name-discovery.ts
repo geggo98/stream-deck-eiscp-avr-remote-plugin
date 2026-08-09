@@ -182,6 +182,7 @@ async function main(): Promise<void> {
 			log: {
 				info: (m) => console.log(`  ${m}`),
 				debug: () => {},
+				warn: (m) => console.warn(`  ${m}`),
 				error: (m) => console.error(`  ${m}`),
 			},
 		};

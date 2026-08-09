@@ -378,6 +378,20 @@
 					const steps = p.count || 0;
 					const named = typeof p.named === "number" ? p.named : undefined;
 					const options = typeof p.options === "number" ? p.options : undefined;
+					// Some receivers steer themselves: this one jumps back to whatever
+					// network input is playing, a few seconds after the input leaves it.
+					// The sweep cannot tell that frame from the answer to its own step,
+					// so the walk simply ends early — and every message below would then
+					// describe a short run as a complete one, or blame the power state of
+					// a receiver that is awake and playing.
+					if (p.interrupted) {
+						status.textContent =
+							"Stopped early — the receiver kept changing the input by itself" +
+							(named ? " (" + named + " named)" : "") +
+							". Try again with playback stopped.";
+						show(btn, true);
+						return;
+					}
 					if (named === undefined) {
 						status.textContent = "Done — " + steps + " steps. Re-open the action to see the names.";
 					} else if (named > 0) {

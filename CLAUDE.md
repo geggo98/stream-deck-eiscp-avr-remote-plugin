@@ -291,6 +291,17 @@ exist. The standby behaviour is selectable, since not every receiver is alike:
   then applied, which is what the real one does with an input change.
 - `silent: true` — connects and never answers (the half-open receiver).
 - `refuseConnections: true` — a port with nothing behind it (ECONNREFUSED).
+- `autoReturn: { input, afterMs, mode?, display? }` — **the only thing this double does
+  that nobody asked for.** A moment after the input moves away from `input`, it goes back
+  there and announces the input, then a listening mode, then display text. Everything else
+  here is an answer to a request, which is exactly why the two learned-name defects were
+  invisible until they had been persisted. `display` is a *list* because a real display
+  scrolls: consecutive reads must differ, or the sweep's majority rule is entitled to
+  believe the reading (a frozen readout is a persistent one, which is a different receiver).
+  `tests/auto-return.test.ts` is the only test that wires the real sweep, the real name
+  store and a real socket together — `sweep.test.ts` fakes the receiver and
+  `sweep-capture.test.ts` fakes the store, and neither can express a frame the receiver
+  sent on its own initiative.
 
 For behaviour the synthetic echo cannot express, the mock also **replays recorded
 wire traffic**: `startMockReceiver({ replay, replayTimeScale })` groups a captured
@@ -327,6 +338,19 @@ keeps the captured order but drops the captured waits, so CI stays fast).
   "Volume      14"` (refuse). A tie counts as busy: a missing name costs one clean
   input change, a wrong one persists. `tests/name-store-capture.test.ts` replays the
   recording and fails without the guard.
+- **The number at the end of that readout is the volume, and checking it is what
+  separates a track title from an input name.** Found in the wild after the veto above
+  was in place: the Input encoder read **"at is Love ("**. The display is 14 characters
+  wide and *scrolls*, so a title lands in it ending in a digit often enough — and no
+  command owns the display then, because the **source** wrote it. Nothing in the shape
+  can tell the two apart; the number can. Every digit-terminated FLD in
+  `standby-behaviour-capture.json` ends in the `MVL` in force at that moment (`0E` →
+  "GAME        14", `02` → "CBL/SAT      2"), and "at is Love (7" against a volume of
+  14 does not. So `noteDisplayChange` now takes the parameter as well and remembers
+  `MVL`; both the passive branch and the sweep's `recordSli` check it. **An unknown
+  volume vetoes nothing** — `name-discovery-capture.json` contains no `MVL` at all, and
+  a receiver that never announces one has to stay learnable. It also catches
+  "Bass : +2" a second time, independently.
 - **A playing source is not a mode name either.** Same disease on the LMD branch,
   found in the wild: listening mode `82` was learned as **"...Baby One M"** — a
   scrolling track title clipped to the display width — while the user had not touched
@@ -345,6 +369,40 @@ keeps the captured order but drops the captured waits, so CI stays fast).
     not block learning;
   - it fires only on the sources that behave this way (DAB, USB, NET) and only while
     they play, so everything else keeps learning passively.
+- **An input change is a display change, and that veto could not see it.** With AirPlay
+  playing, moving the input away makes this receiver hop back to it by itself a few
+  seconds later — device-controlled, so another model may not. Mode `82` ("DTS
+  Neural:X") was then renamed **"Airplay"**, because the display briefly shows the
+  service name. `displayIsBusy` cannot help here twice over: the metadata stopped while
+  the input was away, so its ordering rule (`ownChangeAt <= at`) hands the display to
+  the newer `LMD`; and that `LMD` is the receiver's own answer to the input change, so
+  it is *always* newer. The signal is the input change itself, and the two populations
+  do not overlap — timed from the last input change, across every `LMD` in both
+  recordings:
+
+  | the receiver's own | the user's |
+  |---|---|
+  | 9, 9, 10, 13, 13, 15, 36, 40, 70, 255, 337 ms | 2410 ms (`LMD 80` → `00`, "    Stereo    ") |
+
+  Nothing at all was measured in between, so `INPUT_ECHO_MS` (800 ms) is picked from
+  the **gap** rather than as a margin around one side. 3000 ms was the first attempt and
+  the standby recording refuted it: it swallowed that "Stereo", a name the passive
+  learner is meant to get. The flag is set when the `LMD` arrives, not when its `FLD`
+  does — by then the two are only correlated — and re-checked at the `FLD` for an input
+  change that lands in between. `inputChangedAt` is recorded **before** the sweeping
+  early return, since Auto-Discover changes the input twelve times and the receiver
+  answers each one.
+- **A second layer: a text that names the currently selected input is not a mode name.**
+  Timing-independent, and it needs **exact** equality rather than `matchesSpecValue`,
+  whose prefix rule would veto the mode "Game-RPG" while the `GAME` input is selected.
+  Worth knowing before it is mistaken for the fix: it does **not** catch the case above.
+  `specValueLabels("SLI","2D")` is `["AIPLAY"]` — a typo in the vendor workbook — and
+  this unit reaches AirPlay through `SLI 2B` ("NET") anyway.
+- **The name store logs, and only on change.** It logged nothing at all, so the day this
+  bug was reported the plugin's log had no record of a name ever being learned. One line
+  when a name is stored or replaced (`LMD 82: "DTS Neural:X" -> "Airplay"` — the line
+  that answers *when*), and one deduped line for the refusals above. The metadata veto
+  stays silent deliberately: it fires on every track of every stream.
 - The sweep's `recordSli` had **no** format check at all — its `query("FLD")` is
   settled by the first FLD to arrive, solicited or not — and is now subject to the
   volume/tone veto. **Not to the metadata veto**, deliberately: the recorded SLI sweep
@@ -365,6 +423,49 @@ keeps the captured order but drops the captured waits, so CI stays fast).
   tie stores nothing. Limitation: something rewriting the display for the *whole*
   window (a volume dial turned during a sweep) can win, and re-running Auto-Discover
   on a quiet receiver is the cure.
+- **Auto-Discover against a receiver that steers itself.** The sweep's only evidence that
+  its `UP` landed is that the cached value changed — and an unsolicited frame lands in the
+  same cache. So a receiver that hops back to its playing network input a few seconds after
+  the input leaves it *ends the sweep*: the hop is an exact `current === start`, which reads
+  as a wrap. Measured against the double (`autoReturn`, hop at 60 ms): **2 steps, 2 options,
+  0 named** — and before this it was reported as a clean run, so the Property Inspector asked
+  whether the receiver was switched on about a receiver that was awake and playing. Three
+  answers, none of which pretends the sweep can tell the two frames apart:
+  - `learnInputName` re-reads the input code beside every FLD sample and drops the sample if
+    it moved — that is the "name of input X stored for code Y" case, which the display's
+    1-2 s code lag makes wide;
+  - `runSweep` re-reads the code after each reading window and says so (`WARN … the receiver
+    is moving on its own`);
+  - both set `interrupted`, which rides the `done` message to the PI: *"Stopped early — the
+    receiver kept changing the input by itself. Try again with playback stopped."*
+  A sweep that outruns the hop (each step re-arms the receiver's timer) still completes
+  normally, which is why this is a report rather than a refusal.
+- **`corroborated` may excuse a busy display; it may not excuse the volume rule.** A majority
+  establishes *which text* was on the display, never that the text is an input readout. A
+  frozen scrolling title reads identically three times running and wins a majority by
+  definition — measured, it stored "at is Love (" through that path while every other guard
+  was in place. And a **rejected** reading no longer votes at all: three identical rejects
+  used to reach `MAJORITY_AT` and come back as `corroborated`, which is the escalation itself.
+- **What the sweep logs, and why it is at INFO.** A sweep is rare, explicitly asked for and
+  disruptive, so one line per step is proportionate — and it is the only record of the path
+  the run actually took. Every termination now says which of the four it was; before, all
+  four were silent and the `done` line read identically for a complete run and a truncated
+  one. **The disrupted run used to write fewer lines than the healthy one.**
+- **`EISCP_DEBUG=1` did nothing on a release build, and `log.debug` is unreachable there.**
+  The SDK builds the plugin logger with `minimumLevel: isDebugMode() ? "trace" : "debug"`,
+  `isDebugMode()` is true only under `--inspect` (i.e. only `npm run watch`), and
+  `Logger.setLevel` does not clamp an out-of-range level — it **resets to `"info"`**. So
+  asking for `"trace"` off the watch loop silently gave INFO. `plugin.ts` now asks for
+  `"debug"` (and honours `EISCP_LOG_LEVEL`), and anything that has to be visible in a shipped
+  build belongs at INFO. Careful with root-level `"debug"`: `connection-manager` logs one line
+  per decoded frame there, i.e. ~1800/s during a cover transfer.
+- **"A tie stores nothing" was not true, and it is the other half of "at is Love (".**
+  The sampling loop stored *every* reading it took and then logged "leaving it unnamed".
+  A scrolling title reads differently each time, so no majority can ever emerge — and
+  the last sample stayed in the store, from a sweep that reported nothing. Samples are
+  now taken `{ tentative: true }`: the outcome is reported, and a reading the spec does
+  not recognise is not stored until a majority corroborates it. An honest relabel
+  ("BT AUDIO") is unaffected, because a persistent display wins its majority.
 - **What counts as doubtful comes out of the protocol spec, not out of guesses.**
   `specValueLabels` / `matchesSpecValue` (`command-registry.ts`) read the labels
   from the generated registry — the *description* is the useful field, since

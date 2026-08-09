@@ -18,13 +18,16 @@
  * global settings, merged so the device IP is never clobbered.
  */
 import { streamDeck } from "@elgato/streamdeck";
-import { matchesSpecValue } from "../../adapter/eiscp/command-registry.ts";
+import { matchesSpecValue, specValueLabels } from "../../adapter/eiscp/command-registry.ts";
+import { truncateForLog } from "../../adapter/logging.ts";
 import {
 	decodeDisplayText,
 	formatCommandValue,
 	updateGlobalSettings,
 	type SerializedNames,
 } from "../eiscp-base.ts";
+
+const logger = streamDeck.logger.createScope("Names");
 
 export type TrackedCommand = "LMD" | "SLI";
 
@@ -45,6 +48,25 @@ const LMD_WINDOW_MS = 2500;
 // ~1.5s apart (verified on hardware: FLD name at +213ms, SLI code at +1549ms),
 // so we pair whichever arrives, within this window.
 const SLI_PAIR_MS = 3000;
+/**
+ * How long after an input change an `LMD` still counts as the receiver's answer to it
+ * rather than as something the user did.
+ *
+ * The receiver announces a listening mode of its own on every input change — it has
+ * to, since the mode follows the source format. Measured across every `LMD` in both
+ * recordings, timed from the last input change, the two populations do not overlap
+ * and there is nothing at all in between:
+ *
+ *   receiver's own:  9, 9, 10, 13, 13, 15, 36, 40, 70, 255, 337 ms
+ *   —————————— nothing measured in this band ——————————
+ *   the user's:      2410 ms (`LMD 80` -> `LMD 00`, display "    Stereo    ")
+ *
+ * So the value is picked from the gap, not from a margin around one side of it: 2.4x
+ * the slowest echo, and a third of the fastest deliberate change. A wider window was
+ * the first attempt and the standby recording refuted it — it swallowed that "Stereo",
+ * which is a name the passive learner is supposed to get.
+ */
+const INPUT_ECHO_MS = 800;
 const PERSIST_DEBOUNCE_MS = 1500;
 
 // Everything learned here comes from the receiver's display field: untrusted
@@ -81,13 +103,22 @@ function sanitiseLearned(value: string, maxLength: number): string {
 
 interface HostState {
 	names: Record<TrackedCommand, Map<string, string>>;
-	lmdPending?: { code: string; at: number };
+	/** `fromInput`: the receiver announced this mode itself, right after an input change. */
+	lmdPending?: { code: string; at: number; fromInput: boolean };
 	sliCode?: { value: string; at: number };
 	sliName?: { value: string; at: number };
 	/** When something other than the input last took over the display; see displayIsBusy. */
 	displayOwnedAt?: number;
 	/** When the source last pushed playback metadata (a title, a station, cover art). */
 	metadataAt?: number;
+	/** When the selected input last *changed*; recorded even while sweeping. */
+	inputChangedAt?: number;
+	/** The last SLI value seen, so a re-broadcast of the same input is not a change. */
+	lastSli?: string;
+	/** The receiver's current volume, i.e. what an input readout has to end in. */
+	volume?: number;
+	/** What the last refusal was about, so a burst of them logs one line. */
+	lastVeto?: string;
 }
 
 /**
@@ -174,16 +205,69 @@ function displayIsBusy(
 }
 
 /**
+ * Whether an input change happened close enough to `at` to explain what is on the
+ * display.
+ *
+ * `displayIsBusy`'s recency rule cannot answer this, and deliberately so: it gives
+ * the display to whichever change came *later*, and the receiver's own `LMD` always
+ * comes later than the `SLI` that caused it. Distance either way, because the input
+ * readout and its code arrive in either order (the name can lead the code by 1-2 s).
+ */
+function inputEcho(s: HostState, at: number): boolean {
+	return s.inputChangedAt !== undefined && Math.abs(at - s.inputChangedAt) <= INPUT_ECHO_MS;
+}
+
+/** Letters and digits only, upper-cased — "BD/DVD", "bd-dvd" and "Bd Dvd" compare equal. */
+function normaliseLabel(value: string): string {
+	return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * Whether `text` is the name of the input that is selected right now — in which case
+ * it is the input readout, whatever else is going on, and never a mode name.
+ *
+ * **Exact equality, unlike `matchesSpecValue`.** That one matches prefixes in both
+ * directions, which is right for "is this reading plausible" and wrong here: the mode
+ * "Game-RPG" starts with "GAME", and the `GAME` input is exactly when that mode gets
+ * chosen. Its own doc also says it is a corroboration signal and never a veto; this is
+ * a different question, so it gets its own answer rather than a second meaning bolted
+ * onto that one.
+ *
+ * Worth knowing before it looks like the fix it is not: this does **not** catch the
+ * AirPlay case it was written alongside. `specValueLabels("SLI", "2D")` is `["AIPLAY"]`
+ * — a typo in the vendor workbook — and the reference unit reaches AirPlay through
+ * `SLI 2B` ("NET") anyway. It is the second layer, for the ordinary inputs.
+ */
+function textNamesCurrentInput(s: HostState, text: string): boolean {
+	const code = s.sliCode?.value;
+	if (!code) return false;
+	const candidate = normaliseLabel(text);
+	if (!candidate) return false;
+	const learned = s.names.SLI.get(code);
+	if (learned !== undefined && normaliseLabel(learned) === candidate) return true;
+	return specValueLabels("SLI", code).includes(candidate);
+}
+
+/**
  * Note that a command took the display over. Fed from the same observer as
  * noteChange/noteFld (see discovery.ts) — unknown commands are ignored.
  *
  * The two families are tracked apart because they are trusted apart: the sweep asks
  * the display a question at a moment it chose and may ignore playback metadata, while
  * passive learning only overhears the display and has to respect both.
+ *
+ * `MVL` also carries its value, because the input readout ends in it (see
+ * `endsWithVolume`).
  */
-export function noteDisplayChange(host: string, command: string): void {
-	if (DISPLAY_OWNING_COMMANDS.includes(command)) hostState(host).displayOwnedAt = Date.now();
-	else if (METADATA_COMMANDS.includes(command)) hostState(host).metadataAt = Date.now();
+export function noteDisplayChange(host: string, command: string, parameter?: string): void {
+	if (DISPLAY_OWNING_COMMANDS.includes(command)) {
+		const s = hostState(host);
+		s.displayOwnedAt = Date.now();
+		// Only an actual level: MVL also carries UP/DOWN/QSTN, and a two-digit hex
+		// value is the only form the readout can be compared against.
+		if (command === "MVL" && parameter !== undefined && /^[0-9A-Fa-f]{2}$/.test(parameter))
+			s.volume = parseInt(parameter, 16);
+	} else if (METADATA_COMMANDS.includes(command)) hostState(host).metadataAt = Date.now();
 }
 
 const STATE = new Map<string, HostState>();
@@ -208,6 +292,29 @@ function hostState(host: string): HostState {
 function endsWithVolume(text: string): boolean {
 	return /\d\s*$/.test(text);
 }
+
+/**
+ * Whether a text that ends in digits really is the input readout — i.e. whether the
+ * number at the end is the volume the receiver is actually at.
+ *
+ * That is what the readout *means*, and the recording proves it: every
+ * digit-terminated FLD in `tests/fixtures/standby-behaviour-capture.json` ends in the
+ * `MVL` in force at that moment (`0E` -> "GAME        14", `02` -> "CBL/SAT      2",
+ * `01` -> "...1"). A scrolling track title clipped to the display width does not: a
+ * user's input ended up named "at is Love (", from "at is Love (7" read while the
+ * volume was 14.
+ *
+ * **Unknown volume vetoes nothing.** Not every receiver announces `MVL` before the
+ * first readout arrives (`name-discovery-capture.json` contains none at all), and a
+ * device that never does must still be learnable — this only rejects a number we can
+ * positively show to be the wrong one.
+ */
+function trailingNumberIsVolume(s: HostState, text: string): boolean {
+	if (s.volume === undefined) return true;
+	const digits = /(\d+)\s*$/.exec(text);
+	if (!digits) return true;
+	return parseInt(digits[1]!, 10) === s.volume;
+}
 /** Turn a fixed-width "<input>      <volume>" readout into a clean input label. */
 function stripVolume(text: string): string {
 	return text
@@ -222,14 +329,43 @@ function learn(host: string, command: TrackedCommand, rawCode: string, rawName: 
 	const name = sanitiseLearned(rawName, MAX_NAME_LENGTH);
 	if (!code || !name) return false;
 	const map = hostState(host).names[command];
-	if (map.get(code) === name) return false;
+	const previous = map.get(code);
+	if (previous === name) return false;
 	// Cap distinct codes per command: a device reporting ever-changing values
 	// would otherwise add an entry forever. Updating an existing code is always
 	// allowed, so a full store still tracks changes to what it already knows.
 	if (!map.has(code) && map.size >= MAX_ENTRIES_PER_COMMAND) return false;
 	map.set(code, name);
+	// Keyed on change, so this is rare by construction — a name is learned once and
+	// then stays. It is also the only record of *when* a name became what it is, which
+	// is the question a wrong one raises; there was none, and a receiver relabelling a
+	// mode as "Airplay" left nothing in the log at all.
+	logger.info(
+		`${host} ${command} ${code}: ${previous === undefined ? "" : `"${truncateForLog(previous, 48)}" -> `}"${truncateForLog(name, 48)}"`,
+	);
 	markDirty();
 	return true;
+}
+
+/**
+ * Refuse a reading, and say so once.
+ *
+ * Only the refusals this file learned about the hard way are logged, and only when the
+ * reason changes: an FLD arrives for every frame of a scrolling title, so a line per
+ * refusal would be a line per ~200 ms of playback. The pre-existing metadata veto stays
+ * silent for the same reason — it fires on every track of every stream.
+ */
+function refuse(host: string, s: HostState, what: string, text: string, why: string): false {
+	// Keyed on the *reason*, not on the text. A scrolling title is a new string every
+	// few hundred milliseconds — deduping on it would put a line on the log for every
+	// window that happens to end in a digit, for as long as the music plays. The text
+	// is in the message because the first one is the useful one.
+	const key = JSON.stringify([what, why]);
+	if (s.lastVeto !== key) {
+		s.lastVeto = key;
+		logger.info(`${host} ${what}: ignored "${truncateForLog(text, 48)}" (${why})`);
+	}
+	return false;
 }
 
 // Hosts whose SLI is being actively swept: the sweep learns input names
@@ -258,12 +394,18 @@ function tryPairSli(host: string): boolean {
  * *usually* the input readout — but `query("FLD")` is settled by the first FLD
  * that arrives, solicited or not, so a volume or tone readout can land in its
  * place. This path had no check at all and would store it verbatim.
+ *
+ * `tentative` means the caller is still deciding: the outcome is reported, but a
+ * reading the spec does not recognise is **not** stored. That is what the sampling
+ * loop in `sweep.ts` needs — it used to store every sample it was about to discard,
+ * so a source whose display never settles (a scrolling track title on a streaming
+ * input) left its last reading behind while the sweep logged "leaving it unnamed".
  */
 export function recordSli(
 	host: string,
 	code: string,
 	fldHex: string,
-	options: { corroborated?: boolean } = {},
+	options: { corroborated?: boolean; tentative?: boolean } = {},
 ): SliRecordOutcome {
 	const text = decodeDisplayText(fldHex);
 	if (!text) return "rejected";
@@ -272,17 +414,40 @@ export function recordSli(
 	// `learn` will sanitise it, so "rejected" means the same thing at both ends —
 	// a name of nothing but control characters does not survive either.
 	if (!sanitiseLearned(name, MAX_NAME_LENGTH) || !sanitiseLearned(code, MAX_CODE_LENGTH)) return "rejected";
+	const s = hostState(host);
 	// `corroborated` means the caller established the reading some other way — the
 	// sweep re-measures and takes a majority, and a text that stays on the display
-	// across several samples is better evidence than either check below can give.
-	if (!options.corroborated && displayIsBusy(hostState(host), Date.now(), undefined, { includeMetadata: false }))
+	// across several samples is better evidence than *this* check can give: whoever
+	// owned the display for one reading rarely owns it for three.
+	if (!options.corroborated && displayIsBusy(s, Date.now(), undefined, { includeMetadata: false })) {
+		if (options.tentative) refuse(host, s, `SLI ${code}`, text, "another command owns the display");
 		return "rejected";
+	}
+	// The number at the end has to be the volume; see trailingNumberIsVolume. This is
+	// the sweep's only defence against a streaming source, since playback metadata
+	// deliberately does not veto this path (the sweep has to be able to name NET/USB).
+	//
+	// **`corroborated` does not excuse it**, unlike the check above, and the difference
+	// is the whole point: a majority establishes *which text* was on the display, never
+	// that the text is an input readout. A frozen scrolling title reads identically
+	// three times running and wins a majority by definition — measured, it stored
+	// "at is Love (" through this very path while every other guard was in place.
+	if (endsWithVolume(text) && !trailingNumberIsVolume(s, text)) {
+		refuse(host, s, `SLI ${code}`, text, `it does not end in the volume (${s.volume})`);
+		return "rejected";
+	}
+	const known = matchesSpecValue("SLI", code, name);
+	// Report without storing while the caller is still corroborating.
+	if (options.tentative && !known) {
+		refuse(host, s, `SLI ${code}`, text, "the spec calls this input something else; reading it again");
+		return "doubtful";
+	}
 	const stored = learn(host, "SLI", code, name) ? "learned" : "unchanged";
 	// The protocol spec knows what this input is called. A mismatch vetoes nothing —
 	// receivers relabel inputs ("BT AUDIO" where the spec says "BLUETOOTH"), so the
 	// name is kept — it only reports that the reading is worth taking again. The
 	// sweep does exactly that and replaces it with the majority if one emerges.
-	if (!options.corroborated && !matchesSpecValue("SLI", code, name)) return "doubtful";
+	if (!options.corroborated && !known) return "doubtful";
 	return stored;
 }
 
@@ -293,11 +458,24 @@ export function recordSli(
  */
 export function noteChange(host: string, command: TrackedCommand, code: string): void {
 	const s = hostState(host);
+	const now = Date.now();
 	if (command === "LMD") {
-		s.lmdPending = { code, at: Date.now() };
+		// Whether this mode is the receiver's answer to an input change is decided
+		// here, at the causal moment, rather than when the FLD turns up: the FLD may
+		// be up to LMD_WINDOW_MS later, and by then the two are only correlated.
+		s.lmdPending = { code, at: now, fromInput: inputEcho(s, now) };
 	} else if (command === "SLI") {
+		// Recorded before the sweep's early return, and only on a real change. The
+		// sweep steps through every input and the receiver answers each step with an
+		// LMD of its own, so without this an input readout could be learned as a mode
+		// name during Auto-Discover — the recorded sweep contains "TEDDY" and
+		// "FM 87.50MHz", neither of which ends in digits. A first sighting counts (the
+		// connect burst carries SLI, LMD and FLD together); a query answering with the
+		// value we already had does not, so binding an action suppresses nothing.
+		if (s.lastSli !== code) s.inputChangedAt = now;
+		s.lastSli = code;
 		if (sliSweeping.has(host)) return;
-		s.sliCode = { value: code, at: Date.now() };
+		s.sliCode = { value: code, at: now };
 		tryPairSli(host);
 	}
 }
@@ -318,6 +496,11 @@ export function noteFld(host: string, hex: string): boolean {
 		// "Volume      14" and "Bass : +2" are shaped exactly like an input readout.
 		// Whoever wrote the display last owns it.
 		if (displayIsBusy(s, now, s.sliCode?.at, { includeMetadata: true })) return false;
+		// A scrolling title is shaped like one too, whenever its window happens to end
+		// in a digit — and unlike the volume readout there is no command to blame it on,
+		// because the source wrote it. The number is the check: it has to be the volume.
+		if (!trailingNumberIsVolume(s, text))
+			return refuse(host, s, "SLI", text, `it does not end in the volume (${s.volume})`);
 		s.sliName = { value: stripVolume(text), at: now };
 		return tryPairSli(host);
 	}
@@ -328,6 +511,15 @@ export function noteFld(host: string, hex: string): boolean {
 	const pending = s.lmdPending;
 	if (!pending || now - pending.at > LMD_WINDOW_MS) return false;
 	if (displayIsBusy(s, now, pending.at, { includeMetadata: true })) return false;
+	// An input change is a display change, and the receiver announces a mode of its own
+	// right after one — so this window was opened by the input, and what is in it is the
+	// input's readout. Measured: the mode "DTS Neural:X" was renamed "Airplay" when this
+	// receiver hopped back to its network input by itself. The second term covers an
+	// input change that lands between the LMD and its FLD.
+	if (pending.fromInput || inputEcho(s, now))
+		return refuse(host, s, `LMD ${pending.code}`, text, "the input changed, not the mode");
+	if (textNamesCurrentInput(s, text))
+		return refuse(host, s, `LMD ${pending.code}`, text, "it is the current input's name");
 	return learn(host, "LMD", pending.code, text);
 }
 

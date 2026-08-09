@@ -36,14 +36,19 @@ export interface SweepDeps {
 	sleep(ms: number): Promise<void>;
 	/** name-store lookups/recorders (name-store imports the SDK, hence injected). */
 	nameFor(host: string, command: TrackedCommand, code: string | undefined): string;
-	recordSli(host: string, code: string, fldHex: string, options?: { corroborated?: boolean }): SliRecordOutcome;
+	recordSli(
+		host: string,
+		code: string,
+		fldHex: string,
+		options?: { corroborated?: boolean; tentative?: boolean },
+	): SliRecordOutcome;
 	/** Whether this option has a name from the receiver (name-store.hasLearnedName). */
 	hasLearnedName(host: string, command: TrackedCommand, code: string): boolean;
 	setSliSweeping(host: string, on: boolean): void;
-	log?: { info(msg: string): void; debug(msg: string): void; error(msg: string): void };
+	log?: { info(msg: string): void; debug(msg: string): void; warn(msg: string): void; error(msg: string): void };
 }
 
-const NO_LOG: NonNullable<SweepDeps["log"]> = { info() {}, debug() {}, error() {} };
+const NO_LOG: NonNullable<SweepDeps["log"]> = { info() {}, debug() {}, warn() {}, error() {} };
 
 /**
  * Read one input's name off the display, measuring again when the reading is
@@ -64,15 +69,33 @@ const NO_LOG: NonNullable<SweepDeps["log"]> = { info() {}, debug() {}, error() {
  * prefer. Limitation worth knowing: if something rewrites the display for the whole
  * sampling window — the volume being turned *during* a sweep — the transient can
  * win, and re-running Auto-Discover on a quiet receiver is the cure.
+ *
+ * The samples are taken `tentative`, which is what makes the paragraph above true.
+ * They used to be stored as they were taken, so a display that never settles — a
+ * scrolling track title on a streaming input — left its last reading in the store
+ * while this function logged "leaving it unnamed". A user's input was called
+ * "at is Love (" that way.
  */
-async function learnInputName(host: string, code: string, deps: SweepDeps): Promise<void> {
+async function learnInputName(host: string, code: string, deps: SweepDeps): Promise<boolean> {
 	const log = deps.log ?? NO_LOG;
 	const votes = new Map<string, number>();
 	for (let sample = 1; sample <= MAX_NAME_SAMPLES; sample++) {
 		const hex = await deps.query(host, "FLD");
-		const outcome = deps.recordSli(host, code, hex);
-		if (outcome === "learned" || outcome === "unchanged") return;
-		if (hex) votes.set(hex, (votes.get(hex) ?? 0) + 1);
+		// The input can move under us — this receiver hops back to a playing network
+		// source by itself — and the display then describes where it went, not the code
+		// we are naming. The cache is the same evidence the sweep's own poll uses.
+		const now = deps.getCached(host, "SLI");
+		if (now && now !== code) {
+			log.info(`sweep SLI ${code}: the input is ${now} now, so this reading is not its name`);
+			return true;
+		}
+		const outcome = deps.recordSli(host, code, hex, { tentative: true });
+		if (outcome === "learned" || outcome === "unchanged") return false;
+		// A rejected reading is not evidence of anything, so it does not get a vote.
+		// It used to: three identical rejects reached MAJORITY_AT and were re-recorded
+		// as `corroborated`, which is precisely the escalation that turned a refused
+		// track title into a stored input name.
+		if (hex && outcome !== "rejected") votes.set(hex, (votes.get(hex) ?? 0) + 1);
 
 		const total = [...votes.values()].reduce((sum, n) => sum + n, 0);
 		if (total >= MAJORITY_AT) {
@@ -82,12 +105,13 @@ async function learnInputName(host: string, code: string, deps: SweepDeps): Prom
 			if (bestCount > runnerUp) {
 				log.debug(`sweep SLI ${code}: taking the majority reading (${bestCount}/${total})`);
 				deps.recordSli(host, code, best, { corroborated: true });
-				return;
+				return false;
 			}
 		}
 		if (sample < MAX_NAME_SAMPLES) await deps.sleep(RESAMPLE_MS);
 	}
-	log.debug(`sweep SLI ${code}: no reading won a majority in ${MAX_NAME_SAMPLES} tries; leaving it unnamed`);
+	log.info(`sweep SLI ${code}: no reading won a majority in ${MAX_NAME_SAMPLES} tries; leaving it unnamed`);
+	return false;
 }
 
 /**
@@ -100,7 +124,7 @@ export async function runSweep(
 	command: TrackedCommand,
 	onProgress: ((p: SweepProgress) => void) | undefined,
 	deps: SweepDeps,
-): Promise<{ count: number; options: number; named: number }> {
+): Promise<{ count: number; options: number; named: number; interrupted: boolean }> {
 	const log = deps.log ?? NO_LOG;
 	// This receiver's state events lag the change by ~1.5s, so wait for the code
 	// to actually change rather than guessing a fixed delay.
@@ -132,6 +156,18 @@ export async function runSweep(
 	let prev = start;
 	let count = 0;
 	let movedAway = false;
+	/**
+	 * Whether the receiver moved the value while this sweep was reading it.
+	 *
+	 * It cannot be prevented from here — an unsolicited frame is indistinguishable
+	 * from the answer to our own `UP` — but it must not be reported as a clean run.
+	 * A receiver that hops back to its playing network input truncates the walk at
+	 * the first hop (measured against the double: 2 steps, then `current === start`
+	 * reads as a wrap), and without this the Property Inspector says "Done, but no
+	 * names were read — is the receiver switched on?" about a receiver that is on,
+	 * awake, and playing.
+	 */
+	let interrupted = false;
 
 	// SLI input names are learned deterministically below (the name FLD leads the
 	// code event on UP, which would mis-pair the passive learner); suppress it.
@@ -145,7 +181,8 @@ export async function runSweep(
 
 			// Wait for the code to change (auto-broadcast lags); fall back to prev on timeout.
 			let current = prev;
-			for (let waited = 0; waited < MAX_WAIT_MS; waited += POLL_MS) {
+			let waited = 0;
+			for (; waited < MAX_WAIT_MS; waited += POLL_MS) {
 				await deps.sleep(POLL_MS);
 				const v = deps.getCached(host, command);
 				if (v && v !== prev) {
@@ -156,28 +193,62 @@ export async function runSweep(
 			await deps.sleep(NAME_SETTLE_MS); // let the name FLD arrive (LMD: passive window; SLI: query below)
 			count++;
 
+			// One line per step, and the only place the run's actual path is recorded.
+			// A sweep is rare and explicitly asked for, so ~12 lines is proportionate —
+			// and without them a truncated run is indistinguishable in the log from a
+			// complete one, since everything else here is either constant or silent.
+			log.info(
+				current === prev
+					? `sweep ${command} step ${count}: UP did not move ${prev} within ${MAX_WAIT_MS} ms`
+					: `sweep ${command} step ${count}: ${prev} -> ${current} after ${waited + POLL_MS} ms`,
+			);
+
 			if (current !== prev) {
 				if (command === "SLI") {
 					try {
-						await learnInputName(host, current, deps);
+						if (await learnInputName(host, current, deps)) interrupted = true;
 					} catch (err) {
-						log.debug(`sweep SLI name read failed: ${err}`);
+						log.info(`sweep SLI name read failed: ${err}`);
 					}
 				}
 				if (deps.hasLearnedName(host, command, current)) named.add(current);
 			}
+
+			// Nothing here can tell an answer to our own UP from the receiver changing
+			// its mind — an unsolicited frame lands in the same cache. Re-reading after
+			// the reading window at least *names* the case: silent on a healthy sweep,
+			// one line when the receiver is steering.
+			const settled = deps.getCached(host, command);
+			if (settled && settled !== current) {
+				interrupted = true;
+				log.warn(`sweep ${command}: ${current} became ${settled} while it was being read — the receiver is moving on its own`);
+			}
 			onProgress?.({ done: count, current: deps.nameFor(host, command, current) });
 
+			// Every way out of this loop says so. There are four, they were all silent,
+			// and the `done` line below reads identically for all of them — so a run cut
+			// short at 7 of 12 by a receiver that steered itself back to the input it
+			// started on was reported as a complete, successful sweep.
 			if (current === prev || current === start) {
-				if (movedAway) break; // wrapped back to the start
-				if (count >= 5) break; // UP isn't advancing — bail
+				if (movedAway) {
+					log.info(`sweep ${command} stopping: back at ${start} after ${visited.size} options`);
+					break;
+				}
+				if (count >= 5) {
+					log.info(`sweep ${command} stopping: UP did not move ${prev} in ${count} steps`);
+					break;
+				}
 				prev = current;
 				continue; // ignore an initial no-op step
 			}
-			if (visited.has(current)) break; // returned to a seen option
+			if (visited.has(current)) {
+				log.info(`sweep ${command} stopping: ${current} had already been visited`);
+				break;
+			}
 			visited.add(current);
 			movedAway = true;
 			prev = current;
+			if (i === CAP - 1) log.warn(`sweep ${command} stopping: hit the ${CAP}-step safety cap without wrapping`);
 		}
 	} catch (err) {
 		sweepFailed = true;
@@ -200,5 +271,5 @@ export async function runSweep(
 			}
 		}
 	}
-	return { count, options: visited.size, named: named.size };
+	return { count, options: visited.size, named: named.size, interrupted };
 }

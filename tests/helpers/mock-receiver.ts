@@ -82,6 +82,32 @@ export interface MockReceiverOptions {
 	 * order but immediately, which keeps tests fast; 1 replays in real time.
 	 */
 	replayTimeScale?: number;
+	/**
+	 * A receiver that steers itself: a moment after the input is moved *away* from
+	 * `input`, it goes back there, unasked.
+	 *
+	 * The measured VSX-S520D does this while AirPlay is playing, and it is the only
+	 * behaviour here that nothing requests — which is the whole point, because every
+	 * other thing this double does is an answer to something. It announces the input,
+	 * then a listening mode of its own (measured 9-337 ms later), then puts text on
+	 * the display. That sequence is how a listening mode came to be called "Airplay".
+	 *
+	 * `display` is a *list* on purpose: a real display scrolls, so consecutive reads
+	 * differ. A single frozen string is a different receiver — one whose readout is
+	 * persistent — and the sweep's majority rule will rightly believe it.
+	 */
+	autoReturn?: {
+		/** The input it falls back to. */
+		input: string;
+		/** How long after the input leaves before it hops back. */
+		afterMs: number;
+		/** Listening mode announced with the hop, if any (`LMD`). */
+		mode?: string;
+		/** Display texts shown after the hop, in order, cycled. Plain text; hex-encoded here. */
+		display?: readonly string[];
+		/** Gap between the input and the mode/display frames (default 10 ms, as measured). */
+		announceGapMs?: number;
+	};
 }
 
 /** One frame as recorded by scripts/capture-name-discovery.ts. */
@@ -259,6 +285,17 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 		// Queries are answered in standby too — which is exactly why a query is the
 		// only reliable way to find out whether a set took effect.
 		if (parameter === "QSTN") {
+			// A display that is showing a streaming source's text is *scrolling*: two
+			// reads a second apart are two different windows onto the same title. That
+			// matters — a frozen readout is a persistent one, and the sweep's majority
+			// rule is entitled to believe it.
+			if (command === "FLD" && autoReturn?.display?.length && state["SLI"] === autoReturn.input) {
+				const text = autoReturn.display[displayIndex++ % autoReturn.display.length]!;
+				const hex = Buffer.from(text, "ascii").toString("hex").toUpperCase();
+				state["FLD"] = hex;
+				reply(socket, "FLD", hex);
+				return;
+			}
 			const value = state[command];
 			if (value !== undefined) reply(socket, command, value);
 			return;
@@ -297,6 +334,48 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 
 		state[command] = next;
 		reply(socket, command, next);
+		if (command === "SLI") scheduleAutoReturn(next);
+	};
+
+	// --- a receiver that steers itself -------------------------------------
+
+	const autoReturn = options.autoReturn;
+	let autoReturnTimer: ReturnType<typeof setTimeout> | undefined;
+	let displayIndex = 0;
+
+	/**
+	 * Announce the hop to everyone connected, the way the real unit does: the input
+	 * first, then its own listening mode, then the display. Nobody asked for any of
+	 * it, which is exactly what makes it worth modelling.
+	 */
+	const performAutoReturn = (): void => {
+		if (!autoReturn) return;
+		state["SLI"] = autoReturn.input;
+		for (const socket of sockets) socket.write(frameReply("SLI", autoReturn.input));
+		const gap = autoReturn.announceGapMs ?? 10;
+		const announce = setTimeout(() => {
+			if (autoReturn.mode !== undefined) {
+				state["LMD"] = autoReturn.mode;
+				for (const socket of sockets) socket.write(frameReply("LMD", autoReturn.mode));
+			}
+			const texts = autoReturn.display;
+			if (texts && texts.length > 0) {
+				const text = texts[displayIndex++ % texts.length]!;
+				const hex = Buffer.from(text, "ascii").toString("hex").toUpperCase();
+				state["FLD"] = hex;
+				for (const socket of sockets) socket.write(frameReply("FLD", hex));
+			}
+		}, gap);
+		announce.unref?.();
+	};
+
+	/** The hop timer restarts whenever the input moves; it only fires while away. */
+	const scheduleAutoReturn = (current: string): void => {
+		if (!autoReturn) return;
+		if (autoReturnTimer) clearTimeout(autoReturnTimer);
+		if (current === autoReturn.input) return; // already home
+		autoReturnTimer = setTimeout(performAutoReturn, autoReturn.afterMs);
+		autoReturnTimer.unref?.();
 	};
 
 	/** Incremental inbound parser: eISCP frames or bare ISCP lines. */
@@ -387,6 +466,7 @@ export async function startMockReceiver(options: MockReceiverOptions = {}): Prom
 			sockets.clear();
 		},
 		async close() {
+			if (autoReturnTimer) clearTimeout(autoReturnTimer);
 			for (const socket of sockets) socket.destroy();
 			sockets.clear();
 			// Already closed when handing out a refusing port; closing twice errors.

@@ -72,9 +72,12 @@ function fakeReceiver(
 		sleep: () => Promise.resolve(),
 		nameFor: (_host, _command, code) => `name:${code}`,
 		recordSli: (_host, code, fldHex, options) => {
-			nameEvents.push(`recordSli:${code}:${fldHex}${options?.corroborated ? ":corroborated" : ""}`);
+			const how = options?.corroborated ? ":corroborated" : options?.tentative ? ":tentative" : "";
+			nameEvents.push(`recordSli:${code}:${fldHex}${how}`);
 			const outcome = opts.recordOutcome ? opts.recordOutcome(fldHex) : "learned";
-			// Only these two mean the store kept it; see SliRecordOutcome.
+			// Only these two mean the store kept it; see SliRecordOutcome. A tentative
+			// reading the store called doubtful is *reported*, not stored — which is what
+			// lets the loop below discard it.
 			if (outcome === "learned" || outcome === "unchanged" || options?.corroborated) stored.add(code);
 			return outcome;
 		},
@@ -166,9 +169,9 @@ describe("runSweep", () => {
 		// each changed step records the input name from a direct FLD query.
 		assert.deepEqual(rx.nameEvents, [
 			"sweeping:on",
-			"recordSli:11:4344202020203134",
-			"recordSli:12:4344202020203134",
-			"recordSli:10:4344202020203134",
+			"recordSli:11:4344202020203134:tentative",
+			"recordSli:12:4344202020203134:tentative",
+			"recordSli:10:4344202020203134:tentative",
 			"sweeping:off",
 		]);
 		assert.equal(rx.sent[rx.sent.length - 1], "SLI:10");
@@ -192,7 +195,7 @@ describe("runSweep: re-measuring a doubtful input name", () => {
 		// The normal case must not get slower: one query, one record.
 		const rx = oneStep({ fld: "GOOD", recordOutcome: () => "learned" });
 		await runSweep("h", "SLI", undefined, rx.deps);
-		assert.deepEqual(reads(rx), ["recordSli:B:GOOD"]);
+		assert.deepEqual(reads(rx), ["recordSli:B:GOOD:tentative"]);
 	});
 
 	it("measures again when the store refuses the reading, and keeps the good one", async () => {
@@ -203,7 +206,7 @@ describe("runSweep: re-measuring a doubtful input name", () => {
 			recordOutcome: (fld) => (fld === "TRANSIENT" ? "rejected" : "learned"),
 		});
 		await runSweep("h", "SLI", undefined, rx.deps);
-		assert.deepEqual(reads(rx), ["recordSli:B:TRANSIENT", "recordSli:B:PERSISTENT"]);
+		assert.deepEqual(reads(rx), ["recordSli:B:TRANSIENT:tentative", "recordSli:B:PERSISTENT:tentative"]);
 	});
 
 	it("accepts a stable reading the spec disagrees with, once it wins a majority", async () => {
@@ -212,9 +215,9 @@ describe("runSweep: re-measuring a doubtful input name", () => {
 		const rx = oneStep({ fld: "RELABELLED", recordOutcome: () => "doubtful" });
 		await runSweep("h", "SLI", undefined, rx.deps);
 		assert.deepEqual(reads(rx), [
-			"recordSli:B:RELABELLED",
-			"recordSli:B:RELABELLED",
-			"recordSli:B:RELABELLED",
+			"recordSli:B:RELABELLED:tentative",
+			"recordSli:B:RELABELLED:tentative",
+			"recordSli:B:RELABELLED:tentative",
 			"recordSli:B:RELABELLED:corroborated",
 		]);
 	});
@@ -242,6 +245,24 @@ describe("runSweep: re-measuring a doubtful input name", () => {
 			0,
 			"a tie decides nothing, so no name is stored",
 		);
+	});
+
+	it("takes every sample tentatively, so a display that never settles leaves no name", async () => {
+		// A display that reads differently every time is a *scrolling* one — a track
+		// title on a streaming input. Each sample used to be stored as it was taken, so
+		// the last one stayed behind while this loop logged "leaving it unnamed"; a
+		// user's input ended up called "at is Love (".
+		const rx = oneStep({
+			fldSequence: ["at is Love (", "t is Love (R", " is Love (Ra", "is Love (Rad", "s Love (Radi"],
+			recordOutcome: () => "doubtful",
+		});
+		await runSweep("h", "SLI", undefined, rx.deps);
+		assert.deepEqual(
+			reads(rx).filter((e) => !e.endsWith(":tentative")),
+			[],
+			"nothing was ever offered to the store for keeps",
+		);
+		assert.equal(rx.deps.hasLearnedName("h", "SLI", "B"), false, "so the option is genuinely unnamed");
 	});
 
 	it("does not re-measure while sweeping listening modes", async () => {

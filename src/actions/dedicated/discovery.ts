@@ -46,8 +46,10 @@ export function register(mgr: ConnectionManager): void {
 		} else {
 			// Volume, tone, mute and friends push the input readout off the display;
 			// the name store has to know so it does not learn their text as an input
-			// name (see noteDisplayChange).
-			noteDisplayChange(host, command);
+			// name (see noteDisplayChange). The parameter comes along because the
+			// readout ends in the volume, which is how a track title that happens to
+			// end in a digit is told apart from an input name.
+			noteDisplayChange(host, command, parameter);
 		}
 	});
 	logger.info("passive name discovery registered");
@@ -102,7 +104,7 @@ export async function runSweep(
 	host: string,
 	command: TrackedCommand,
 	onProgress?: (p: SweepProgress) => void,
-): Promise<{ count: number; options: number; named: number }> {
+): Promise<{ count: number; options: number; named: number; interrupted: boolean }> {
 	const key = `${host}:${command}`;
 	if (activeSweeps.has(key)) throw new SweepInProgressError(host, command);
 	activeSweeps.add(key);
@@ -155,7 +157,7 @@ export async function handleDiscoverMessage(
 
 	send({ event: "discover", phase: "start", command });
 	try {
-		const { count, options, named } = await runSweep(host, command, (p) =>
+		const { count, options, named, interrupted } = await runSweep(host, command, (p) =>
 			send({ event: "discover", phase: "progress", done: p.done, current: p.current }),
 		);
 		// Three different numbers, and conflating any two of them misreports the run:
@@ -163,7 +165,12 @@ export async function handleDiscoverMessage(
 		// many of those came back with a name. Steps exceed options whenever a code
 		// broadcast misses its window — the recorded LMD sweep is 9 steps over 8 modes —
 		// so the step count must not serve as the denominator either.
-		send({ event: "discover", phase: "done", count, options, named });
+		//
+		// `interrupted` is the fourth thing, and it changes what the other three *mean*:
+		// a receiver that steers itself back to a playing input truncates the walk, and
+		// the numbers then describe a short run that finished cleanly. Without it the PI
+		// asks whether the receiver is switched on, about a receiver that is playing.
+		send({ event: "discover", phase: "done", count, options, named, interrupted });
 		// showOk is Keypad-only; dials report status via the PI messages.
 		if (action.isKey()) fireAndLog(action.showOk(), log, "showOk");
 	} catch (err) {

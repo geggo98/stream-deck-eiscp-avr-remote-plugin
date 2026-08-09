@@ -330,3 +330,121 @@ describe("name-store: a playing source is not a mode name", () => {
 		assert.equal(recordSli(host, "2B", hex("Volume      14")), "rejected");
 	});
 });
+
+// --- an input change is a display change ------------------------------------
+
+/**
+ * Run `body` with the clock stopped at `ms`.
+ *
+ * The rules here span seconds — three for the input echo — so a test that waited
+ * would be a test nobody runs. `tests/name-store-capture.test.ts` replays real
+ * recordings the same way.
+ */
+function at(ms: number, body: () => void): void {
+	const realNow = Date.now;
+	Date.now = () => ms;
+	try {
+		body();
+	} finally {
+		Date.now = realNow;
+	}
+}
+
+describe("name-store: an input change is not a mode change", () => {
+	it("still learns a mode the user chose long after the input changed", () => {
+		// The guard is deliberately wide, so this is the case it must not eat: the
+		// input settled minutes ago and the mode change is the user's own.
+		const host = "ns-echo-later";
+		at(1_000, () => noteChange(host, "SLI", "10"));
+		at(60_000, () => noteChange(host, "LMD", "82"));
+		at(60_100, () => assert.equal(noteFld(host, hex("DTS Neural:X")), true));
+		assert.equal(nameFor(host, "LMD", "82"), "DTS Neural:X");
+	});
+
+	it("refuses the display text that follows the receiver's own mode announcement", () => {
+		// Measured on hardware: `SLI 2B` then `LMD 82` 10 ms later, then the service
+		// name. Mode 82 is "DTS Neural:X" and was renamed "Airplay".
+		const host = "ns-echo";
+		at(1_000, () => noteChange(host, "SLI", "2B"));
+		at(1_010, () => noteChange(host, "LMD", "82"));
+		at(1_788, () => assert.equal(noteFld(host, hex("Airplay")), false));
+		assert.notEqual(nameFor(host, "LMD", "82"), "Airplay");
+	});
+
+	it("refuses an input change that lands between the mode and its display text", () => {
+		// The other order: the mode window was open for good reasons, and then the
+		// input changed underneath it.
+		const host = "ns-echo-between";
+		at(1_000, () => noteChange(host, "LMD", "82"));
+		at(1_500, () => noteChange(host, "SLI", "2B"));
+		at(2_200, () => assert.equal(noteFld(host, hex("Airplay")), false));
+	});
+
+	it("refuses a text that is the current input's own name", () => {
+		// Independent of timing: whatever else is going on, this is the input readout.
+		const host = "ns-input-name";
+		at(1_000, () => noteChange(host, "SLI", "02")); // the spec calls it GAME
+		at(10_000, () => noteChange(host, "LMD", "82"));
+		at(10_100, () => assert.equal(noteFld(host, hex("GAME")), false));
+	});
+
+	it("still learns a mode whose name merely starts like the input's", () => {
+		// Why that guard compares for equality and not the way matchesSpecValue does:
+		// "Game-RPG" starts with "GAME", and the GAME input is exactly when a user
+		// picks it.
+		const host = "ns-input-prefix";
+		at(1_000, () => noteChange(host, "SLI", "02"));
+		at(10_000, () => noteChange(host, "LMD", "0F"));
+		at(10_100, () => assert.equal(noteFld(host, hex("Game-RPG")), true));
+		assert.equal(nameFor(host, "LMD", "0F"), "Game-RPG");
+	});
+});
+
+describe("name-store: the number at the end of a readout is the volume", () => {
+	// The volume change itself owns the display for DISPLAY_OWNED_MS, and that veto
+	// would answer every test below before the volume was even compared. So the MVL
+	// is old in each of them: known value, quiet display — which is also the real
+	// situation, since a receiver announces its volume long before a track scrolls by.
+	it("refuses a scrolling title that happens to end in a digit", () => {
+		// The observed defect: the Input encoder read "at is Love (" — a track title
+		// clipped to the 14-character display, its trailing digit taken for a volume.
+		const host = "ns-scrolling-title";
+		at(1_000, () => noteDisplayChange(host, "MVL", "0E")); // volume 14
+		at(60_000, () => noteChange(host, "SLI", "2B"));
+		at(60_100, () => assert.equal(noteFld(host, hex("at is Love (7")), false));
+		assert.notEqual(nameFor(host, "SLI", "2B"), "at is Love (");
+		assert.equal(serialize()[host], undefined, "and nothing else was learned either");
+	});
+
+	it("learns the readout that does end in the volume", () => {
+		const host = "ns-volume-match";
+		at(1_000, () => noteDisplayChange(host, "MVL", "0E"));
+		at(60_000, () => noteChange(host, "SLI", "23"));
+		at(60_100, () => assert.equal(noteFld(host, hex("CD          14")), true));
+		assert.equal(nameFor(host, "SLI", "23"), "CD");
+	});
+
+	it("vetoes nothing while the volume is unknown", () => {
+		// Not every receiver announces MVL before the first readout arrives, and one
+		// that never does must still be learnable.
+		const host = "ns-volume-unknown";
+		noteChange(host, "SLI", "23");
+		assert.equal(noteFld(host, hex("CD          14")), true);
+	});
+
+	it("refuses a swept reading whose number is not the volume", () => {
+		// The sweep's own path: playback metadata deliberately does not veto it, so
+		// this is its only defence against querying the display of a streaming source.
+		const host = "ns-sweep-title";
+		at(1_000, () => noteDisplayChange(host, "MVL", "0E"));
+		at(60_000, () => assert.equal(recordSli(host, "2B", hex("at is Love (7")), "rejected"));
+		assert.equal(serialize()[host], undefined);
+	});
+
+	it("still records a swept reading that ends in the volume", () => {
+		const host = "ns-sweep-volume-ok";
+		at(1_000, () => noteDisplayChange(host, "MVL", "0E"));
+		at(60_000, () => assert.notEqual(recordSli(host, "2B", hex("NET         14")), "rejected"));
+		assert.equal(nameFor(host, "SLI", "2B"), "NET");
+	});
+});
