@@ -31,7 +31,7 @@
 import { createHash } from "node:crypto";
 
 import { scopedLogger } from "../logging.ts";
-import { MAX_ART_BYTES, type ArtImage } from "./jacket-art.ts";
+import { MAX_ART_BYTES, type ArtImage, stripJpegMetadata } from "./jacket-art.ts";
 
 const logger = scopedLogger("ArtHttp");
 
@@ -178,7 +178,11 @@ export async function fetchCoverOverHttp(
 			logger.debug(`${host}: cover response is not a JPEG or BMP (${bytes.length} bytes)`);
 			return undefined;
 		}
-		return { type, bytes, frames: 0, hash: createHash("sha256").update(bytes).digest("hex").slice(0, 16) };
+		// Same treatment as the inline path, and it has to be the same: the two are
+		// de-duplicated against each other by content hash, so one stripping and the
+		// other not would make every cover look like two different pictures.
+		const image = type === "jpeg" ? stripJpegMetadata(bytes) : bytes;
+		return { type, bytes: image, frames: 0, hash: createHash("sha256").update(image).digest("hex").slice(0, 16) };
 	} catch (err) {
 		logger.debug(`${host}: cover request failed: ${err instanceof Error ? err.message : String(err)}`);
 		return undefined;

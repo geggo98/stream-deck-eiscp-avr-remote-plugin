@@ -176,6 +176,62 @@ function contentHash(bytes: Buffer): string {
 }
 
 /**
+ * Drop the JPEG application segments: APP0…APP15.
+ *
+ * That is EXIF, ICC profiles, XMP and embedded thumbnails — structured formats with
+ * their own parsers, none of which this plugin needs (it wants the picture and, for the
+ * progress colour, its brightness), and historically where image handling gets broken.
+ *
+ * The reason it is worth doing is **who decodes this next**. The bytes go on to Stream
+ * Deck as a data URI and are decoded there by Qt, a native decoder outside this
+ * plugin's control; a receiver on the LAN only has to announce a cover to reach it. We
+ * cannot fix that decoder, but we can hand it less. `SECURITY.md` records the rest of
+ * the staged answer, of which this is the first step and the only one that costs
+ * nothing.
+ *
+ * **COM is deliberately kept.** It is a length and a run of bytes with no structure to
+ * misparse, so removing it buys nothing — and it is where benign bulk actually lives:
+ * `tests/fixtures/now-playing-capture.json` pads its anonymised covers to the original
+ * byte lengths with COM segments, and stripping those collapsed two different recorded
+ * transfers into one 141-byte image. Size is not what this is for.
+ *
+ * Conservative throughout: only those markers, byte-for-byte otherwise, and the
+ * original buffer is returned untouched the moment the walk finds anything it does not
+ * understand.
+ */
+export function stripJpegMetadata(bytes: Buffer): Buffer {
+	const kept: Buffer[] = [];
+	let pos = 2; // past SOI
+	let copyFrom = 0;
+	while (pos + 3 < bytes.length) {
+		if (bytes[pos] !== 0xff) return bytes;
+		const marker = bytes[pos + 1]!;
+		if (marker === 0xff) {
+			pos++; // fill byte
+			continue;
+		}
+		// Markers without a length field; none of them is metadata.
+		if (marker === 0x01 || marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) {
+			pos += 2;
+			continue;
+		}
+		// The scan has no length we can walk past, so everything from here is the image.
+		if (marker === 0xda || marker === 0xd9) break;
+		const length = bytes.readUInt16BE(pos + 2);
+		if (length < 2 || pos + 2 + length > bytes.length) return bytes;
+		const end = pos + 2 + length;
+		if (marker >= 0xe0 && marker <= 0xef) {
+			kept.push(bytes.subarray(copyFrom, pos));
+			copyFrom = end;
+		}
+		pos = end;
+	}
+	if (kept.length === 0) return bytes;
+	kept.push(bytes.subarray(copyFrom));
+	return Buffer.concat(kept);
+}
+
+/**
  * Fold one frame into the transfer state.
  *
  * Pure: `now` is passed in, nothing is logged, and the returned state shares no
@@ -253,11 +309,15 @@ export function nextArtState(state: ArtState, frame: ArtFrame, now: number): Art
 	if (type === undefined) {
 		return { state: {}, outcome: { kind: "rejected", reason: "assembled data is not a valid JPEG or BMP" } };
 	}
+	// Stripped before the hash, so the two ways a cover can arrive (these frames and the
+	// HTTP endpoint) produce the same bytes and the same hash for the same picture —
+	// which is what the de-duplication between them compares.
+	const image = type === "jpeg" ? stripJpegMetadata(assembled) : assembled;
 	return {
 		state: {},
 		outcome: {
 			kind: "complete",
-			image: { type, bytes: assembled, frames: next.frames, hash: contentHash(assembled) },
+			image: { type, bytes: image, frames: next.frames, hash: contentHash(image) },
 		},
 	};
 }

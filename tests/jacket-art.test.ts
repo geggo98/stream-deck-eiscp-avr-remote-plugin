@@ -19,6 +19,7 @@ import {
 	MAX_ART_FRAMES,
 	nextArtState,
 	parseArtFrame,
+	stripJpegMetadata,
 	type ArtOutcome,
 	type ArtState,
 } from "../src/adapter/eiscp/jacket-art.ts";
@@ -306,5 +307,92 @@ describe("JacketArtAccumulator (per-host wiring)", () => {
 		assert.ok(acc.pendingBytes("10.0.0.1") > 0);
 		acc.forget("10.0.0.1");
 		assert.equal(acc.pendingBytes("10.0.0.1"), 0);
+	});
+});
+
+describe("stripping what nobody here will read", () => {
+	/** A JPEG built from named segments, so a test can say what should survive. */
+	function jpegWith(segments: { marker: number; body: Buffer }[], scan = Buffer.alloc(32, 0x5a)): Buffer {
+		const parts: Buffer[] = [Buffer.from([0xff, 0xd8])];
+		for (const { marker, body } of segments) {
+			const header = Buffer.alloc(4);
+			header.writeUInt16BE(0xff00 | marker, 0);
+			header.writeUInt16BE(body.length + 2, 2);
+			parts.push(header, body);
+		}
+		// A scan header, its data, then EOI: from SOS on there is no length to walk.
+		parts.push(Buffer.from([0xff, 0xda, 0x00, 0x08, 1, 1, 0, 0, 63, 0]), scan, Buffer.from([0xff, 0xd9]));
+		return Buffer.concat(parts as unknown as Uint8Array[]);
+	}
+
+	const quantTable = { marker: 0xdb, body: Buffer.alloc(65, 0x10) };
+
+	it("removes the application segments and leaves the picture untouched", () => {
+		// EXIF, ICC, XMP and thumbnails: structured formats with their own parsers, none
+		// of which anything here reads. What is left has to be byte-identical, because
+		// the next thing to decode it is a renderer we do not control.
+		const plain = jpegWith([quantTable]);
+		const decorated = jpegWith([
+			{ marker: 0xe0, body: Buffer.alloc(10, 0x4a) },
+			{ marker: 0xe1, body: Buffer.alloc(400, 0x7f) },
+			quantTable,
+			{ marker: 0xee, body: Buffer.alloc(64, 0x01) },
+		]);
+		assert.ok(decorated.length > plain.length + 400, "the fixture really is carrying metadata");
+		assert.deepEqual(stripJpegMetadata(decorated), plain);
+	});
+
+	it("keeps a comment segment, on purpose", () => {
+		// COM is a length and a run of bytes — no structure to misparse, so removing it
+		// buys nothing. It is also where harmless bulk lives: the anonymised capture
+		// fixture pads its covers to the recorded byte lengths with COM segments, and
+		// stripping those turned two different transfers into one 141-byte image.
+		const commented = jpegWith([{ marker: 0xfe, body: Buffer.alloc(200, 0x20) }, quantTable]);
+		assert.deepEqual(stripJpegMetadata(commented), commented);
+	});
+
+	it("hands back the original when there is nothing to remove", () => {
+		const plain = jpegWith([quantTable]);
+		assert.equal(stripJpegMetadata(plain), plain, "not even a copy");
+	});
+
+	it("gives up rather than guessing when the segments stop making sense", () => {
+		// The input is unauthenticated. Returning the bytes unchanged is always safe;
+		// cutting at a length we do not believe is not.
+		const lying = jpegWith([{ marker: 0xe1, body: Buffer.alloc(32, 0x11) }, quantTable]);
+		lying.writeUInt16BE(60000, 4); // the APP1 length, now past the end of the buffer
+		assert.deepEqual(stripJpegMetadata(lying), lying);
+		const nonsense = Buffer.from([0xff, 0xd8, 0x41, 0x42, 0x43, 0x44, 0x45]);
+		assert.deepEqual(stripJpegMetadata(nonsense), nonsense);
+		assert.deepEqual(stripJpegMetadata(Buffer.alloc(0)), Buffer.alloc(0));
+	});
+
+	it("still ends in EOI, so the assembled image is still accepted", () => {
+		// `verifyImage` requires SOI…EOI. Stripping between them must not break that, or
+		// every cover carrying metadata would be rejected instead of shown.
+		const stripped = stripJpegMetadata(jpegWith([{ marker: 0xe1, body: Buffer.alloc(64, 0x22) }, quantTable]));
+		assert.equal(stripped.readUInt16BE(0), 0xffd8);
+		assert.equal(stripped.readUInt16BE(stripped.length - 2), 0xffd9);
+	});
+
+	it("is applied to what the frames assemble into, hash included", () => {
+		// The hash is what de-duplicates the inline cover against the HTTP one, so it has
+		// to describe the bytes that are kept rather than the ones that arrived.
+		const decorated = jpegWith([{ marker: 0xe1, body: Buffer.alloc(300, 0x33) }, quantTable]);
+		const { outcomes } = feed(framesFor(decorated));
+		const complete = outcomes.at(-1);
+		assert.equal(complete?.kind, "complete");
+		assert.ok(complete.image.bytes.length < decorated.length, "the metadata did not survive the transfer");
+		assert.deepEqual(complete.image.bytes, stripJpegMetadata(decorated));
+	});
+
+	it("leaves a BMP alone entirely", () => {
+		// The walk is JPEG-shaped; a BMP has none of it and must not be touched.
+		const bmp = Buffer.concat([Buffer.from([0x42, 0x4d]), Buffer.alloc(300, 0x44)] as unknown as Uint8Array[]);
+		const { outcomes } = feed(framesFor(bmp));
+		const complete = outcomes.at(-1);
+		assert.equal(complete?.kind, "complete");
+		assert.equal(complete.image.type, "bmp");
+		assert.deepEqual(complete.image.bytes, bmp);
 	});
 });
