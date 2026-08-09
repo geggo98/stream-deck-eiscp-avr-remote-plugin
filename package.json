@@ -35,12 +35,14 @@
     "generate:commands": "tsx scripts/generate-command-registry.ts",
     "generate:icons": "tsx scripts/generate-icons.ts",
     "generate:manifest": "tsx scripts/generate-manifest.ts",
+    "generate:cascade": "tsx scripts/generate-face-cascade.ts",
     "generate": "npm run generate:commands && npm run generate:icons && npm run generate:manifest",
     "capture:responses": "tsx scripts/capture-command-responses.ts",
     "capture:names": "tsx scripts/capture-name-discovery.ts",
     "capture:standby": "tsx scripts/capture-standby-behaviour.ts",
     "capture:hop": "tsx scripts/capture-input-hop.ts",
-    "capture:anonymise": "tsx scripts/anonymise-capture.ts"
+    "capture:anonymise": "tsx scripts/anonymise-capture.ts",
+    "probe:focus": "tsx scripts/probe-cover-focus.ts"
   },
   "type": "module",
   "devDependencies": {

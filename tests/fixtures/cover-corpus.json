@@ -1,0 +1,66 @@
+[
+	{
+		"file": "File:230126-N-DK722-1051 - Faces of Obangame 2023.jpg",
+		"licence": "Public domain (PD-USGov-Military-Navy)",
+		"attribution": "U.S. Navy photo by Petty Officer 2nd Class Cameron Edy — public domain",
+		"expect": "centred",
+		"note": "Nigerian sailor, frontal, natively square. Deep brown skin, measured L* 29-43 (Fitzpatrick V-VI) — the single most important entry here, because it is the tone an absolute contrast threshold used to refuse. The face already sits in the middle, so the right answer is to leave it alone."
+	},
+	{
+		"file": "File:Ella Fitzgerald (Gottlieb 02871).jpg",
+		"licence": "Public domain (PD-Gottlieb)",
+		"attribution": "William P. Gottlieb, William P. Gottlieb Collection, Library of Congress — public domain",
+		"expect": "up",
+		"note": "1946 photograph, and a genuine single-component greyscale JPEG — the only kind that exercises the colourless path end to end. It also declares 2x2 sampling on that one component, which is legal and which the decoder used to read as interleaved: this file is why it no longer does. Head in the upper half, so the centred crop slices it."
+	},
+	{
+		"file": "File:(Portrait of Louis Armstrong, Carnegie Hall, New York, N.Y., ca. Feb. 1947) (LOC) (4888057227).jpg",
+		"licence": "Public domain (PD-Gottlieb)",
+		"attribution": "William P. Gottlieb, William P. Gottlieb Collection, Library of Congress — public domain",
+		"expect": "centred",
+		"note": "Several faces, greyscale, with a black negative border round the frame. The main head is tilted back, which a frontal cascade will not match — a case where finding nothing is the honest outcome."
+	},
+	{
+		"file": "File:Erfan Az Khaneh Ta Goor Album Cover.jpg",
+		"licence": "CC BY 2.0",
+		"attribution": "Poeterfan, \"Erfan – Az Khaneh Ta Goor (Album Cover)\", CC BY 2.0, via Wikimedia Commons — https://creativecommons.org/licenses/by/2.0/",
+		"expect": "centred",
+		"note": "A real album sleeve with typography over the picture, which the photographs here do not have. Large single face, olive/medium tone, filling most of the frame — nothing to save, so nothing should move."
+	},
+	{
+		"file": "File:CosmosLaundromatVictor.jpg",
+		"licence": "CC BY 3.0",
+		"attribution": "(CC) Blender Foundation | gooseberry.blender.org — \"Victor\", Cosmos Laundromat, CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/",
+		"expect": "centred",
+		"note": "Rendered rather than photographed: the illustrated case. Skin here is a palette choice, not a reflectance, which is exactly why it is worth having."
+	},
+	{
+		"file": "File:Memo an Miller - Neues Glück - Cover.jpeg",
+		"licence": "CC BY-SA 2.0",
+		"attribution": "Department Musik, \"Memo an Miller – Neues Glück (Cover)\", CC BY-SA 2.0, via Wikimedia Commons — https://creativecommons.org/licenses/by-sa/2.0/",
+		"expect": "centred",
+		"note": "A real sleeve with four faces at a realistic size (each under 1.5 % of the picture). ShareAlike: harmless while no image bytes and no derived artefact — no crop, no contact sheet, no golden image — are ever committed. If that rule is ever broken, this entry is the one that makes it a licensing problem."
+	},
+	{
+		"file": "File:Smiling girl holding a lotus flower.jpg",
+		"licence": "CC BY-SA 4.0",
+		"attribution": "Basile Morin, CC BY-SA 4.0, via Wikimedia Commons — https://creativecommons.org/licenses/by-sa/4.0/",
+		"expect": "up",
+		"knownGap": "the cascade finds nothing (the head is turned and the flower covers part of the face) and the only skin region is hair and shoulder at the lower right, so the crop goes down instead — the documented limitation of colour evidence, on a picture where it costs something",
+		"note": "Laotian child, natively square, Commons Featured Picture. Face in the upper third."
+	},
+	{
+		"file": "File:16 wood samples.jpg",
+		"licence": "CC0 1.0",
+		"attribution": "Anonimski, CC0, via Wikimedia Commons (attribution voluntary)",
+		"expect": "centred",
+		"note": "The negative case that matters most: sixteen planks of European wood, shadowless. The bare Chai/Ngan chrominance rule reportedly answers 'skin' for 96.5 % of its pixels, so this is a direct test of everything layered on top of it — size, shape and the relative flatness test. Anything but 'centred' here means the filters have stopped working."
+	},
+	{
+		"file": "File:Orange Sky - Okura Coast.jpg",
+		"licence": "CC BY-SA 2.0",
+		"attribution": "halfrain, CC BY-SA 2.0, via Wikimedia Commons — https://creativecommons.org/licenses/by-sa/2.0/",
+		"expect": "centred",
+		"note": "A sunset: 99 % of it sits in the skin hue and is saved only by saturation. The second negative case, and a different reason for being one."
+	}
+]

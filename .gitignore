@@ -151,6 +151,10 @@ dist
 # Node.js
 node_modules/
 
+# Test images fetched from Wikimedia Commons on demand. The corpus manifest is committed
+# (titles, licences, attribution); the pictures are other people's work and are not.
+.cache/commons/
+
 # Stream Deck files
 *.sdPlugin/bin
 *.sdPlugin/logs
