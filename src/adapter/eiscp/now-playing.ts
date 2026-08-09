@@ -465,6 +465,12 @@ export class NowPlayingTracker {
 			case "NST": {
 				const playStatus = parsePlayStatus(parameter);
 				if (entry.state.playStatus === playStatus) return;
+				// Only on a change, which is what makes it affordable: `NST` is
+				// re-broadcast and would otherwise cost a line per repetition. It earns
+				// its place because it is the only record of why a glyph appeared over a
+				// cover, and a pause is exactly what a bug report describes as "the key
+				// suddenly showed an arrow".
+				logger.info(`${host}: playback ${playStatus ?? "unknown"}`);
 				entry.state = { ...entry.state, playStatus };
 				return this.notify(entry, "status");
 			}

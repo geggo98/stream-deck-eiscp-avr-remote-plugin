@@ -11,6 +11,7 @@
  * plain functions, so none of this needs a socket or a Stream Deck.
  */
 import { strict as assert } from "node:assert";
+import { setAdapterLogger } from "../src/adapter/logging.ts";
 import { describe, it } from "node:test";
 import type { ConnectionEvent } from "../src/adapter/eiscp/connection-manager.ts";
 import {
@@ -796,5 +797,56 @@ describe("NowPlayingTracker: cover over HTTP", () => {
 		await h.tracker.prime("10.0.0.1");
 		await settle();
 		assert.deepEqual(h.fetched, ["http://10.0.0.1/album_art.cgi"]);
+	});
+});
+
+describe("NowPlayingTracker: what the log is told about playback", () => {
+	/** Capture adapter logging for the duration of one test, then put it back. */
+	function captureLogs(body: (lines: string[]) => void): void {
+		const lines: string[] = [];
+		const sink = {
+			debug: () => {},
+			info: (m: string) => lines.push(m),
+			warn: (m: string) => lines.push(m),
+			error: (m: string) => lines.push(m),
+		};
+		setAdapterLogger(sink);
+		try {
+			body(lines);
+		} finally {
+			setAdapterLogger(console);
+		}
+	}
+
+	it("records a change of playback state once, however often it is repeated", () => {
+		// `NST` is re-broadcast, and this is the line that explains a play symbol
+		// appearing over a cover — so it has to be there, and it has to be there once.
+		// A line per repetition is how a log stops being readable on someone else's
+		// machine, which is the only reason it exists.
+		captureLogs((lines) => {
+			const h = harness();
+			h.tracker.onUpdate("10.0.0.1", () => {});
+			for (let i = 0; i < 5; i++) h.send("10.0.0.1", "NST", "Pxx");
+			const playing = lines.filter((l) => /playback/.test(l));
+			assert.equal(playing.length, 1, `expected one line, got ${JSON.stringify(playing)}`);
+			assert.match(playing[0]!, /10\.0\.0\.1: playback play/);
+
+			for (let i = 0; i < 3; i++) h.send("10.0.0.1", "NST", "pxx");
+			const all = lines.filter((l) => /playback/.test(l));
+			assert.equal(all.length, 2, "the change to paused is worth exactly one more");
+			assert.match(all[1]!, /playback pause/);
+			h.tracker.stop();
+		});
+	});
+
+	it("says nothing at all about the clock, which ticks once a second", () => {
+		// The rule the whole logging design rests on: nothing may be written per tick.
+		captureLogs((lines) => {
+			const h = harness();
+			h.tracker.onUpdate("10.0.0.1", () => {});
+			for (let i = 0; i < 60; i++) h.send("10.0.0.1", "NTM", `00:0${Math.floor(i / 10)}:${String(i % 10).padStart(2, "0")}/00:05:00`);
+			assert.deepEqual(lines, [], `a minute of ticks wrote ${lines.length} lines`);
+			h.tracker.stop();
+		});
 	});
 });
